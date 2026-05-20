@@ -4,6 +4,62 @@
 
 ---
 
+## 0g. HTTP harness + autonomous combat (2026-05-20, seventh iteration)
+
+The user opted out of the loop and asked for a harness that lets future agents (or CI) drive the game end-to-end. **Built and committed**:
+
+- `--harness-http <port>` flag → `HarnessHttpServer` on `http://localhost:<port>/`
+- Endpoints: `/healthz`, `/state`, `/ui`, `/labyrinth`, `/camera`, `/tilemap`, `/wallpixels`, `/event/raw`, `/event`, `/click`, `/click/at`, `/screenshot` (currently 503 — see below), `/quit`
+- Thread-safe: HttpListener acceptor enqueues, game thread drains on `EngineUpdateEvent`
+- Click-by-stable-ID (looks up element in `LayoutManager.GetLayout()` tree) plus by-coordinates
+- `_harness_drive.ps1`: 20-check end-to-end driver, all PASS
+- `_harness_explore.ps1`: per-save exploration that loads, advances time, triggers combat, runs rounds — surfaces engine bugs autonomously
+
+**Bugs found and fixed via the harness itself**:
+1. `StatusConditionTicker` `(SheetId)(AssetId)pm.Id` cast threw `ArgumentOutOfRangeException` on the first `HourElapsedEvent` (PartyMember → SheetId via AssetId loses type). Fix: `pm.Id.ToSheet()`.
+2. `/state` NRE on the main menu (IGameState.MapId derefs null SavedGame). Fix: gate populated fields behind `state.Loaded`.
+3. `Battle` + 4 spell-effect files: `(TargetId)(AssetId)participant.SheetId` cast threw on `MonsterSheet`. Fix: `TryToTarget` helper that maps `PartySheet.N → PartyMember.N` and returns null for monsters.
+
+**End-to-end combat verified through HTTP**:
+
+```
+POST /event/raw  load_game 2
+POST /event/raw  encounter MonsterGroup.OneArgim
+POST /event/raw  queue_combat_action PartySheet.Tom Melee -1
+POST /event/raw  begin_combat_round
+→ PartySheet.Drirr hits MonsterSheet.Argim for 1 damage (HP 9/10)
+  ... ten rounds of initiative-ordered party-attacks ...
+  EndCombatEvent { Result = Victory }
+```
+
+The RE'd damage math, initiative order, party-vs-mob dispatch, and victory detection all fire correctly.
+
+### 3D rendering bug — status
+
+The 3D dungeon view renders as vertical color stripes radiating from the screen-centre vanishing point (see the screenshot the user pasted into this session). Confirmed via git-stash test that the bug is **pre-existing in master** — not from any of our work.
+
+What the harness's diagnostic endpoints established:
+
+- `/labyrinth` for Drinno4 returns sensible values: `TileSize=(512,400,512)`, `WallHeight=400`, `WallWidth=9 → EffectiveWallWidth=512`, `WallCount=31`, `FloorCount=16`, `BaseCameraHeight=200`. → **Not a labyrinth-data issue.**
+- `/tilemap` shows the wall atlas is `129×128` with 34 layers, region `TexSize` values match wall pixel dimensions divided by atlas size. → **Atlas layout is consistent.**
+- `/wallpixels?layer=1` returns a `129×128` buffer with **98 distinct colors, no uniform columns or rows** — real texture data, not corrupt. → **Wall pixel data is good.**
+- Bypassing `iTexCoords * iWallSize` in the vertex shader (set `oTexCoords = iTexCoords` instead) did NOT fix it (reverted).
+- `/screenshot` endpoint returns 503 — Veldrid `CopyTexture` from the swapchain back buffer reads all zeros on D3D11, Vulkan, **and** OpenGL after `WaitForIdle` + intermediate-blit. The swapchain colour target isn't exposed in a CPU-readable way through Veldrid.
+
+**Conclusion**: the bug is real, but the remaining candidate root causes (texture sampler mode, vertex shader UV math interaction with sub-region atlas padding, instance-data alignment for `WallSize`) all need pixel-level verification to bisect. Without working screenshots that's not reliably tractable autonomously.
+
+**The next step that unblocks autonomous 3D-bug work**: refactor `AlbionRenderSystem.Sys_Default` to render to an offscreen `FB_Render` `SimpleFramebuffer` (which IS readable, unlike the swapchain) and add a `FullscreenQuadRenderer` composite pass that blits `FB_Render → FB_Screen`. The existing `CopyRenderPass.cs` (currently commented-out) is the template. ~150 LOC. Once done, `/screenshot` returns the actual rendered frame and bisecting the streaked-wall bug becomes screenshot-diff work.
+
+### Project-state pointers
+
+- Total tests: **483 passing**, including 187 in `Game.Tests`
+- Smoke: **13/13 saves load cleanly** via `_smoke_all_saves.ps1`
+- Harness E2E: **20/20 PASS** via `_harness_drive.ps1`
+- Combat round through HTTP: **clean** — initiative, damage, victory event all fire
+- 7 commits on this branch ahead of `origin/master`
+
+---
+
 ## 0e. Spell-effect registry + 4-of-7 actions decoded (2026-05-19, fifth iteration)
 
 **Decoded vtable_1 action handlers** (the 7 entries at `0x13e196`):
