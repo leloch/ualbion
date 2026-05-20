@@ -50,6 +50,15 @@ static class Albion
         PerfTracker.StartupEvent("Running game");
         global.Raise(new SetSceneEvent(SceneId.Empty), null);
 
+        // Attach the test harness channel BEFORE -c commands fire so it can record their
+        // outcomes too. The channel polls in.jsonl each FastClockEvent.
+        if (!string.IsNullOrEmpty(commandLine.HarnessPath))
+            global.Attach(new UAlbion.Game.Diag.HarnessChannel(commandLine.HarnessPath));
+
+        // HTTP harness for remote-control / autonomous test agents. Hosts on localhost only.
+        if (commandLine.HarnessHttpPort.HasValue)
+            global.Attach(new UAlbion.Game.Veldrid.Diag.HarnessHttpServer(commandLine.HarnessHttpPort.Value));
+
         if (commandLine.Commands != null)
         {
             foreach (var command in commandLine.Commands)
