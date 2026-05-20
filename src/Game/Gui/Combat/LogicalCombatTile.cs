@@ -96,26 +96,28 @@ public class LogicalCombatTile : UiElement
 
         if (sheet?.Type == CharacterType.Party)
         {
+            var actor = contents.SheetId;
+
             options.Add(new ContextMenuOption(
                 S(Base.SystemText.Combat_DoNothing),
-                new NopEvent(),
+                new QueueCombatActionEvent(actor, CombatAction.None, -1),
                 ContextMenuGroup.Actions));
 
             options.Add(new ContextMenuOption(
                 S(Base.SystemText.Combat_Attack, sheet.DisplayDamage <= 0),
-                new NopEvent(),
+                new QueueCombatActionEvent(actor, CombatAction.Melee, -1),
                 ContextMenuGroup.Actions));
 
             options.Add(new ContextMenuOption(
                 S(Base.SystemText.Combat_Move),
-                new NopEvent(),
+                new NopEvent(), // PLACEHOLDER: needs target-tile picker; queueing without a tile is a no-op
                 ContextMenuGroup.Actions));
 
             if (sheet.Magic.KnownSpells.Count > 0)
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.Combat_UseMagic),
-                    new NopEvent(),
+                    new NopEvent(), // PLACEHOLDER: needs spell picker dialog
                     ContextMenuGroup.Actions));
             }
 
@@ -123,15 +125,21 @@ public class LogicalCombatTile : UiElement
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.Combat_UseMagicItem),
-                    new NopEvent(),
+                    new NopEvent(), // PLACEHOLDER: needs item picker dialog
                     ContextMenuGroup.Actions));
             }
 
-            if (_tileIndex / SavedGame.CombatColumns == 0)
+            // Flee is the back-row Retreat action (party occupies the bottom row in the
+            // combat grid → row index CombatRows-1). The original engine's gate is at
+            // fcn.0004f5d3: only members in row 0/CombatRows-1 can flee.
+            int row = _tileIndex / SavedGame.CombatColumns;
+            bool canFlee = row == SavedGame.CombatRows - 1
+                        || row == 0;
+            if (canFlee)
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.Combat_Flee),
-                    new NopEvent(),
+                    new QueueCombatActionEvent(actor, CombatAction.Retreat, -1),
                     ContextMenuGroup.Actions));
             }
         }

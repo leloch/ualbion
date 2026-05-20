@@ -191,6 +191,11 @@ public abstract class RenderableBatch<TKey, TInstance> : Component, IRenderable,
     {
         ApiUtil.Assert(lease.Disposed, "Tried to join a live lease");
         ApiUtil.Assert(lease.Next != null, "Tried to join a lease that had no successor");
+        // Hard null-guard: ApiUtil.Assert is a no-op in Release, so the dereference of
+        // `lease.Next!.Disposed` on the next line NRE-crashes when caller invariants slip
+        // (notably from ButtonFrame.Unsubscribed during PickSaveSlotMenu teardown). Bailing
+        // out with the unchanged lease is correct — there's nothing to merge into.
+        if (lease.Next == null) return lease;
         ApiUtil.Assert(lease.Next!.Disposed, "Tried to join a lease to a live successor");
 
         var toRemove = lease.Next;

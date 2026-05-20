@@ -13,6 +13,8 @@ public sealed class CommandLineOptions
     public GraphicsBackend Backend { get; }
     public bool DebugMenus { get; }
     public bool Mute { get; }
+    public string TracePath { get; private set; }
+    public bool TraceEnabled => !string.IsNullOrEmpty(TracePath);
     public bool NeedsEngine => Mode == ExecutionMode.Game;
     public bool StartupOnly { get; }
     public bool UseRenderDoc { get; }
@@ -66,6 +68,14 @@ public sealed class CommandLineOptions
 
             if (arg == "--MENUS") DebugMenus = true;
             if (arg is "--NO-AUDIO" or "-MUTE" or "--MUTE") Mute = true;
+            if (arg is "--TRACE")
+            {
+                // Optional argument: --trace <path>. Default to ualbion-trace.log if no path given.
+                if (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
+                    TracePath = args[++i];
+                else
+                    TracePath = "ualbion-trace.log";
+            }
             if (arg is "--STARTUPONLY" or "-S") StartupOnly = true;
             if (arg is "--RENDERDOC" or "-RD") UseRenderDoc = true;
 

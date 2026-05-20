@@ -1,4 +1,5 @@
-﻿using UAlbion.Formats.Ids;
+﻿using UAlbion.Api.Eventing;
+using UAlbion.Formats.Ids;
 using UAlbion.Formats.MapEvents;
 using UAlbion.Formats.ScriptEvents;
 using UAlbion.Game.Events;
@@ -24,7 +25,10 @@ public class CombatManager : GameComponent
     public CombatManager()
     {
         On<EncounterEvent>(e => BeginCombat(e.GroupId, e.BackgroundId));
+        OnAsync<EndCombatEvent>(OnCombatEnded);
     }
+
+    Battle _currentBattle;
 
     void BeginCombat(MonsterGroupId groupId, SpriteId backgroundId)
     {
@@ -40,6 +44,7 @@ public class CombatManager : GameComponent
         var scene = Resolve<ISceneManager>().ActiveScene;
         var battle = new Battle(groupId, backgroundId);
         scene.Add(battle);
+        _currentBattle = battle;
 
         Raise(new DialogManager.CombatDialogEvent(battle));
 
@@ -48,5 +53,23 @@ public class CombatManager : GameComponent
             scene.Remove(battle);
             Raise(new PopSceneEvent());
         };
+    }
+
+    // Drive the post-combat sequence on EndCombatEvent. PartyKilled → play the GameOver
+    // video then bounce back to the main menu (matches the original Albion's behaviour on
+    // total-party-kill). Victory / Retreat fall through to whatever the Battle hooked up
+    // via its Complete callback in BeginCombat.
+    AlbionTask OnCombatEnded(EndCombatEvent e)
+    {
+        if (e.Result == CombatResult.PartyKilled)
+            return PartyWipedAsync();
+        return AlbionTask.CompletedTask;
+    }
+
+    async AlbionTask PartyWipedAsync()
+    {
+        // Animation x/y/unk are unused for full-screen videos like GameOver — pass 0s.
+        await RaiseA(new PlayAnimationEvent(Base.Video.GameOver, 0, 0, 0, 0, 0, 0));
+        Raise(new PushSceneEvent(SceneId.MainMenu));
     }
 }

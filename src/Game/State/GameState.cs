@@ -102,6 +102,19 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
 
         AttachChild(new InventoryManager(GetWriteableInventory, GetItem));
         _sheetApplier = AttachChild(new SheetApplier());
+        AttachChild(new StatusConditionTicker());
+
+        // Populate the spell-effect registry. Currently only Dji-Kas heal-status spells (16..19)
+        // are implemented — every other spell still falls through to the registry's "Failed"
+        // default which makes the caster spend AP without an effect (matches the original
+        // engine's no-op behaviour better than crashing). Add new schools here as they're
+        // reverse-engineered (see _RE_COMBAT.md → Phase 3.x).
+        UAlbion.Game.Combat.SpellEffectRegistry.Clear();
+        UAlbion.Game.Combat.Spells.DjiKasSpells.RegisterAll();
+        UAlbion.Game.Combat.Spells.DjiKantosSpells.RegisterAll();
+        UAlbion.Game.Combat.Spells.DruidSpells.RegisterAll();
+        UAlbion.Game.Combat.Spells.OquloKamulosSpells.RegisterAll();
+        UAlbion.Game.Combat.Spells.ZombieMagicSpells.RegisterAll();
     }
 
     void OnLoadMap(LoadMapEvent e)
