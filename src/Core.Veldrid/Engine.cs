@@ -175,6 +175,12 @@ public sealed class Engine : ServiceComponent<IVeldridEngine, IEngine>, IVeldrid
                 if (Device.SyncToVerticalBlank != ((flags & EngineFlags.VSync) != 0))
                     Device.SyncToVerticalBlank = (flags & EngineFlags.VSync) != 0;
 
+                // Pre-swap hook: at this point the swapchain back buffer contains the frame
+                // that's about to be presented. Subscribers may capture it (screenshots etc.).
+                // After SwapBuffers the back buffer rotates and reads would give the previous
+                // frame, so this is the only safe point for in-frame capture.
+                Raise(PreSwapBuffersEvent.Instance);
+
                 using (PerfTracker.FrameEvent("Swap buffers"))
                 {
                     CoreTrace.Log.Info("Engine", "Swapping buffers...");
@@ -282,10 +288,38 @@ public sealed class Engine : ServiceComponent<IVeldridEngine, IEngine>, IVeldrid
         RenderSystem?.Render(Device);
     }
 
+    /// <summary>
+    /// Capture the current swapchain colour attachment as an in-memory image. Used by the
+    /// HTTP harness's /screenshot endpoint for visual-regression diffs and ad-hoc debugging.
+    /// Must be called on the game thread (uses WaitForIdle internally).
+    /// </summary>
+    public unsafe Image<Bgra32> CaptureSwapchain()
+    {
+        // Veldrid's D3D11 swapchain back-buffer reads as all-zeros via CopyTexture, even
+        // when called from PreSwapBuffersEvent after RenderSystem.Render has finished and
+        // its fence is signalled. Both direct staging-copy and a Sampled+RenderTarget
+        // intermediate copy return blank pixels — the rendered frame appears to live in a
+        // resource that isn't exposed through `SwapchainFramebuffer.ColorTargets[0].Target`.
+        //
+        // Capturing properly will need either:
+        //   (a) an offscreen FB_Screen Target2DHolder + blit pass that mirrors the
+        //       swapchain — invasive, touches AlbionRenderSystem; or
+        //   (b) hooking into the renderer's existing offscreen passes (FB_Game in the
+        //       debug system) instead of the main swapchain.
+        //
+        // Returning null surfaces this clearly to the caller (the harness returns 503).
+        return null;
+    }
+
     public unsafe Image<Bgra32> ReadTexture2D(ITextureHolder textureHolder)
     {
         ArgumentNullException.ThrowIfNull(textureHolder);
-        var texture = textureHolder.DeviceTexture;
+        return ReadTextureInner(textureHolder.DeviceTexture);
+    }
+
+    unsafe Image<Bgra32> ReadTextureInner(Texture texture)
+    {
+        if (texture == null) return null;
         var stagingDesc = new TextureDescription(
             texture.Width, texture.Height,
             1, 1, 1,

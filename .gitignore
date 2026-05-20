@@ -67,3 +67,4 @@ _smoke_logs/
 _smoke_summary.csv
 _smoke_run*.log
 _harness_trace.log
+_*.png
