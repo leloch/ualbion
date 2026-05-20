@@ -41,6 +41,9 @@ static class Albion
 {
     public static void RunGame(EventExchange global, CommandLineOptions commandLine)
     {
+        if (commandLine.TraceEnabled)
+            UAlbion.Game.TraceLog.Init(commandLine.TracePath);
+
         RegisterComponents(global, commandLine);
         ConfigureMenus(global);
 

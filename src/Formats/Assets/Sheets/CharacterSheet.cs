@@ -238,7 +238,16 @@ public class CharacterSheet : ICharacterSheet
             sheet.Inventory.Rations.Amount = rations;
         }
 
-        sheet.Unknown1C = s.UInt16(nameof(sheet.Unknown1C), sheet.Unknown1C); // 1C Party member leaving related bits? 'Destination CD bit'
+        // PLACEHOLDER: ushort at sheet offset 0x1C, accessed only at party-leave time. Two
+        // working hypotheses:
+        //   (a) CD-audio track selector — Albion shipped on two CDs and voice lines per
+        //       character may have lived on different discs. The "'Destination CD bit'"
+        //       cryptic comment supports this.
+        //   (b) Bitfield of map-zone tags marking where the character is allowed to leave
+        //       the party (some NPCs can only depart in their home zone).
+        // To confirm: trace reads of `sheet+0x1C` (16-bit) in radare2; the call site that
+        // pops up during a `RemovePartyMemberEvent` flow is the decoder.
+        sheet.Unknown1C = s.UInt16(nameof(sheet.Unknown1C), sheet.Unknown1C); // 1C
         sheet.Combat.Conditions = s.EnumU16(nameof(sheet.Combat.Conditions), sheet.Combat.Conditions); // 1E
         sheet.ExperienceReward = s.UInt16(nameof(sheet.ExperienceReward), sheet.ExperienceReward); // 20
         sheet.Unknown22 = s.UInt16(nameof(sheet.Unknown22), sheet.Unknown22); // 22

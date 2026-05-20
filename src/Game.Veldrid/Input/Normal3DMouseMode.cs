@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
-using ImGuiNET;
 using UAlbion.Api.Eventing;
 using UAlbion.Base;
 using UAlbion.Core;
@@ -157,15 +156,6 @@ public class Normal3DMouseMode : Component
 
         var intensity = new Vector2(dx, dy);
         var cursor = GetCursorForZone(zone);
-
-        if (ImGui.Begin("MouseMode"))
-        {
-            ImGui.Text($"UI: {uiPosition}");
-            ImGui.Text($"ZoneIndex: {zoneIndex} ({zoneIndex%ZoneMapStride}, {zoneIndex/ZoneMapStride})");
-            ImGui.Text($"Zone: {zone} [{rect}]");
-            ImGui.Text($"Intensity: {intensity}");
-            ImGui.End();
-        }
 
         if (Resolve<ICursorManager>().CursorId != cursor)
             Raise(new SetCursorEvent(cursor));

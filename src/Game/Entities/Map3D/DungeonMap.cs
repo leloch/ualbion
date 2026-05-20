@@ -40,7 +40,24 @@ public class DungeonMap : GameComponent, IMap
         On<SlowClockEvent>(_ => FireEventChains(TriggerType.EveryStep, false));
         On<HourElapsedEvent>(_ => FireEventChains(TriggerType.EveryHour, false));
         On<DayElapsedEvent>(_ => FireEventChains(TriggerType.EveryDay, false));
+        On<PlayerEnteredTileEvent>(OnPlayerEnteredTile);
         // On<UnloadMapEvent>(_ => Unload());
+    }
+
+    void OnPlayerEnteredTile(PlayerEnteredTileEvent e)
+    {
+        // Fire any tile-scoped Normal-trigger event chain on the tile the party just entered.
+        // Mirrors FlatMap.OnPlayerEnteredTile (2D); the 3D variant emits PlayerEnteredTileEvent
+        // from Movement3D once the camera position crosses a tile boundary.
+        var zone = _logicalMap?.GetOffsetZone(e.X, e.Y);
+        if (zone?.Node == null)
+            return;
+
+        if ((zone.Trigger & TriggerTypes.Normal) == 0)
+            return;
+
+        var source = new EventSource(_mapData.Id, TriggerType.Normal, zone.X, zone.Y);
+        Raise(new TriggerChainEvent(_mapData, zone.EventIndex, source));
     }
 
     public override string ToString() => $"DungeonMap:{MapId} TileSize: {TileSize}";
@@ -161,14 +178,15 @@ public class DungeonMap : GameComponent, IMap
             return;
         }
 
-        if (npc.SpriteOrGroup.Id >= _labyrinthData.ObjectGroups.Count)
+        // ObjectGroup references are 1-based on disk (0 = "no NPC"; 1..N selects ObjectGroups[0..N-1]).
+        // LogicalMap3D.GetObject uses the same convention for tile contents.
+        if (npc.SpriteOrGroup.Id <= 0 || npc.SpriteOrGroup.Id > _labyrinthData.ObjectGroups.Count)
         {
-            Warn($"[3DMap] Tried to load object group {npc.SpriteOrGroup.Id}, but the max group id is {_labyrinthData.ObjectGroups.Count - 1}.");
+            Warn($"[3DMap] Tried to load object group {npc.SpriteOrGroup.Id}, valid range 1..{_labyrinthData.ObjectGroups.Count}.");
             return;
         }
 
-        var objectData = _labyrinthData.ObjectGroups[npc.SpriteOrGroup.Id]; // TODO: Verify SpriteOrGroup is an ObjectGroup
-                                                                            // TODO: Build proper NPC objects with AI, sound effects etc
+        var objectData = _labyrinthData.ObjectGroups[npc.SpriteOrGroup.Id - 1]; // TODO: Build proper NPC objects with AI, sound effects etc
         foreach (var subObject in objectData.SubObjects)
         {
             _sceneObjects.Add(MapObject.Build(

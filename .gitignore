@@ -45,3 +45,24 @@ mods/Repacked/Albion/*
 mods/Unpacked/Assets/*
 !mods/UATest/
 mods/UATest/Saves/*.json
+
+# RE-session working files (not for commit; notes themselves are kept)
+_r2_*
+_ghidra*
+DumpFunctions.java
+_publish/
+_publish_*.log
+_build_*.log
+_load*.log
+_run.log
+_run*.log
+_dump_*.log
+_extract_constants.ps1
+_gen_re_notes.ps1
+_test_*.log
+_test_*.txt
+_trace*.log
+_todo_all.txt
+_smoke_logs/
+_smoke_summary.csv
+_smoke_run*.log

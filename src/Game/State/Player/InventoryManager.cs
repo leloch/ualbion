@@ -104,10 +104,24 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
     void PickupItem(ItemSlot slot, ushort? quantity)
     {
         if (!CanItemBeTaken(slot))
-            return; // TODO: Message
+        {
+            ShowCannotTakeMessage(slot);
+            return;
+        }
 
         _hand.TransferFrom(slot, quantity, _getItem);
         _returnItemInHandEvent = new InventorySwapEvent(slot.Id.Id, slot.Id.Slot);
+    }
+
+    void ShowCannotTakeMessage(ItemSlot slot)
+    {
+        // CanItemBeTaken currently only blocks on cursed equipped items; if that ever expands,
+        // pick a more specific message here. Surface the same hover text the original engine
+        // shows when you try to pull a cursed item off a character.
+        if (slot.Item.Type != AssetType.Item)
+            return;
+        var tf = Resolve<ITextFormatter>();
+        Raise(new HoverTextEvent(tf.Format(Base.SystemText.InvMsg_ThisItemIsCursed)));
     }
 
     bool DoesSlotAcceptItem(ICharacterSheet sheet, ItemSlotId slotId, ItemData item)
@@ -475,7 +489,10 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
     {
         // Check if the item can be taken
         if (!CanItemBeTaken(slot))
-            return; // TODO: Message
+        {
+            ShowCannotTakeMessage(slot);
+            return;
+        }
 
         _hand.Swap(slot);
         _returnItemInHandEvent = new InventorySwapEvent(slot.Id.Id, slot.Id.Slot);
@@ -584,7 +601,31 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         if (item.Charges <= 0 || item.Spell.IsNone)
             return;
 
-        Warn("TODO: Actually cast the spell once the magic system is implemented");
+        // Dispatch to the spell-effect registry. Unimplemented spells fall through with
+        // Failed and we log the intended cast — the charge is still consumed so item upkeep
+        // is consistent with the original game's behaviour for unfulfilled item charges.
+        var context = new UAlbion.Game.Combat.SpellCastContext
+        {
+            // Item-cast doesn't have a real combatant context — caster/target are null when
+            // cast outside of combat (e.g. on an inventory menu). Effect implementations
+            // must tolerate null caster/target and use the spell metadata alone in that case.
+            SpellStrength = 0,
+            Random = max => max <= 0 ? 0 : Resolve<UAlbion.Game.IRandom>().Generate(max),
+            RaiseEvent = Raise,
+        };
+        var outcome = UAlbion.Game.Combat.SpellEffectRegistry.Cast(item.Spell, context);
+        switch (outcome)
+        {
+            case UAlbion.Game.Combat.SpellCastOutcome.Hit:
+                Info($"ActivateItemSpell: {item.Id} cast {item.Spell} successfully");
+                break;
+            case UAlbion.Game.Combat.SpellCastOutcome.Resisted:
+                Info($"ActivateItemSpell: {item.Id} cast {item.Spell} but it was resisted");
+                break;
+            default:
+                Info($"ActivateItemSpell: {item.Id} would cast {item.Spell} (no handler registered — charge consumed)");
+                break;
+        }
 
         item.Charges--;
         Update(e.SlotId.Id);

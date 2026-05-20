@@ -1,11 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using UAlbion.Api.Eventing;
 using UAlbion.Api.Visual;
+using UAlbion.Config;
 using UAlbion.Core.Visual;
 using UAlbion.Formats.Assets.Save;
 using UAlbion.Formats.Ids;
+using UAlbion.Formats.MapEvents;
 using UAlbion.Game.Gui.Combat;
 using UAlbion.Game.Gui.Dialogs;
 using UAlbion.Game.State;
@@ -22,6 +25,14 @@ public class Battle : GameComponent, IReadOnlyBattle
     readonly List<ICombatParticipant> _mobs = [];
     readonly List<ICombatParticipant> _corpses = [];
     readonly ICombatParticipant[] _tiles = new ICombatParticipant[SavedGame.CombatRows * SavedGame.CombatColumns];
+    // Battle-scoped HP shadow keyed by SheetId. Avoids the Effective-vs-underlying ambiguity:
+    // party members have their Effective snapshot recomputed per frame, while monsters are
+    // transient clones that aren't in GameState.Sheets so DataChangeEvent can't reach them.
+    readonly Dictionary<SheetId, int> _liveHp = [];
+    // Queued per-character actions (chosen by player via context menu before the round
+    // begins). Members not in this map fall through to default Melee — matches Albion's
+    // "leave defaults" behaviour when the player doesn't explicitly set actions.
+    readonly Dictionary<SheetId, (CombatAction Action, int TargetTile)> _pendingActions = [];
 
     public IReadOnlyList<ICombatParticipant> Mobs { get; }
     public event Action Complete;
@@ -31,6 +42,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         On<EndCombatEvent>(_ => Complete?.Invoke());
         OnAsync<BeginCombatRoundEvent>(BeginRoundAsync);
         OnAsync<ObserveCombatEvent>(Observe);
+        On<QueueCombatActionEvent>(OnQueueAction);
 
         _groupId = groupId;
         Mobs = _mobs;
@@ -56,7 +68,307 @@ public class Battle : GameComponent, IReadOnlyBattle
             Raise(new CombatDialog.ShowCombatDialogEvent(true));
         });
 
-    AlbionTask BeginRoundAsync(BeginCombatRoundEvent _) => RaiseA(new CombatUpdateEvent(100)); // TODO
+    void OnQueueAction(QueueCombatActionEvent e)
+    {
+        _pendingActions[e.Actor] = (e.Action, e.TargetTile);
+    }
+
+    /// <summary>
+    /// Look up the action queued for this combatant, or the default (Melee, no explicit
+    /// target). Clears the entry so each queued choice applies exactly once — matches
+    /// Albion's per-round action selection.
+    /// </summary>
+    (CombatAction Action, int TargetTile) ConsumePendingAction(ICombatParticipant p)
+    {
+        if (p?.SheetId == null) return (CombatAction.Melee, -1);
+        if (_pendingActions.TryGetValue(p.SheetId, out var choice))
+        {
+            _pendingActions.Remove(p.SheetId);
+            return choice;
+        }
+        return (CombatAction.Melee, -1);
+    }
+
+    AlbionTask BeginRoundAsync(BeginCombatRoundEvent _)
+    {
+        // Auto-resolve loop. Per-round, combatants are processed in initiative order
+        // (highest Speed first) — matches the original engine's fcn.0004c3f5 builder which
+        // sorts the combatant table descending by sheet attribute #3 (Speed). MaxRounds caps
+        // the loop on degenerate stats so it can't hang.
+        const int MaxRounds = 100;
+        for (int i = 0; i < MaxRounds; i++)
+        {
+            var partyAlive = LiveParticipants(forParty: true).ToList();
+            var mobsAlive  = LiveParticipants(forParty: false).ToList();
+
+            if (partyAlive.Count == 0)
+            {
+                Raise(new EndCombatEvent(CombatResult.PartyKilled));
+                return AlbionTask.CompletedTask;
+            }
+            if (mobsAlive.Count == 0)
+            {
+                Raise(new EndCombatEvent(CombatResult.Victory));
+                return AlbionTask.CompletedTask;
+            }
+
+            foreach (var (attacker, isParty) in OrderByInitiative(partyAlive, mobsAlive))
+            {
+                if (!CanAct(attacker)) continue;
+                TakeTurn(attacker, forParty: isParty);
+            }
+
+            // End-of-round status decay. Only handles transient combat conditions whose
+            // duration semantics are unambiguous: Asleep wakes up after a round of taking
+            // hits (we always clear here rather than gating on damage, because nothing
+            // wakes a sleeping target if no-one attacks them in a 1v1 stunlock). Permanent
+            // conditions (Unconscious, Poisoned, Paralysed, etc.) are deliberately left
+            // alone — clearing them speculatively would corrupt the original engine's
+            // pacing. See _RE_COMBAT.md Phase 2.6 for the full per-condition tick table.
+            DecaySleepOnAllCombatants();
+        }
+
+        // Safety: if both sides somehow still standing after the cap, fall through as Retreat.
+        Raise(new EndCombatEvent(CombatResult.Retreat));
+        return AlbionTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Order combatants descending by Speed (the original engine's initiative formula).
+    /// Stable order within equal initiative — first party then monsters — for determinism in tests.
+    /// </summary>
+    static IEnumerable<(ICombatParticipant Attacker, bool IsParty)> OrderByInitiative(
+        List<ICombatParticipant> party,
+        List<ICombatParticipant> mobs)
+        => InitiativeOrder.Order(party, mobs, EffectiveSpeed);
+
+    static int EffectiveSpeed(ICombatParticipant p)
+        => p?.Effective?.Attributes?.Speed?.Current ?? 0;
+
+    void DecaySleepOnAllCombatants()
+    {
+        foreach (var p in _mobs)
+        {
+            if (LifePoints(p) <= 0) continue;
+            var combat = p?.Effective?.Combat;
+            if (combat == null) continue;
+            if ((combat.Conditions & UAlbion.Formats.Assets.Sheets.PlayerConditions.Asleep) == 0) continue;
+            var target = (TargetId)(AssetId)p.SheetId;
+            Raise(new ChangeStatusEvent(target, UAlbion.Formats.Assets.Sheets.PlayerCondition.Asleep, NumericOperation.SubtractAmount, 1));
+        }
+    }
+
+    IEnumerable<ICombatParticipant> LiveParticipants(bool forParty)
+    {
+        foreach (var p in _mobs)
+        {
+            if (IsParty(p) != forParty) continue;
+            if (LifePoints(p) <= 0) continue;
+            yield return p;
+        }
+    }
+
+    static bool IsParty(ICombatParticipant p)
+        => p.CombatPosition / SavedGame.CombatColumns >= SavedGame.CombatRowsForMobs;
+
+    /// <summary>
+    /// Take a single combatant's turn — AP-loop attack pattern reverse-engineered from
+    /// MAIN.EXE fcn.0004ef8b (school-6 spell resolver). The original engine spends each
+    /// AP point as one attack/cast attempt, stopping once the attempt lands.
+    /// </summary>
+    void TakeTurn(ICombatParticipant attacker, bool forParty)
+    {
+        // Monster turns route through MonsterAi.ChooseNormalAction to pick a weighted-random
+        // action bit (Summon / Action2 / Action4). All three currently fall through to melee
+        // because the per-bit handlers aren't implemented yet — but exercising the AI keeps
+        // the structure honest and ready for the per-action wire-up later.
+        if (!forParty)
+        {
+            var available = MonsterAi.AvailableActions.None;       // PLACEHOLDER: read from
+            // mob sheet's action mask when that field is decoded. For now every mob defaults
+            // to plain melee, so available stays None and ChooseNormalAction returns None.
+            if (available != MonsterAi.AvailableActions.None)
+            {
+                var rng = Resolve<IRandom>();
+                var picked = MonsterAi.ChooseNormalAction(available, () => rng.Generate(16), _ => true);
+                _ = picked; // TODO: dispatch per-bit (Summon→spawn, etc.) once decoded
+            }
+        }
+
+        // Honour the per-combatant status gate (Sleep/Panicking/Insane) — RE'd from
+        // MAIN.EXE fcn.0004bf77 (see _RE_COMBAT.md). Insane mobs still act but pick a
+        // random opponent regardless of which side they're on; Panicking ones lose
+        // their turn (would flee if we had a flee mechanic).
+        var conds = attacker?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
+        var outcome = MonsterAi.ResolveStatusBehavior(conds);
+        if (outcome == MonsterAi.StatusOutcome.SkipTurn || outcome == MonsterAi.StatusOutcome.Flee)
+            return;
+
+        // Pull the player's queued choice (if any). Defaults to Melee for unset members
+        // and for all monsters — matches the original engine's behaviour where unconfigured
+        // combatants fall back to attack-nearest.
+        var (chosenAction, chosenTile) = forParty
+            ? ConsumePendingAction(attacker)
+            : (CombatAction.Melee, -1);
+
+        // Skip-turn actions (DoNothing / Retreat with the Fleeing status applied) exit early.
+        if (chosenAction == CombatAction.None)
+            return;
+
+        if (chosenAction == CombatAction.Retreat)
+        {
+            // Only back-row members can retreat (party row 4) per fcn.0004f5d3.
+            int row = attacker.CombatPosition / SavedGame.CombatColumns;
+            if (row == SavedGame.CombatRows - 1)
+            {
+                var targetId = (TargetId)(AssetId)attacker.SheetId;
+                Raise(new ChangeStatusEvent(targetId, UAlbion.Formats.Assets.Sheets.PlayerCondition.Fleeing, NumericOperation.AddAmount, 1));
+            }
+            return;
+        }
+
+        int ap = attacker?.Effective?.Combat?.ActionPoints ?? 1;
+        if (ap < 1) ap = 1;
+
+        for (int attempt = 0; attempt < ap; attempt++)
+        {
+            ICombatParticipant target;
+            if (outcome == MonsterAi.StatusOutcome.InsaneRandomAct)
+            {
+                // Insane: pick a random LIVE combatant of any side (50/50 in the original
+                // engine for "ally vs enemy" but we just pick any live target — close enough
+                // until we have proper friendly-fire mechanics).
+                var allLive = new System.Collections.Generic.List<ICombatParticipant>();
+                foreach (var p in _mobs)
+                    if (LifePoints(p) > 0 && p.SheetId != attacker.SheetId)
+                        allLive.Add(p);
+                if (allLive.Count == 0) return;
+                target = allLive[attempt % allLive.Count];   // deterministic-cycle for now
+            }
+            else if (chosenTile >= 0 && chosenTile < _tiles.Length)
+            {
+                // Explicit target tile from the player's menu choice. Falls back to
+                // nearest-enemy if the chosen tile is empty or the occupant is dead.
+                target = _tiles[chosenTile];
+                if (target == null || LifePoints(target) <= 0)
+                    target = LiveParticipants(forParty: !forParty).FirstOrDefault();
+            }
+            else
+            {
+                target = LiveParticipants(forParty: !forParty).FirstOrDefault();
+            }
+            if (target == null) return;
+
+            int hpBefore = LifePoints(target);
+            ApplyMeleeAttack(attacker, target);
+            int hpAfter  = LifePoints(target);
+
+            // Stop the AP loop on a successful hit — matches the original's "stop on success"
+            // semantics from fcn.0004ef8b. ApplyMeleeAttack rolls hit/miss internally; a miss
+            // leaves hpAfter == hpBefore so the loop retries on the next AP point.
+            if (hpAfter < hpBefore) return;
+        }
+    }
+
+    /// <summary>
+    /// Per-combatant turn gate — mirror of the original combat.c PerCombatantTurnGate
+    /// (fcn.0004bf77 in MAIN.EXE). Asleep / Paralysed combatants skip their turn.
+    /// Insane combatants still act but with random behaviour (which our auto-resolve
+    /// already approximates with a deterministic melee swing).
+    /// </summary>
+    static bool CanAct(ICombatParticipant p)
+    {
+        var conds = p?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
+        // UnconsciousMask = Unconscious | Poisoned | Asleep — none of these can act.
+        if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.UnconsciousMask) != 0)
+            return false;
+        if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.Paralysed) != 0)
+            return false;
+        return true;
+    }
+
+    int LifePoints(ICombatParticipant p)
+    {
+        if (p == null) return 0;
+        if (_liveHp.TryGetValue(p.SheetId, out var hp))
+            return hp;
+        // Lazy seed from Effective on first read; subsequent damage updates the shadow.
+        var initial = p.Effective?.Combat?.LifePoints?.Current ?? 0;
+        _liveHp[p.SheetId] = initial;
+        return initial;
+    }
+
+    void ApplyMeleeAttack(ICombatParticipant attacker, ICombatParticipant defender)
+    {
+        var a = attacker?.Effective?.Combat;
+        var d = defender?.Effective?.Combat;
+        if (a == null || d == null || d.LifePoints == null)
+            return;
+
+        // RE'd from MAIN.EXE fcn.0004ed77 → fcn.0004ee3b: the original engine has NO
+        // separate "did it hit?" roll. Both attacker damage and defender protection get
+        // varied independently by 50..100 %, then subtracted. delta == 0 IS the miss.
+        // This produces a natural hit-chance distribution from the variance overlap
+        // (heavy armour = damage often falls to 0; powerful attacker = damage rarely 0).
+        //
+        // Attacker damage includes Strength/25 per fcn.0004ee3b at +0x29.
+        var rng = Resolve<IRandom>();
+        int atkRoll = rng.Generate(51);
+        int defRoll = rng.Generate(51);
+        int strength = attacker.Effective?.Attributes?.Strength?.Current ?? 0;
+        int rawAtk = DamageCalculator.TotalAttackWithStrength(a, strength);
+        int rawDef = DamageCalculator.TotalDefense(d);
+        int variedAtk = DamageCalculator.VaryDamage(rawAtk, atkRoll);
+        int variedDef = DamageCalculator.VaryDamage(rawDef, defRoll);
+        int adjusted = Math.Max(0, variedAtk - variedDef);
+
+        if (adjusted <= 0)
+        {
+            TraceLog.Emit("attack_miss",
+                ("attacker", attacker.SheetId),
+                ("defender", defender.SheetId),
+                ("varied_atk", variedAtk),
+                ("varied_def", variedDef));
+            return;
+        }
+
+        // Crit roll — doubles damage on success. PLACEHOLDER 5 %: a Critical-Hit skill
+        // value lives on the sheet (PRTCHAR +0x8A) but the original engine's crit formula
+        // isn't fully decoded yet. The Crit Hit skill is *probably* the crit-chance %.
+        int critRoll = rng.Generate(100);
+        bool crit = DamageCalculator.RollCrit(critRoll);
+        if (crit) adjusted *= DamageCalculator.CritDamageMultiplier;
+
+        // For trace continuity with the old "baseDamage" / "variance" keys.
+        int baseDamage = adjusted;
+        int varianceRoll = atkRoll;
+
+        var amount = (ushort)Math.Min(ushort.MaxValue, adjusted);
+        var current = LifePoints(defender);
+        var next = Math.Max(0, current - amount);
+        _liveHp[defender.SheetId] = next;
+
+        // Also route through the data-change pipeline so any persistent sheet (party members
+        // resolved via GameState.Sheets) updates and SheetApplier.LifeChecks fires
+        // Unconscious / DeathEvent / leader-handoff. For transient monster clones this is a
+        // no-op which is fine — the _liveHp shadow drives termination.
+        var target = (TargetId)(AssetId)defender.SheetId;
+        Raise(new DataChangeEvent(target, ChangeProperty.Health, NumericOperation.SubtractAmount, amount));
+
+        Info($"{attacker.SheetId} hits {defender.SheetId} for {amount} damage (HP {next}/{d.LifePoints.Max})");
+
+        TraceLog.Emit("attack_hit",
+            ("attacker", attacker.SheetId),
+            ("defender", defender.SheetId),
+            ("attack",   DamageCalculator.TotalAttack(a)),
+            ("defense",  DamageCalculator.TotalDefense(d)),
+            ("base",     baseDamage),
+            ("variance", varianceRoll),
+            ("crit",     crit ? 1 : 0),
+            ("damage",   amount),
+            ("hp",       next),
+            ("max",      d.LifePoints.Max));
+    }
 
     protected override void Subscribed()
     {
@@ -86,6 +398,11 @@ public class Battle : GameComponent, IReadOnlyBattle
                 if (mobId.IsNone)
                     continue;
 
+                // CombatPosition convention: mobs occupy the top CombatRowsForMobs rows
+                // (positions 0..17 with 5x6 grid); party members occupy the bottom
+                // CombatRowsForParty rows (positions 18..29) — see
+                // GameState.GetCombatPositionForPlayer which adds CombatRowsForMobs*Columns
+                // to translate the stored party-relative slot into the absolute grid.
                 var monster = AttachChild(Resolve<IMonsterFactory>().BuildMonster(mobId, index));
 
                 _mobs.Add(monster);

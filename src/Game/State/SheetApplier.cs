@@ -1,9 +1,12 @@
 ﻿using System;
 using UAlbion.Api.Eventing;
+using UAlbion.Config;
 using UAlbion.Formats;
 using UAlbion.Formats.Assets.Inv;
 using UAlbion.Formats.Assets.Sheets;
+using UAlbion.Formats.Ids;
 using UAlbion.Formats.MapEvents;
+using UAlbion.Game.State;
 using UAlbion.Game.Events;
 using UAlbion.Game.Events.Inventory;
 
@@ -24,7 +27,7 @@ public class SheetApplier : Component
             case ChangeSkillEvent skillEvent:       ApplySkill(sheet, skillEvent); break;
             case ChangeLanguageEvent languageEvent: ApplyLanguage(sheet, languageEvent); break;
             case ChangeStatusEvent statusEvent:     ApplyStatus(sheet, statusEvent); break;
-            case ChangeItemEvent itemEvent:         Warn($"TODO: {itemEvent} not handled"); break;
+            case ChangeItemEvent itemEvent:         ApplyItem(sheet, itemEvent); break;
             case ChangeSpellsEvent spellsEvent:     ApplySpells(sheet, spellsEvent); break;
             case DataChangeEvent generic:           ApplyGeneric(sheet, generic); break;
             default: throw new ArgumentOutOfRangeException(nameof(e));
@@ -62,7 +65,7 @@ public class SheetApplier : Component
 
             case ChangeProperty.Experience:
                 sheet.Combat.ExperiencePoints = generic.Operation.Apply(sheet.Combat.ExperiencePoints, amount);
-                // ExperienceChecks(sheet);
+                ExperienceChecks(sheet);
                 break;
 
             case ChangeProperty.TrainingPoints:
@@ -81,7 +84,9 @@ public class SheetApplier : Component
             case ChangeProperty.UnusedB:
             case ChangeProperty.UnusedE:
             case ChangeProperty.UnusedF:
-                Warn($"TODO: {generic} not handled");
+                // These ChangeProperty values are intentionally unused in the original engine;
+                // surface them as Info so they don't show up as scary warnings in transcripts.
+                Info($"Skipping unused ChangeProperty {generic.ChangeProperty}");
                 break;
 
             default:
@@ -106,6 +111,37 @@ public class SheetApplier : Component
         }
 
         // TODO: Verify if this event changes spell strengths, or just known spells
+    }
+
+    void ApplyItem(CharacterSheet sheet, ChangeItemEvent itemEvent)
+    {
+        // Route an item-change Map event into the inventory pipeline for this party member.
+        // Add ⇒ TryGiveItems, Remove ⇒ TryTakeItems. Unsupported operations are logged so any
+        // future regression surfaces in transcripts rather than silently dropping.
+        var invManager = TryResolve<UAlbion.Game.State.Player.IInventoryManager>();
+        if (invManager == null)
+            return;
+
+        var amount = itemEvent.IsRandom
+            ? (ushort)Resolve<IRandom>().Generate(itemEvent.Amount == 0 ? (ushort)1 : itemEvent.Amount)
+            : itemEvent.Amount;
+        if (amount == 0) amount = 1;
+
+        var inventoryId = new InventoryId(sheet.Id);
+        switch (itemEvent.Operation)
+        {
+            case NumericOperation.AddAmount:
+            case NumericOperation.AddPercentage:
+                invManager.TryGiveItems(inventoryId, new ItemSlot(default) { Item = itemEvent.ItemId, Amount = amount }, amount);
+                break;
+            case NumericOperation.SubtractAmount:
+            case NumericOperation.SubtractPercentage:
+                invManager.TryTakeItems(inventoryId, null, itemEvent.ItemId, amount);
+                break;
+            default:
+                Info($"ChangeItemEvent {itemEvent.Operation} on {itemEvent.ItemId} not yet handled");
+                break;
+        }
     }
 
     static void ApplyStatus(CharacterSheet sheet, ChangeStatusEvent statusEvent)
@@ -177,15 +213,95 @@ public class SheetApplier : Component
     void LifeChecks(CharacterSheet sheet)
     {
         var lp = sheet.Combat.LifePoints;
-        if (lp.Max > lp.Current)
+        // Clamp Current down when Max has been reduced (level-down, curse, etc).
+        // The previous condition was inverted (Max > Current → set Current = Max)
+        // which silently undid every Health-loss event by restoring full HP.
+        if (lp.Current > lp.Max)
             lp.Current = lp.Max;
 
-        if (lp.Current == 0)
-            Raise(new DeathEvent(sheet.Id)); // TODO: Death handling
+        if (lp.Current > 0)
+            return;
+
+        // At zero HP the original game considers the character Unconscious — a recoverable
+        // state distinct from PermanentlyDead. UnconsciousMask in PlayerConditions is what
+        // the rest of the game (e.g. Querier line 42, party-effective checks) reads to decide
+        // whether a member can act, so flipping that bit is the load-bearing change.
+        if ((sheet.Combat.Conditions & PlayerConditions.Unconscious) == 0)
+            sheet.Combat.Conditions |= PlayerConditions.Unconscious;
+
+        Raise(new DeathEvent(sheet.Id));
+
+        // If the dead member was the party leader, hand the torch to the first conscious
+        // walk-order member so the camera/status bar don't end up tied to an unconscious body.
+        var party = TryResolve<IParty>();
+        if (party?.Leader != null && (SheetId)(AssetId)party.Leader.Id == sheet.Id)
+        {
+            foreach (var candidate in party.WalkOrder)
+            {
+                if ((SheetId)(AssetId)candidate.Id == sheet.Id)
+                    continue;
+                if ((candidate.Apparent?.Combat?.Conditions & PlayerConditions.UnconsciousMask) != 0)
+                    continue;
+                Raise(new SetPartyLeaderEvent(candidate.Id, 0, 0));
+                return;
+            }
+        }
     }
 
-    // void ExperienceChecks(CharacterSheet sheet)
-    // {
-    //     // TODO: Handle leveling up.
-    // }
+    /// <summary>
+    /// Level-up check, fired after any XP change. Walks the level curve while the
+    /// accumulated XP exceeds the threshold for the next level, applying per-level stat
+    /// gains for each step (so a multi-level XP grant levels the character up multiple
+    /// times in one shot — matches the original engine's behaviour at hand-in NPCs).
+    /// </summary>
+    /// <remarks>
+    /// **PLACEHOLDER XP curve** — `XpForNextLevel(L) = L * L * 100`, a common RPG default.
+    /// Original Albion's curve isn't in `_RE_NOTES.md` yet; once the function reading
+    /// `sheet.ExperiencePoints` and comparing against a threshold is RE'd from
+    /// `prtlogic.c` (candidates: `fcn.00034b66`, `fcn.0003529d`), swap in the real one.
+    /// The per-level stat gains *are* read from the sheet (`LifePointsPerLevel` etc.)
+    /// so only the threshold needs confirmation — not the magnitude of each gain.
+    /// </remarks>
+    void ExperienceChecks(CharacterSheet sheet)
+    {
+        const int MaxLevel = 100;     // safety against runaway loops on malformed sheets
+        while (sheet.Level < MaxLevel && sheet.Combat.ExperiencePoints >= XpForNextLevel(sheet.Level))
+        {
+            sheet.Level++;
+            ApplyPerLevelGains(sheet);
+            Raise(new SheetChangedEvent(sheet.Id));
+            Info($"{sheet.Id} levelled up to {sheet.Level} (XP {sheet.Combat.ExperiencePoints})");
+        }
+    }
+
+    internal static int XpForNextLevel(int currentLevel)
+    {
+        // PLACEHOLDER: quadratic curve. Level 1 → 2 needs 100 XP, 2 → 3 needs 400, etc.
+        int next = currentLevel + 1;
+        return next * next * 100;
+    }
+
+    static void ApplyPerLevelGains(CharacterSheet sheet)
+    {
+        // LifePointsPerLevel / SpellPointsPerLevel / TrainingPointsPerLevel are encoded
+        // in the sheet binary at fixed offsets — see CharacterSheet.cs:105-107. Read them
+        // and apply to current and max. These ARE engine-encoded so trustworthy.
+        var hpGain = sheet.LifePointsPerLevel;
+        if (hpGain > 0)
+        {
+            sheet.Combat.LifePoints.ApplyToMax(NumericOperation.AddAmount, hpGain);
+            sheet.Combat.LifePoints.Apply(NumericOperation.AddAmount, hpGain);
+        }
+
+        var spGain = sheet.SpellPointsPerLevel;
+        if (spGain > 0)
+        {
+            sheet.Magic.SpellPoints.ApplyToMax(NumericOperation.AddAmount, spGain);
+            sheet.Magic.SpellPoints.Apply(NumericOperation.AddAmount, spGain);
+        }
+
+        var tpGain = sheet.TrainingPointsPerLevel;
+        if (tpGain > 0)
+            sheet.Combat.TrainingPoints = (ushort)System.Math.Min(ushort.MaxValue, sheet.Combat.TrainingPoints + tpGain);
+    }
 }

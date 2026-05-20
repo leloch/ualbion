@@ -13,6 +13,9 @@ public interface IGameState
 {
     bool Loaded { get; }
     int TickCount { get; }
+    // 48 ticks per day = one tick every 30 game-minutes. This matches the original Albion's
+    // NPC waypoint table (48 entries per character, one per half-hour slot — see MapNpc).
+    // Phase 4.1 RE'd to confirm: tick rate is 48/day = "M-tick" = 30 game-minutes.
     int MTicksToday => (int)(48.0 * Time.TimeOfDay.TotalHours);
     DateTime Time { get; }
     IParty Party { get; }

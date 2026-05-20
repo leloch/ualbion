@@ -1,0 +1,133 @@
+using UAlbion.Formats.Assets.Sheets;
+using UAlbion.Game.Combat;
+using Xunit;
+
+namespace UAlbion.Game.Tests;
+
+public class DamageCalculatorTests
+{
+    static CombatAttributes Stats(int baseAttack = 0, int bonusAttack = 0, int baseDefense = 0, int bonusDefense = 0, int magicAttack = 0, int magicDefense = 0)
+        => new()
+        {
+            BaseAttack    = (ushort)baseAttack,
+            BonusAttack   = (short)bonusAttack,
+            BaseDefense   = (ushort)baseDefense,
+            BonusDefense  = (short)bonusDefense,
+            MagicAttack   = (ushort)magicAttack,
+            MagicDefense  = (ushort)magicDefense,
+        };
+
+    [Fact]
+    public void TotalAttack_Sums_Base_And_Bonus()
+        => Assert.Equal(30, DamageCalculator.TotalAttack(Stats(baseAttack: 20, bonusAttack: 10)));
+
+    [Fact]
+    public void TotalAttack_Floors_Negative_Bonus_At_Zero()
+        => Assert.Equal(20, DamageCalculator.TotalAttack(Stats(baseAttack: 20, bonusAttack: -50)));
+
+    [Theory]
+    // RE'd from MAIN.EXE fcn.0004ee3b: damage += STR/25 (integer division)
+    [InlineData(20, 0,  20)]    // base 20, str 0  → +0
+    [InlineData(20, 24, 20)]    // str 24/25 = 0   → +0 (just under threshold)
+    [InlineData(20, 25, 21)]    // str 25/25 = 1   → +1
+    [InlineData(20, 99, 23)]    // str 99/25 = 3   → +3
+    [InlineData(20, 100, 24)]   // str 100/25 = 4  → +4
+    public void TotalAttackWithStrength_Adds_Str_Over_25(int baseAttack, int strength, int expected)
+        => Assert.Equal(expected, DamageCalculator.TotalAttackWithStrength(Stats(baseAttack: baseAttack), strength));
+
+    [Fact]
+    public void TotalAttackWithStrength_Floors_Negative_Strength_At_Zero()
+        => Assert.Equal(20, DamageCalculator.TotalAttackWithStrength(Stats(baseAttack: 20), -100));
+
+    [Fact]
+    public void Melee_Damage_Subtracts_Full_Defense_Per_Original_Engine()
+    {
+        var atk = Stats(baseAttack: 30);
+        var def = Stats(baseDefense: 20);
+        Assert.Equal(10, DamageCalculator.ComputeMeleeDamage(atk, def));
+    }
+
+    [Fact]
+    public void Melee_Damage_Returns_Zero_With_No_Attack()
+        => Assert.Equal(0, DamageCalculator.ComputeMeleeDamage(Stats(), Stats(baseDefense: 50)));
+
+    [Fact]
+    public void Melee_Damage_Zero_Floors_When_Defense_Overcomes_Attack()
+    {
+        // Per RE'd formula in fcn.0004ee3b: original engine does NOT have a min-1 floor;
+        // it returns max(0, atk - def). A heavily armoured target can fully shrug off light hits.
+        var atk = Stats(baseAttack: 1);
+        var def = Stats(baseDefense: 1000);
+        Assert.Equal(0, DamageCalculator.ComputeMeleeDamage(atk, def));
+    }
+
+    [Fact]
+    public void Hit_Chance_Is_Clamped_To_Five_Percent_Floor()
+    {
+        var atk = Stats(baseAttack: 1);
+        var def = Stats(baseDefense: 1_000_000);
+        Assert.Equal(0.05f, DamageCalculator.HitChance(atk, def), 4);
+    }
+
+    [Fact]
+    public void Hit_Chance_Is_Clamped_To_Ninety_Five_Percent_Ceiling()
+    {
+        var atk = Stats(baseAttack: 1_000_000);
+        var def = Stats(baseDefense: 1);
+        Assert.Equal(0.95f, DamageCalculator.HitChance(atk, def), 4);
+    }
+
+    [Fact]
+    public void Hit_Chance_Returns_Half_When_Both_Stats_Zero()
+        => Assert.Equal(0.5f, DamageCalculator.HitChance(Stats(), Stats()), 4);
+
+    [Fact]
+    public void Magic_Damage_Accounts_For_Spell_Power()
+    {
+        var atk = Stats(magicAttack: 10);
+        var def = Stats(magicDefense: 4); // half = 2, raw = 10 + 5 - 2 = 13
+        Assert.Equal(13, DamageCalculator.ComputeMagicDamage(atk, def, spellPower: 5));
+    }
+
+    [Theory]
+    // RE'd from MAIN.EXE fcn.00035c22: baseDmg * (50 + roll%51) / 100 — multiplier in [50, 100]
+    [InlineData(100, 0,  50)]    // floor: roll=0 → 50 %
+    [InlineData(100, 25, 75)]    // mid:   roll=25 → 75 %
+    [InlineData(100, 50, 100)]   // ceil:  roll=50 → 100 %
+    [InlineData(200, 10, 120)]
+    public void Vary_Damage_Matches_Original_Fifty_To_Hundred_Percent_Band(int baseDmg, int roll, int expected)
+        => Assert.Equal(expected, DamageCalculator.VaryDamage(baseDmg, roll));
+
+    [Fact]
+    public void Vary_Damage_Returns_Zero_For_Zero_Input()
+        => Assert.Equal(0, DamageCalculator.VaryDamage(0, 5));
+
+    [Fact]
+    public void Vary_Damage_Never_Returns_Below_One_For_Positive_Input()
+        => Assert.Equal(1, DamageCalculator.VaryDamage(1, 0));
+
+    [Theory]
+    [InlineData(0.5f, 49, true)]
+    [InlineData(0.5f, 50, false)]
+    [InlineData(0.5f, 99, false)]
+    [InlineData(1.0f, 99, true)]
+    [InlineData(0.0f, 0,  false)]
+    public void Roll_Hit_Returns_True_When_Roll_Below_Chance(float chance, int roll, bool expected)
+        => Assert.Equal(expected, DamageCalculator.RollHit(chance, roll));
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(4, true)]
+    [InlineData(5, false)]
+    [InlineData(99, false)]
+    public void Roll_Crit_Lands_Within_First_Five_Percent(int roll, bool expectedCrit)
+        => Assert.Equal(expectedCrit, DamageCalculator.RollCrit(roll));
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(7, true)]
+    [InlineData(8, false)]
+    [InlineData(50, false)]
+    public void Roll_Parry_Lands_Within_First_Eight_Percent(int roll, bool expectedParry)
+        => Assert.Equal(expectedParry, DamageCalculator.RollParry(roll));
+}

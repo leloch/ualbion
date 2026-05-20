@@ -21,26 +21,29 @@ public class LabyrinthData
     [JsonInclude] public LabyrinthId Id { get; private set; }
     public ushort WallHeight { get; set; } // in cm?
     public ushort CameraHeight { get; set; } // EffectiveHeight = (CameraHeight << 16) + 165??
-    public ushort Unk4 { get; set; }
+    public ushort Unk4 { get; set; } // Unused per freealbion wiki LABDATA.
     public SpriteId BackgroundId { get; set; }
-    public ushort BackgroundYPosition { get; set; } // MAX(1096 - (BackgroundYPosition >> 16), 0)??
+    public ushort BackgroundYPosition { get; set; } // MAX(1096 - (BackgroundYPosition >> 16), 0)
     public ushort FogDistance { get; set; } // Distance in tiles that fog begins.
     public ushort FogRed { get; set; }
     public ushort FogGreen { get; set; }
     public ushort FogBlue { get; set; }
-    public byte Unk12 { get; set; }
-    public byte Unk13 { get; set; }
+    public byte Unk12 { get; set; } // Still genuinely unknown per freealbion wiki. Sits at offset 0x12, byte width — not part of fog colour packing.
+    public byte Unk13 { get; set; } // Unused per freealbion wiki.
     public byte BackgroundColour { get; set; } // Palette index
-    public byte Unk15 { get; set; }
+    public byte Unk15 { get; set; } // Unused per freealbion wiki.
     public ushort FogMode { get; set; }
-    public ushort MaxLight { get; set; }
-    public ushort WallWidth { get; set; } // Effective = (1 << WallWidth), always between 7 & 10 (?)
-    public int EffectiveWallWidth => 1 << WallWidth; // Effective = (1 << WallWidth), always between 7 & 10 (?)
+    public ushort MaxLight { get; set; } // "max light strength" per wiki.
+    public ushort WallWidth { get; set; } // Effective = (1 << WallWidth), always between 7 & 10
+    public int EffectiveWallWidth => 1 << WallWidth;
     public ushort BackgroundTileAmount { get; set; }
-    public ushort MaxVisibleTiles { get; set; }
-    public ushort Unk20 { get; set; }
+    public ushort MaxVisibleTiles { get; set; } // Viewing distance / how many tiles the player can see.
+    public ushort Unk20 { get; set; } // Unused per freealbion wiki.
+    // Lighting: "multiplied with data @0xFAD66 in MAIN.EXE and divided by 100" — the per-map
+    // light scaling constant. For UAlbion this is the AmbientLightLevel value forwarded to the
+    // shader. Effective intensity = (Lighting × map-config-constant) / 100.
     public ushort Lighting { get; set; }
-    public ushort Unk24 { get; set; }
+    public ushort Unk24 { get; set; } // Unused per freealbion wiki.
     [JsonInclude] public IList<ObjectGroup> ObjectGroups { get; private set; } = [];
     [JsonInclude] public IList<LabyrinthObject> Objects { get; private set; } = [];
     [JsonInclude] public IList<FloorAndCeiling> FloorAndCeilings { get; private set; } = [];

@@ -20,6 +20,8 @@ public class LogicalMap3D : LogicalMap
         _labyrinth = labyrinth ?? throw new ArgumentNullException(nameof(labyrinth));
     }
 
+    public LabyrinthData Labyrinth => _labyrinth;
+
     protected override void ChangeFloor(byte x, byte y, ushort value)
     {
         var index = Index(x, y);

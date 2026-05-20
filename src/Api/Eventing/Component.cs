@@ -83,7 +83,7 @@ public abstract class Component : IComponent
     /// </summary>
     /// <typeparam name="T">The interface type to resolve</typeparam>
     /// <returns></returns>
-    protected T TryResolve<T>() => Exchange.Resolve<T>();
+    protected T TryResolve<T>() => Exchange is null ? default : Exchange.Resolve<T>();
 
     /// <summary>
     /// Raise an event via the currently subscribed event exchange (if subscribed), and

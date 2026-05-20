@@ -19,9 +19,11 @@ public class Selection3D : Component
 
         scene.RayIntersect(e.Origin, e.Direction, e.Selections);
 
-        // Find floor / ceiling hit (furthest point)
-        // Iterate all tiles on a straight-line path between origin and floor hit
-        // For each tile, yield if filled and if empty iterate contents performing hit checks.
+        // PLACEHOLDER (Phase 6.4): Per-tile picking. Ground-plane intersection math is
+        // commented below — to activate, this component needs references to MapRenderable3D
+        // (for tile size + weak refs) and LogicalMap3D (for underlay/overlay queries +
+        // GetZone), matching the constructor signature of SelectionHandler2D. The ray-vs-
+        // floor-plane math itself is correct; the missing piece is the scene wiring.
 /*
             float denominator = Vector3.Dot(Normal, e.Direction);
             if (Math.Abs(denominator) < 0.00001f)

@@ -45,7 +45,7 @@ public static class DebugUi
         {
             var span = CollectionsMarshal.AsSpan(RenderList);
             ref var r = ref span[_index];
-            r.Color = new Vector4(r.Color.W);
+            r.Color = new Vector4(color, r.Color.W);
             return this;
         }
 
@@ -66,7 +66,7 @@ public static class DebugUi
     static Accessor Add(RenderableType type, CoordinateSystem system, Vector3 a, Vector3 b)
     {
         var index = RenderList.Count;
-        RenderList.Add(new Renderable(RenderableType.Line2D, system, a, b));
+        RenderList.Add(new Renderable(type, system, a, b));
         return new Accessor(index);
     }
 

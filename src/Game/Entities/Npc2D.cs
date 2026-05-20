@@ -261,13 +261,39 @@ public class Npc2D : Component
 
     void MovementChaseParty()
     {
+        // Only retarget on tile arrival — same rationale as MovementRandom: re-aiming on
+        // every FastClock tick stalls the sprite step before it completes.
+        if (_state.X != _targetX || _state.Y != _targetY)
+            return;
+
         var party = Resolve<IParty>();
         var pos = party.Leader.GetPosition();
+
+        // PLACEHOLDER give-up distance — 16 tiles Manhattan radius. The original engine
+        // likely had a per-NPC pursue range (MapNpc field), but until that's RE'd this
+        // prevents off-map NPCs from following the party across an entire 100×100 map.
+        const int GiveUpRadius = 16;
+        int dx = System.Math.Abs((int)pos.X - _state.X);
+        int dy = System.Math.Abs((int)pos.Y - _state.Y);
+        if (dx + dy > GiveUpRadius)
+        {
+            // Out of range — stop where we are rather than oscillating toward the party.
+            SetTarget(_state.X, _state.Y);
+            return;
+        }
+
         SetTarget((int)pos.X, (int)pos.Y);
     }
 
     void MovementRandom()
     {
+        // Only pick a new direction once the NPC actually finishes traversing to its
+        // current target tile. Without this gate the NPC re-rolls on every FastClock tick
+        // and oscillates in place — the new random direction overwrites the in-flight one
+        // before the sprite can complete the step.
+        if (_state.X != _targetX || _state.Y != _targetY)
+            return;
+
         var (x,y) = Resolve<IRandom>().Generate(4) switch
         {
             0 => (-1, 0),
@@ -278,4 +304,5 @@ public class Npc2D : Component
 
         SetTarget(x + _state.X, y + _state.Y);
     }
+
 }

@@ -1,5 +1,5 @@
 @echo off
-set BINDIR=%~dp0\build\UAlbion\bin\Release\net6.0
+set BINDIR=%~dp0\build\UAlbion\bin\Release\net9.0
 
 if x%1 == xextract goto extract
 if x%1 == xbuild goto build
