@@ -17,6 +17,8 @@ using UAlbion.Formats.Assets.Sheets;
 using UAlbion.Game.Events;
 using UAlbion.Game.Gui;
 using UAlbion.Game.State;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using Veldrid;
 using Veldrid.Sdl2;
 
@@ -64,6 +66,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
     readonly int _port;
     readonly HttpListener _listener;
     readonly ConcurrentQueue<PendingRequest> _queue = new();
+    readonly ConcurrentQueue<HttpListenerContext> _pendingScreenshots = new();
     readonly CancellationTokenSource _shutdownCts = new();
     long _frameCount;
     DateTime _lastFrameTime = DateTime.UtcNow;
@@ -81,6 +84,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
         Task.Run(AcceptLoopAsync);
 
         On<EngineUpdateEvent>(_ => Pump());
+        On<PreSwapBuffersEvent>(_ => FulfillScreenshots());
     }
 
     async Task AcceptLoopAsync()
@@ -113,7 +117,12 @@ public sealed class HarnessHttpServer : Component, IDisposable
         int budget = 32;
         while (budget-- > 0 && _queue.TryDequeue(out var req))
         {
-            try { Handle(req.Context); }
+            bool deferred = false;
+            try
+            {
+                deferred = IsScreenshotRequest(req.Context);
+                Handle(req.Context);
+            }
             catch (Exception ex)
             {
                 _lastError = $"{ex.GetType().Name}: {ex.Message}";
@@ -121,11 +130,19 @@ public sealed class HarnessHttpServer : Component, IDisposable
             }
             finally
             {
-                try { req.Context.Response.Close(); } catch { /* client may have disconnected */ }
+                // Screenshot requests are queued to PreSwapBuffersEvent — don't close them
+                // here or the client never sees the PNG. FulfillScreenshots() owns the close.
+                if (!deferred)
+                {
+                    try { req.Context.Response.Close(); } catch { /* client may have disconnected */ }
+                }
                 req.Done.TrySetResult(true);
             }
         }
     }
+
+    static bool IsScreenshotRequest(HttpListenerContext ctx)
+        => ctx.Request.HttpMethod == "POST" && ctx.Request.Url?.AbsolutePath == "/screenshot";
 
     void Handle(HttpListenerContext ctx)
     {
@@ -137,6 +154,8 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /healthz":         WriteJson(ctx, Healthz()); break;
             case "GET /state":           WriteJson(ctx, BuildState()); break;
             case "GET /ui":              WriteJson(ctx, BuildUiTree()); break;
+            case "GET /labyrinth":       WriteJson(ctx, BuildLabyrinthDump()); break;
+            case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "POST /event/raw":      HandleEventRaw(ctx); break;
             case "POST /event":          HandleEventJson(ctx); break;
             case "POST /click":          HandleClickById(ctx); break;
@@ -223,6 +242,93 @@ public sealed class HarnessHttpServer : Component, IDisposable
         sb.Append($"\"frame\":{_frameCount},");
         sb.Append($"\"commandsProcessed\":{_commandsProcessed},");
         sb.Append($"\"lastError\":{JsonString(_lastError)}");
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    string BuildLabyrinthDump()
+    {
+        var mapMgr = TryResolve<UAlbion.Game.IMapManager>();
+        var map = mapMgr?.Current;
+        if (map == null) return "{\"loaded\":false}";
+
+        var sb = new StringBuilder();
+        sb.Append('{');
+        sb.Append($"\"mapId\":{JsonString(map.MapId.ToString())},");
+        sb.Append($"\"mapType\":{JsonString(map.MapType.ToString())},");
+        sb.Append($"\"tileSizeX\":{F(map.TileSize.X)},");
+        sb.Append($"\"tileSizeY\":{F(map.TileSize.Y)},");
+        sb.Append($"\"tileSizeZ\":{F(map.TileSize.Z)},");
+        sb.Append($"\"baseCameraHeight\":{F(map.BaseCameraHeight)}");
+
+        // Cast to DungeonMap to pull labyrinth-specific fields if we're in a 3D map.
+        if (map is UAlbion.Game.Entities.Map3D.DungeonMap dungeon)
+        {
+            sb.Append(',');
+            // Use reflection to read the private _labyrinthData field (we're outside the
+            // assembly that owns it). Falling back to public TileSize / BaseCameraHeight
+            // if reflection fails. Strictly diagnostic — fine to be loose here.
+            try
+            {
+                var field = typeof(UAlbion.Game.Entities.Map3D.DungeonMap)
+                    .GetField("_labyrinthData", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                var lab = field?.GetValue(dungeon) as UAlbion.Formats.Assets.Labyrinth.LabyrinthData;
+                if (lab != null)
+                {
+                    sb.Append($"\"wallHeight\":{lab.WallHeight},");
+                    sb.Append($"\"cameraHeight\":{lab.CameraHeight},");
+                    sb.Append($"\"wallWidth\":{lab.WallWidth},");
+                    sb.Append($"\"effectiveWallWidth\":{lab.EffectiveWallWidth},");
+                    sb.Append($"\"backgroundColour\":{lab.BackgroundColour},");
+                    sb.Append($"\"fogDistance\":{lab.FogDistance},");
+                    sb.Append($"\"fogR\":{lab.FogRed},\"fogG\":{lab.FogGreen},\"fogB\":{lab.FogBlue},");
+                    sb.Append($"\"fogMode\":{lab.FogMode},");
+                    sb.Append($"\"maxLight\":{lab.MaxLight},");
+                    sb.Append($"\"lighting\":{lab.Lighting},");
+                    sb.Append($"\"maxVisibleTiles\":{lab.MaxVisibleTiles},");
+                    sb.Append($"\"backgroundYPosition\":{lab.BackgroundYPosition},");
+                    sb.Append($"\"backgroundTileAmount\":{lab.BackgroundTileAmount},");
+                    sb.Append($"\"wallCount\":{lab.Walls?.Count ?? 0},");
+                    sb.Append($"\"floorCount\":{lab.FloorAndCeilings?.Count ?? 0},");
+                    sb.Append($"\"objectGroupCount\":{lab.ObjectGroups?.Count ?? 0},");
+                    sb.Append($"\"objectCount\":{lab.Objects?.Count ?? 0},");
+                    sb.Append($"\"objectYScaling\":{F(lab.ObjectYScaling)},");
+                    sb.Append($"\"fogColorPacked\":{lab.FogColor}");
+                }
+                else
+                {
+                    sb.Append("\"labyrinth\":\"not-accessible\"");
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.Append($"\"labyrinthError\":{JsonString(ex.Message)}");
+            }
+        }
+
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    string BuildCameraDump()
+    {
+        var camera = TryResolve<UAlbion.Core.Visual.ICamera>();
+        if (camera == null) return "{\"camera\":null}";
+
+        var pos = camera.Position;
+        var look = camera.LookDirection;
+        var sb = new StringBuilder();
+        sb.Append('{');
+        sb.Append($"\"position\":{{\"x\":{F(pos.X)},\"y\":{F(pos.Y)},\"z\":{F(pos.Z)}}},");
+        sb.Append($"\"lookDir\":{{\"x\":{F(look.X)},\"y\":{F(look.Y)},\"z\":{F(look.Z)}}},");
+        sb.Append($"\"yaw\":{F(camera.Yaw)},");
+        sb.Append($"\"pitch\":{F(camera.Pitch)},");
+        sb.Append($"\"viewport\":{{\"w\":{F(camera.Viewport.X)},\"h\":{F(camera.Viewport.Y)}}},");
+        sb.Append($"\"nearDistance\":{F(camera.NearDistance)},");
+        sb.Append($"\"farDistance\":{F(camera.FarDistance)},");
+        sb.Append($"\"fieldOfView\":{F(camera.FieldOfView)},");
+        sb.Append($"\"aspectRatio\":{F(camera.AspectRatio)},");
+        sb.Append($"\"magnification\":{F(camera.Magnification)}");
         sb.Append('}');
         return sb.ToString();
     }
@@ -422,13 +528,56 @@ public sealed class HarnessHttpServer : Component, IDisposable
         WriteJson(ctx, $"{{\"ok\":true,\"x\":{x},\"y\":{y},\"button\":{JsonString(buttonName)}}}");
     }
 
-    static void HandleScreenshot(HttpListenerContext ctx)
+    void HandleScreenshot(HttpListenerContext ctx)
     {
-        // The visible framebuffer is the swapchain (MainFramebuffer), which doesn't expose
-        // an ITextureHolder directly. Capturing it would need an offscreen render-target
-        // refactor in Core.Veldrid. Defer this to a follow-up; return 501 with hint.
-        TryWriteError(ctx, HttpStatusCode.NotImplemented,
-            "/screenshot pending offscreen-RT plumbing; use external screen-capture for now");
+        // Defer to PreSwapBuffersEvent so we capture AFTER render writes the swapchain
+        // back buffer but BEFORE Device.SwapBuffers rotates it. Capturing on
+        // EngineUpdateEvent (before render) reads the cleared / previous-frame contents
+        // which is why the first attempt at this returned a blank white image.
+        _pendingScreenshots.Enqueue(ctx);
+        // Note: the outer Pump() will Response.Close() this context — we MUST NOT close it
+        // there until the screenshot is fulfilled. Steal it from the queue by returning a
+        // sentinel that Pump treats as "do not close" (see Pump for handling).
+    }
+
+    void FulfillScreenshots()
+    {
+        while (_pendingScreenshots.TryDequeue(out var ctx))
+        {
+            try
+            {
+                var engine = TryResolve<UAlbion.Core.Veldrid.IVeldridEngine>();
+                if (engine == null)
+                {
+                    TryWriteError(ctx, HttpStatusCode.ServiceUnavailable, "no IVeldridEngine — game not running");
+                    continue;
+                }
+
+                using var image = engine.CaptureSwapchain();
+                if (image == null)
+                {
+                    TryWriteError(ctx, HttpStatusCode.ServiceUnavailable, "swapchain framebuffer not ready");
+                    continue;
+                }
+
+                using var ms = new MemoryStream();
+                image.SaveAsPng(ms);
+                var bytes = ms.ToArray();
+                ctx.Response.StatusCode = (int)HttpStatusCode.OK;
+                ctx.Response.ContentType = "image/png";
+                ctx.Response.ContentLength64 = bytes.Length;
+                ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+            }
+            catch (Exception ex)
+            {
+                _lastError = $"{ex.GetType().Name}: {ex.Message}";
+                TryWriteError(ctx, HttpStatusCode.InternalServerError, _lastError);
+            }
+            finally
+            {
+                try { ctx.Response.Close(); } catch { }
+            }
+        }
     }
 
     void HandleQuit(HttpListenerContext ctx)
