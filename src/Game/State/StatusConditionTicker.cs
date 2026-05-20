@@ -92,7 +92,7 @@ public class StatusConditionTicker : GameComponent
         foreach (var pm in party.StatusBarOrder)
         {
             if (pm?.Apparent?.Combat == null) continue;
-            var sheetId = (SheetId)(AssetId)pm.Id;
+            var sheetId = pm.Id.ToSheet();
             foreach (var (cond, defaultHours) in DefaultHours)
             {
                 if ((pm.Apparent.Combat.Conditions & cond.ToFlag()) == 0) continue;
@@ -106,7 +106,7 @@ public class StatusConditionTicker : GameComponent
     static bool HasCondition(IParty party, SheetId id, PlayerCondition cond)
     {
         foreach (var pm in party.StatusBarOrder)
-            if ((SheetId)(AssetId)pm.Id == id)
+            if (pm.Id.ToSheet() == id)
                 return (pm.Apparent?.Combat?.Conditions & cond.ToFlag()) != 0;
         return false;
     }

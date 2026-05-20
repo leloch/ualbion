@@ -18,6 +18,19 @@ public sealed class CommandLineOptions
     public bool NeedsEngine => Mode == ExecutionMode.Game;
     public bool StartupOnly { get; }
     public bool UseRenderDoc { get; }
+    /// <summary>
+    /// Directory used by the external testing harness (driver writes commands to in.jsonl,
+    /// reads results / state snapshots from out.jsonl). Null disables the harness channel.
+    /// Enable with <c>--harness &lt;dir&gt;</c>.
+    /// </summary>
+    public string HarnessPath { get; private set; }
+    /// <summary>
+    /// TCP port for the HTTP remote-control harness. When set, the game hosts an
+    /// HttpListener on <c>http://localhost:&lt;port&gt;/</c> that lets external tooling
+    /// drive the game (POST events, observe state, click UI elements by ID, capture
+    /// screenshots). Activate via <c>--harness-http &lt;port&gt;</c>. Null disables.
+    /// </summary>
+    public int? HarnessHttpPort { get; private set; }
     public string[] ConvertFrom { get; }
     public string ConvertTo { get; }
     public Regex ConvertFilePattern { get; }
@@ -78,6 +91,29 @@ public sealed class CommandLineOptions
             }
             if (arg is "--STARTUPONLY" or "-S") StartupOnly = true;
             if (arg is "--RENDERDOC" or "-RD") UseRenderDoc = true;
+
+            if (arg == "--HARNESS")
+            {
+                if (i + 1 >= args.Length)
+                {
+                    Console.WriteLine("\"--harness\" requires a directory argument");
+                    Mode = ExecutionMode.Exit;
+                    return;
+                }
+                HarnessPath = args[++i];
+            }
+
+            if (arg is "--HARNESS-HTTP" or "-HH")
+            {
+                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out var port) || port <= 0 || port > 65535)
+                {
+                    Console.WriteLine("\"--harness-http\" requires a TCP port (1..65535)");
+                    Mode = ExecutionMode.Exit;
+                    return;
+                }
+                i++;
+                HarnessHttpPort = port;
+            }
 
             if (arg is "--COMMANDS" or "-C")
             {
@@ -220,6 +256,8 @@ Options:
     --startuponly : Exit immediately after the first frame (for profiling startup time etc) (aliases: -s)
     --renderdoc   : Load the RenderDoc plugin on startup (aliases: -rd)
     --mods        : Override the default mod list (aliases: -m --mod)
+    --harness <Dir> : Run with the external testing-harness channel. The driver writes one event-script command per line to <Dir>/in.jsonl; the game appends per-command outcome records (and harness state dumps) to <Dir>/out.jsonl. Use with `dump_state <path>` events to observe game state from outside.
+    --harness-http <Port> : Run with an HTTP remote-control harness on http://localhost:<port>/ (aliases: -hh). Endpoints: GET /healthz /state /ui ; POST /event /event/raw /click /click/at /screenshot /quit. Localhost-only by default. Use for autonomous test agents, CI smoke runs that need to drive UI, etc.
 
 Dump / Convert options:
     --formats <Formats> : Specifies the formats for the dumped data (defaults to JSON, valid formats: {formats})
