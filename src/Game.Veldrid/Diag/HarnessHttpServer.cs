@@ -168,10 +168,21 @@ public sealed class HarnessHttpServer : Component, IDisposable
         sb.Append('{');
         var state = TryResolve<IGameState>();
         var party = TryResolve<IParty>();
-        sb.Append($"\"loaded\":{(state?.Loaded == true ? "true" : "false")},");
-        sb.Append($"\"map\":{JsonString(state?.MapId.ToString())},");
-        sb.Append($"\"time\":{JsonString(state?.Time.ToString("O") ?? "")},");
-        sb.Append($"\"tickCount\":{state?.TickCount ?? 0},");
+
+        // IGameState.MapId / Time / TickCount throw NRE pre-load because they deref the
+        // internal SavedGame ref. Gate on Loaded to keep /state callable on the main menu.
+        bool loaded = state?.Loaded == true;
+        sb.Append($"\"loaded\":{(loaded ? "true" : "false")},");
+        if (loaded)
+        {
+            sb.Append($"\"map\":{JsonString(state.MapId.ToString())},");
+            sb.Append($"\"time\":{JsonString(state.Time.ToString("O"))},");
+            sb.Append($"\"tickCount\":{state.TickCount},");
+        }
+        else
+        {
+            sb.Append("\"map\":null,\"time\":null,\"tickCount\":0,");
+        }
 
         var leader = party?.Leader;
         if (leader != null)
