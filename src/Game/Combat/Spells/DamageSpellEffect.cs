@@ -38,9 +38,11 @@ public sealed class DamageSpellEffect : ISpellEffect
         int varied = DamageCalculator.VaryDamage(raw, rolled);
         var amount = (ushort)Math.Min(ushort.MaxValue, varied);
 
-        if (context.RaiseEvent != null && context.Target?.SheetId != null)
+        if (context.RaiseEvent != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {
-            var targetId = (TargetId)(AssetId)context.Target.SheetId;
+            // TargetId only accepts PartyMember (not PartySheet) — remap the same numeric id.
+            // Monsters skip the event because they aren't in GameState.Sheets.
+            var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);
             context.RaiseEvent(new DataChangeEvent(targetId, ChangeProperty.Health, NumericOperation.SubtractAmount, amount));
         }
         return SpellCastOutcome.Hit;
