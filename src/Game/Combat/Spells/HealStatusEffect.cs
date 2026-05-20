@@ -45,9 +45,9 @@ public sealed class HealStatusEffect : ISpellEffect
         // Clear the status condition by raising ChangeStatusEvent — SheetApplier routes
         // SubtractAmount on a Status property through PlayerConditions &= ~flag.
         var raise = context.RaiseEvent;
-        if (raise != null && context.Target?.SheetId != null)
+        if (raise != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {
-            var targetId = (TargetId)(AssetId)context.Target.SheetId;
+            var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);
             raise(new ChangeStatusEvent(targetId, Condition, NumericOperation.SubtractAmount, 1));
         }
         return SpellCastOutcome.Hit;

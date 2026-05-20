@@ -350,12 +350,15 @@ public sealed class HarnessHttpServer : Component, IDisposable
     {
         string body = ReadBody(ctx);
         string id;
+        string button = "left";
         try
         {
             using var doc = JsonDocument.Parse(body);
             id = doc.RootElement.GetProperty("id").GetString();
+            if (doc.RootElement.TryGetProperty("button", out var b))
+                button = b.GetString() ?? "left";
         }
-        catch (Exception ex) { TryWriteError(ctx, HttpStatusCode.BadRequest, "expected {\"id\":\"...\"}: " + ex.Message); return; }
+        catch (Exception ex) { TryWriteError(ctx, HttpStatusCode.BadRequest, "expected {\"id\":\"...\",[\"button\":\"left|right\"]}: " + ex.Message); return; }
         if (string.IsNullOrEmpty(id)) { TryWriteError(ctx, HttpStatusCode.BadRequest, "missing 'id'"); return; }
 
         var layoutMgr = TryResolve<ILayoutManager>();
@@ -377,9 +380,16 @@ public sealed class HarnessHttpServer : Component, IDisposable
             return;
         }
         // Send the click+release pair the same way the UI normally would.
-        component.Receive(new UiLeftClickEvent(), this);
-        component.Receive(new UiLeftReleaseEvent(), this);
-        WriteJson(ctx, $"{{\"ok\":true,\"id\":{JsonString(id)},\"kind\":{JsonString(found.GetType().Name)}}}");
+        if (button.Equals("right", StringComparison.OrdinalIgnoreCase))
+        {
+            component.Receive(new UiRightClickEvent(), this);
+        }
+        else
+        {
+            component.Receive(new UiLeftClickEvent(), this);
+            component.Receive(new UiLeftReleaseEvent(), this);
+        }
+        WriteJson(ctx, $"{{\"ok\":true,\"id\":{JsonString(id)},\"kind\":{JsonString(found.GetType().Name)},\"button\":{JsonString(button)}}}");
     }
 
     void HandleClickAt(HttpListenerContext ctx)

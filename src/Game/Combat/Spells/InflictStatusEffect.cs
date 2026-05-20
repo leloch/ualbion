@@ -35,9 +35,9 @@ public sealed class InflictStatusEffect : ISpellEffect
         if ((combat.Conditions & flag) != 0)
             return SpellCastOutcome.Failed;
 
-        if (context.RaiseEvent != null && context.Target?.SheetId != null)
+        if (context.RaiseEvent != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {
-            var targetId = (TargetId)(AssetId)context.Target.SheetId;
+            var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);
             context.RaiseEvent(new ChangeStatusEvent(targetId, Condition, NumericOperation.AddAmount, 1));
         }
         return SpellCastOutcome.Hit;

@@ -45,9 +45,10 @@ public sealed class HealHpEffect : ISpellEffect
         if (healed <= 0) return SpellCastOutcome.Failed;
         var amount = (ushort)Math.Min(ushort.MaxValue, healed);
 
-        if (context.RaiseEvent != null && context.Target?.SheetId != null)
+        if (context.RaiseEvent != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {
-            var targetId = (TargetId)(AssetId)context.Target.SheetId;
+            // TargetId only accepts PartyMember; PartySheet.N → PartyMember.N (same numeric id).
+            var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);
             context.RaiseEvent(new DataChangeEvent(targetId, ChangeProperty.Health, NumericOperation.AddAmount, amount));
         }
         return SpellCastOutcome.Hit;

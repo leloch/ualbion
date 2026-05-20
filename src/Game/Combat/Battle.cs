@@ -153,8 +153,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             var combat = p?.Effective?.Combat;
             if (combat == null) continue;
             if ((combat.Conditions & UAlbion.Formats.Assets.Sheets.PlayerConditions.Asleep) == 0) continue;
-            var target = (TargetId)(AssetId)p.SheetId;
-            Raise(new ChangeStatusEvent(target, UAlbion.Formats.Assets.Sheets.PlayerCondition.Asleep, NumericOperation.SubtractAmount, 1));
+            var target = TryToTarget(p);
+            if (target == null) continue; // monster — sleep state lives on the Effective clone, not in GameState.Sheets
+            Raise(new ChangeStatusEvent(target.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Asleep, NumericOperation.SubtractAmount, 1));
         }
     }
 
@@ -170,6 +171,26 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     static bool IsParty(ICombatParticipant p)
         => p.CombatPosition / SavedGame.CombatColumns >= SavedGame.CombatRowsForMobs;
+
+    /// <summary>
+    /// Safely convert a combat participant's SheetId to a TargetId for events that flow
+    /// through SheetApplier (ChangeStatusEvent, DataChangeEvent, etc.). TargetId only
+    /// accepts PartyMember / NpcSheet / Target / None — passing a raw PartySheet or
+    /// MonsterSheet throws ArgumentOutOfRangeException at construction time. For party
+    /// members we map PartySheet.N → PartyMember.N (same numeric id, different enum
+    /// namespace). For monsters there is no equivalent target — their state lives in
+    /// Battle._liveHp + ICombatParticipant.Effective, so the caller should skip the
+    /// event-raise instead.
+    /// </summary>
+    static TargetId? TryToTarget(ICombatParticipant p)
+    {
+        if (p?.SheetId == null) return null;
+        var sheetId = p.SheetId;
+        if (sheetId.Type == UAlbion.Config.AssetType.PartySheet)
+            return new TargetId(UAlbion.Config.AssetType.PartyMember, sheetId.Id);
+        // Monsters / other types: no compatible TargetId mapping.
+        return null;
+    }
 
     /// <summary>
     /// Take a single combatant's turn — AP-loop attack pattern reverse-engineered from
@@ -221,8 +242,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             int row = attacker.CombatPosition / SavedGame.CombatColumns;
             if (row == SavedGame.CombatRows - 1)
             {
-                var targetId = (TargetId)(AssetId)attacker.SheetId;
-                Raise(new ChangeStatusEvent(targetId, UAlbion.Formats.Assets.Sheets.PlayerCondition.Fleeing, NumericOperation.AddAmount, 1));
+                var targetId = TryToTarget(attacker);
+                if (targetId != null)
+                    Raise(new ChangeStatusEvent(targetId.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Fleeing, NumericOperation.AddAmount, 1));
             }
             return;
         }
@@ -350,10 +372,11 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         // Also route through the data-change pipeline so any persistent sheet (party members
         // resolved via GameState.Sheets) updates and SheetApplier.LifeChecks fires
-        // Unconscious / DeathEvent / leader-handoff. For transient monster clones this is a
-        // no-op which is fine — the _liveHp shadow drives termination.
-        var target = (TargetId)(AssetId)defender.SheetId;
-        Raise(new DataChangeEvent(target, ChangeProperty.Health, NumericOperation.SubtractAmount, amount));
+        // Unconscious / DeathEvent / leader-handoff. For transient monster clones the
+        // TargetId mapping is null and the _liveHp shadow above already records the damage.
+        var target = TryToTarget(defender);
+        if (target != null)
+            Raise(new DataChangeEvent(target.Value, ChangeProperty.Health, NumericOperation.SubtractAmount, amount));
 
         Info($"{attacker.SheetId} hits {defender.SheetId} for {amount} damage (HP {next}/{d.LifePoints.Max})");
 
