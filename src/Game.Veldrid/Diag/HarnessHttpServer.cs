@@ -156,6 +156,8 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /ui":              WriteJson(ctx, BuildUiTree()); break;
             case "GET /labyrinth":       WriteJson(ctx, BuildLabyrinthDump()); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
+            case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
+            case "GET /wallpixels":      WriteJson(ctx, BuildWallPixelsDump(ctx)); break;
             case "POST /event/raw":      HandleEventRaw(ctx); break;
             case "POST /event":          HandleEventJson(ctx); break;
             case "POST /click":          HandleClickById(ctx); break;
@@ -305,6 +307,178 @@ public sealed class HarnessHttpServer : Component, IDisposable
                 sb.Append($"\"labyrinthError\":{JsonString(ex.Message)}");
             }
         }
+
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    string BuildTilemapDump()
+    {
+        // Walk the EtmManager's children to find the active ExtrudedTilemap and dump its
+        // texture atlas dimensions. This tells us whether the wall texture regions have
+        // sensible sizes vs being collapsed to 1×N or having TexSize=(1,1) bugs.
+        var etmMgr = TryResolve<UAlbion.Core.Visual.IEtmManager>();
+        if (etmMgr == null)
+            return "{\"error\":\"no IEtmManager\"}";
+
+        // Children is protected on Component — reach it via reflection. Diagnostic-only.
+        var childrenField = etmMgr.GetType().BaseType?.BaseType?.GetField("_children",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? typeof(UAlbion.Api.Eventing.Component).GetProperty("Children",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic) as object;
+        System.Collections.IEnumerable children = null;
+        if (childrenField is System.Reflection.FieldInfo fi)
+            children = fi.GetValue(etmMgr) as System.Collections.IEnumerable;
+        else if (childrenField is System.Reflection.PropertyInfo pi)
+            children = pi.GetValue(etmMgr) as System.Collections.IEnumerable;
+        if (children == null)
+            return "{\"error\":\"could not reflect Children\"}";
+
+        var sb = new StringBuilder();
+        sb.Append("{\"tilemaps\":[");
+        bool firstTm = true;
+        foreach (var child in children)
+        {
+            if (child is not UAlbion.Core.Veldrid.Etm.ExtrudedTilemap tilemap) continue;
+            if (!firstTm) sb.Append(',');
+            firstTm = false;
+
+            sb.Append('{');
+            sb.Append($"\"name\":{JsonString(tilemap.Name)},");
+            sb.Append($"\"tileCount\":{tilemap.TileCount},");
+
+            // DayWalls atlas: dimensions + per-region size sample
+            var walls = tilemap.DayWalls;
+            if (walls != null)
+            {
+                sb.Append($"\"wallsAtlas\":{{\"w\":{walls.Width},\"h\":{walls.Height},\"layers\":{walls.ArrayLayers},\"regionCount\":{walls.Regions.Count}}},");
+                sb.Append("\"firstWallRegions\":[");
+                int show = Math.Min(8, walls.Regions.Count);
+                for (int i = 0; i < show; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    var r = walls.Regions[i];
+                    sb.Append($"{{\"x\":{r.X},\"y\":{r.Y},\"w\":{r.Width},\"h\":{r.Height},\"texSize\":[{F(r.TexSize.X)},{F(r.TexSize.Y)}],\"layer\":{r.Layer}}}");
+                }
+                sb.Append("],");
+            }
+
+            var floors = tilemap.DayFloors;
+            if (floors != null)
+            {
+                sb.Append($"\"floorsAtlas\":{{\"w\":{floors.Width},\"h\":{floors.Height},\"layers\":{floors.ArrayLayers},\"regionCount\":{floors.Regions.Count}}}");
+            }
+
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Dump a small sample of raw pixel data from a wall texture layer to verify the
+    /// asset-loading path. Query string: ?layer=N&amp;w=8&amp;h=8 (defaults: layer=1, 8×8).
+    /// Returns hex-encoded ARGB pixels in row-major order plus column/row statistics.
+    /// </summary>
+    string BuildWallPixelsDump(HttpListenerContext ctx)
+    {
+        var query = ctx.Request.QueryString;
+        int wantLayer = int.TryParse(query["layer"], out var lv) && lv > 0 ? lv : 1;
+        int sampleW = int.TryParse(query["w"], out var wv) && wv > 0 ? wv : 8;
+        int sampleH = int.TryParse(query["h"], out var hv) && hv > 0 ? hv : 8;
+
+        var etmMgr = TryResolve<UAlbion.Core.Visual.IEtmManager>();
+        if (etmMgr == null)
+            return "{\"error\":\"no IEtmManager\"}";
+
+        var childrenField = typeof(UAlbion.Api.Eventing.Component).GetField("_children",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var children = childrenField?.GetValue(etmMgr) as System.Collections.IEnumerable;
+        if (children == null)
+            return "{\"error\":\"could not reflect Children\"}";
+
+        UAlbion.Core.Veldrid.Etm.ExtrudedTilemap tilemap = null;
+        foreach (var c in children)
+            if (c is UAlbion.Core.Veldrid.Etm.ExtrudedTilemap tm) { tilemap = tm; break; }
+        if (tilemap == null) return "{\"error\":\"no active ExtrudedTilemap\"}";
+
+        var walls = tilemap.DayWalls;
+        if (walls == null) return "{\"error\":\"no DayWalls\"}";
+        if (wantLayer >= walls.ArrayLayers)
+            return $"{{\"error\":\"layer {wantLayer} out of range (max {walls.ArrayLayers - 1})\"}}";
+
+        var buffer = walls.GetLayerBuffer(wantLayer);
+        if (buffer.Buffer.Length == 0)
+            return "{\"error\":\"empty layer buffer\"}";
+
+        int actualSampleW = Math.Min(sampleW, buffer.Width);
+        int actualSampleH = Math.Min(sampleH, buffer.Height);
+
+        var sb = new StringBuilder();
+        sb.Append('{');
+        sb.Append($"\"layer\":{wantLayer},");
+        sb.Append($"\"bufferWidth\":{buffer.Width},");
+        sb.Append($"\"bufferHeight\":{buffer.Height},");
+        sb.Append($"\"bufferStride\":{buffer.Stride},");
+        sb.Append($"\"sampleW\":{actualSampleW},");
+        sb.Append($"\"sampleH\":{actualSampleH},");
+
+        // Sample top-left corner pixels
+        sb.Append("\"topLeft\":[");
+        for (int y = 0; y < actualSampleH; y++)
+        {
+            if (y > 0) sb.Append(',');
+            sb.Append('[');
+            for (int x = 0; x < actualSampleW; x++)
+            {
+                if (x > 0) sb.Append(',');
+                int idx = y * buffer.Stride + x;
+                uint pixel = idx < buffer.Buffer.Length ? buffer.Buffer[idx] : 0;
+                sb.Append($"\"{pixel:X8}\"");
+            }
+            sb.Append(']');
+        }
+        sb.Append("],");
+
+        // Compute per-column "unique color count" stat — if walls are vertical stripes
+        // (one solid color per column), each column would have only 1 unique color.
+        var colSet = new System.Collections.Generic.HashSet<uint>();
+        int distinctColsWithSingle = 0;
+        for (int x = 0; x < buffer.Width; x++)
+        {
+            colSet.Clear();
+            for (int y = 0; y < buffer.Height; y++)
+            {
+                int idx = y * buffer.Stride + x;
+                if (idx >= buffer.Buffer.Length) break;
+                colSet.Add(buffer.Buffer[idx]);
+            }
+            if (colSet.Count == 1) distinctColsWithSingle++;
+        }
+        sb.Append($"\"columnsWithSingleColor\":{distinctColsWithSingle},");
+        sb.Append($"\"totalColumns\":{buffer.Width},");
+
+        // Per-row uniformity check
+        int distinctRowsWithSingle = 0;
+        for (int y = 0; y < buffer.Height; y++)
+        {
+            colSet.Clear();
+            for (int x = 0; x < buffer.Width; x++)
+            {
+                int idx = y * buffer.Stride + x;
+                if (idx >= buffer.Buffer.Length) break;
+                colSet.Add(buffer.Buffer[idx]);
+            }
+            if (colSet.Count == 1) distinctRowsWithSingle++;
+        }
+        sb.Append($"\"rowsWithSingleColor\":{distinctRowsWithSingle},");
+        sb.Append($"\"totalRows\":{buffer.Height},");
+
+        // Count distinct colors total
+        var allColors = new System.Collections.Generic.HashSet<uint>();
+        for (int i = 0; i < buffer.Buffer.Length; i++)
+            allColors.Add(buffer.Buffer[i]);
+        sb.Append($"\"distinctColors\":{allColors.Count}");
 
         sb.Append('}');
         return sb.ToString();

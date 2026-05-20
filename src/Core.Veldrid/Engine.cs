@@ -295,20 +295,9 @@ public sealed class Engine : ServiceComponent<IVeldridEngine, IEngine>, IVeldrid
     /// </summary>
     public unsafe Image<Bgra32> CaptureSwapchain()
     {
-        // Veldrid's D3D11 swapchain back-buffer reads as all-zeros via CopyTexture, even
-        // when called from PreSwapBuffersEvent after RenderSystem.Render has finished and
-        // its fence is signalled. Both direct staging-copy and a Sampled+RenderTarget
-        // intermediate copy return blank pixels — the rendered frame appears to live in a
-        // resource that isn't exposed through `SwapchainFramebuffer.ColorTargets[0].Target`.
-        //
-        // Capturing properly will need either:
-        //   (a) an offscreen FB_Screen Target2DHolder + blit pass that mirrors the
-        //       swapchain — invasive, touches AlbionRenderSystem; or
-        //   (b) hooking into the renderer's existing offscreen passes (FB_Game in the
-        //       debug system) instead of the main swapchain.
-        //
-        // Returning null surfaces this clearly to the caller (the harness returns 503).
-        return null;
+        if (Device?.SwapchainFramebuffer == null) return null;
+        var target = Device.SwapchainFramebuffer.ColorTargets[0].Target;
+        return target == null ? null : ReadTextureInner(target);
     }
 
     public unsafe Image<Bgra32> ReadTexture2D(ITextureHolder textureHolder)
