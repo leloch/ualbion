@@ -77,11 +77,7 @@ public sealed class ExtrudedTilemap : Component, IExtrudedTilemap
             DayWalls = textureSource.GetArrayTexture(_dayWalls),
             NightFloors = textureSource.GetArrayTexture(_nightFloors ?? _dayFloors),
             NightWalls = textureSource.GetArrayTexture(_nightWalls ?? _dayWalls),
-            // Linear sampling smooths the visible moire that point-sampling produces when
-            // small floor/ceiling textures (e.g. 64x64) get stretched across large tile
-            // faces (512x512) viewed at glancing angles. Walls don't show the artefact as
-            // strongly because they're viewed near-on, but the same sampler suits them too.
-            TextureSampler = samplerSource.GetSampler(SpriteSampler.TriLinear)
+            TextureSampler = samplerSource.GetSampler(SpriteSampler.Point)
         };
         AttachChild(ResourceSet);
     }

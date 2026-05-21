@@ -92,13 +92,9 @@ public sealed class TextureSource : ServiceComponent<ITextureSource>, ITextureSo
         { // Note: No automatic mip-mapping for 8-bit, blending/interpolation in palette-based images typically results in nonsense.
             // TODO: Custom mip-mapping using nearest matches in the palette
             LazyTexture<byte> lazy8 => VeldridTexture.CreateLazy(device, TextureUsage.Sampled, lazy8),
-            LazyTexture<uint> lazy32 => VeldridTexture.CreateLazy(device, TextureUsage.Sampled | TextureUsage.GenerateMipmaps, lazy32),
+            LazyTexture<uint> lazy32 => VeldridTexture.CreateLazy(device, TextureUsage.Sampled, lazy32),
             IReadOnlyTexture<byte> eightBit => VeldridTexture.Create(device, TextureUsage.Sampled, eightBit),
-            // Generate mipmaps for true-colour atlases so glancing-angle surfaces (3D dungeon
-            // floors / ceilings) don't produce aliasing stripes when tiny atlas textures
-            // (e.g. 64x64) are sampled across large tile faces. Paired with TriLinear
-            // sampler in ExtrudedTilemap. Walls also benefit at distance.
-            IReadOnlyTexture<uint> trueColor => VeldridTexture.Create(device, TextureUsage.Sampled | TextureUsage.GenerateMipmaps, trueColor),
+            IReadOnlyTexture<uint> trueColor => VeldridTexture.Create(device, TextureUsage.Sampled, trueColor),
             _ => throw new NotSupportedException($"Image format {texture.GetType().GetGenericArguments()[0].Name} not currently supported")
         };
         return deviceTexture;

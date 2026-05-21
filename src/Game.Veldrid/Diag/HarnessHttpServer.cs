@@ -157,7 +157,8 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /labyrinth":       WriteJson(ctx, BuildLabyrinthDump()); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
-            case "GET /wallpixels":      WriteJson(ctx, BuildWallPixelsDump(ctx)); break;
+            case "GET /wallpixels":      WriteJson(ctx, BuildWallPixelsDump(ctx, useWalls: true)); break;
+            case "GET /floorpixels":     WriteJson(ctx, BuildWallPixelsDump(ctx, useWalls: false)); break;
             case "POST /event/raw":      HandleEventRaw(ctx); break;
             case "POST /event":          HandleEventJson(ctx); break;
             case "POST /click":          HandleClickById(ctx); break;
@@ -380,7 +381,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
     /// asset-loading path. Query string: ?layer=N&amp;w=8&amp;h=8 (defaults: layer=1, 8×8).
     /// Returns hex-encoded ARGB pixels in row-major order plus column/row statistics.
     /// </summary>
-    string BuildWallPixelsDump(HttpListenerContext ctx)
+    string BuildWallPixelsDump(HttpListenerContext ctx, bool useWalls)
     {
         var query = ctx.Request.QueryString;
         int wantLayer = int.TryParse(query["layer"], out var lv) && lv > 0 ? lv : 1;
@@ -402,8 +403,8 @@ public sealed class HarnessHttpServer : Component, IDisposable
             if (c is UAlbion.Core.Veldrid.Etm.ExtrudedTilemap tm) { tilemap = tm; break; }
         if (tilemap == null) return "{\"error\":\"no active ExtrudedTilemap\"}";
 
-        var walls = tilemap.DayWalls;
-        if (walls == null) return "{\"error\":\"no DayWalls\"}";
+        var walls = useWalls ? tilemap.DayWalls : tilemap.DayFloors;
+        if (walls == null) return useWalls ? "{\"error\":\"no DayWalls\"}" : "{\"error\":\"no DayFloors\"}";
         if (wantLayer >= walls.ArrayLayers)
             return $"{{\"error\":\"layer {wantLayer} out of range (max {walls.ArrayLayers - 1})\"}}";
 
