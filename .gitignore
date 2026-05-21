@@ -71,3 +71,4 @@ _*.png
 _explore_*.log
 _explore_*.tsv
 _*.png
+_launch*.log

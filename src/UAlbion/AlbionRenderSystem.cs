@@ -9,6 +9,7 @@ using UAlbion.Core.Veldrid.Events;
 using UAlbion.Core.Veldrid.Meshes;
 using UAlbion.Core.Veldrid.Skybox;
 using UAlbion.Core.Veldrid.Sprites;
+using UAlbion.Api.Visual;
 using UAlbion.Core.Visual;
 using UAlbion.Game;
 using UAlbion.Game.Veldrid.Diag;
@@ -38,7 +39,16 @@ public sealed class AlbionRenderSystem : Component, IDisposable
         var globalProvider1 = new GlobalResourceSetProvider();
         var globalProvider2 = new GlobalResourceSetProvider();
 
+        // Offscreen mirror so /screenshot can read the rendered frame. The D3D11/Vulkan
+        // swapchain back buffer is not readable via Veldrid's CopyTexture, but a
+        // SimpleFramebuffer's color attachment is. P_Game targets FB_Render and
+        // P_Composite blits FB_Render -> FB_Screen. Declared at top-level so the
+        // S_Composite source can reference its color attachment without the catch-22
+        // of needing the framebuffer to exist before its source.
+        var fbRender = new SimpleFramebuffer(FB_Render, 720, 480);
+
         _manager = RenderManagerBuilder.Create()
+            .Framebuffer(FB_Render, fbRender)
             .Renderer(R_Sprite, new SpriteRenderer(screenFormat))
             .Renderer(R_Blended, new BlendedSpriteRenderer(screenFormat))
             .Renderer(R_Tile, new TileRenderer(screenFormat))
@@ -46,6 +56,7 @@ public sealed class AlbionRenderSystem : Component, IDisposable
             .Renderer(R_Mesh, new MeshRenderer(screenFormat))
             .Renderer(R_Sky, new SkyboxRenderer(screenFormat))
             .Renderer(R_Debug, new ImGuiRenderer(screenFormat))
+            .Renderer(R_Quad, new FullscreenQuadRenderer())
 
             .Source(S_Sprite,  new BatchManager<SpriteKey, SpriteInfo>(       static (key, f) => f.CreateSpriteBatch(key)))
             .Source(S_Blended, new BatchManager<SpriteKey, BlendedSpriteInfo>(static (key, f) => f.CreateBlendedSpriteBatch(key)))
@@ -54,8 +65,17 @@ public sealed class AlbionRenderSystem : Component, IDisposable
             .Source(S_Etm, new EtmManager())
             .Source(S_Sky, new SkyboxManager())
             .Source(S_Debug, new ImGuiRenderable())
+            // S_Composite emits a single FullscreenQuad whose source is FB_Render's
+            // color attachment. P_Composite uses R_Quad to sample it onto FB_Screen.
+            .Source(S_Composite, new UAlbion.Game.Veldrid.Visual.SingleQuadSource(
+                new FullscreenQuad(
+                    "composite",
+                    DrawLayer.Compositing,
+                    fbRender.Color,
+                    new System.Numerics.Vector4(0, 0, 1, 1),
+                    screenFormat)))
 
-            .System(Sys_Default, sys => 
+            .System(Sys_Default, sys =>
                 sys
                 .Framebuffer(FB_Screen, new MainFramebuffer(FB_Screen))
                 .Component(C_InputRouter, new AdHocComponent(C_InputRouter,
@@ -89,13 +109,21 @@ public sealed class AlbionRenderSystem : Component, IDisposable
                             => x.On<WindowResizedEvent>(e => gameWindow.Resize(e.Width, e.Height))))
                 .Resources(globalProvider1)
                 .Component("c_globalUpdater", new GlobalResourceSetUpdater(globalProvider1))
-                .Pass(P_Game, pass => 
+                .Pass(P_Game, pass =>
                     pass
                     .Renderers(R_Sprite, R_Blended, R_Tile, R_Etm, R_Mesh, R_Sky)
                     .Sources(S_Sprite, S_Blended, S_Tile, S_Etm, S_Mesh, S_Sky)
-                    .Target(FB_Screen)
-                    .Resources(new MainPassResourceProvider(sys.GetFramebuffer(FB_Screen), mainCamera))
+                    .Target(FB_Render)
+                    .Resources(new MainPassResourceProvider(sys.GetFramebuffer(FB_Render), mainCamera))
                     .Render(MainRenderFunc)
+                    .Build()
+                )
+                .Pass(P_Composite, pass =>
+                    pass
+                    .Renderer(R_Quad)
+                    .Source(S_Composite)
+                    .Target(FB_Screen)
+                    .Dependency(P_Game)
                     .Build()
                 )
                 .Build()
