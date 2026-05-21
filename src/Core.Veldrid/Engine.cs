@@ -295,6 +295,22 @@ public sealed class Engine : ServiceComponent<IVeldridEngine, IEngine>, IVeldrid
     /// </summary>
     public unsafe Image<Bgra32> CaptureSwapchain()
     {
+        // Prefer reading from the offscreen render-mirror framebuffer (the harness's
+        // /screenshot relies on this). Falls back to the swapchain texture if no mirror
+        // exists — but that returns blank pixels on D3D11/Vulkan via CopyTexture, so it's
+        // only useful as a last resort.
+        var rm = TryResolve<IRenderManager>();
+        if (rm != null)
+        {
+            try
+            {
+                var mirror = rm.GetFramebuffer("fb_render");
+                if (mirror is SimpleFramebuffer sfb && sfb.Color?.DeviceTexture != null)
+                    return ReadTextureInner(sfb.Color.DeviceTexture);
+            }
+            catch { /* fall through */ }
+        }
+
         if (Device?.SwapchainFramebuffer == null) return null;
         var target = Device.SwapchainFramebuffer.ColorTargets[0].Target;
         return target == null ? null : ReadTextureInner(target);

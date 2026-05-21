@@ -12,8 +12,13 @@ public static class AlbionRenderSystemConstants
     // Framebuffers
     public const string FB_Game        = "fb_game";
     public const string FB_Screen      = "fb_screen";
+    /// <summary>Offscreen mirror for the main game render — readable from CPU for
+    /// /screenshot. Sys_Default renders into FB_Render then composites it to FB_Screen
+    /// (the swapchain) via the P_Composite pass.</summary>
+    public const string FB_Render      = "fb_render";
 
     // Render passes
+    public const string P_Composite    = "p_composite"; // FB_Render -> FB_Screen
     public const string P_Debug        = "p_debug";
     public const string P_Game         = "p_game";
 
@@ -22,12 +27,14 @@ public static class AlbionRenderSystemConstants
     public const string R_Debug        = "r_debug";
     public const string R_Etm          = "r_etm";
     public const string R_Mesh         = "r_mesh";
+    public const string R_Quad         = "r_quad"; // FullscreenQuadRenderer
     public const string R_Sky          = "r_sky";
     public const string R_Sprite       = "r_sprite";
     public const string R_Tile         = "r_tile";
 
     // Renderable Sources
     public const string S_Blended      = "s_blended";
+    public const string S_Composite    = "s_composite"; // emits a single FullscreenQuad over FB_Render
     public const string S_Debug        = "s_debug";
     public const string S_Etm          = "s_etm";
     public const string S_Mesh         = "s_mesh";

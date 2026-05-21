@@ -171,6 +171,11 @@ static class Albion
         var gameServices = new Container("Game",
             sceneManager,
             menuManager,
+            // Note: SpriteSamplerSource MUST be attached before AlbionRenderSystem because
+            // the render-system's composite-pass FullscreenQuad resolves ISpriteSamplerSource
+            // during Subscribed(). The two were previously in the opposite order — only
+            // worked because the composite pass didn't exist yet.
+            new SpriteSamplerSource(),
             new AlbionRenderSystem(sceneManager, menuManager),
             new TextureSource(),
             new VeldridGameFactory(LoadMesh),
@@ -181,7 +186,6 @@ static class Albion
             new SlowClock(),
             new CombatClock(),
             new RandomNumberGenerator(),
-            new SpriteSamplerSource(),
             new VideoManager(),
             new EventChainManager(),
             new Querier(),
