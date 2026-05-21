@@ -423,6 +423,13 @@ public sealed class HarnessHttpServer : Component, IDisposable
         sb.Append($"\"sampleW\":{actualSampleW},");
         sb.Append($"\"sampleH\":{actualSampleH},");
 
+        // Centre-pixel sample to compare with shader-side sampling at UV (0.5, 0.5)
+        int cx = buffer.Width / 2;
+        int cy = buffer.Height / 2;
+        int cidx = cy * buffer.Stride + cx;
+        uint centrePixel = cidx < buffer.Buffer.Length ? buffer.Buffer[cidx] : 0;
+        sb.Append($"\"centrePixel\":\"{centrePixel:X8}\",");
+
         // Sample top-left corner pixels
         sb.Append("\"topLeft\":[");
         for (int y = 0; y < actualSampleH; y++)
