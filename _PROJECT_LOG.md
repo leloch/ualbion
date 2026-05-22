@@ -286,7 +286,12 @@ Combat verified end-to-end through HTTP (see §5.4).
 
 ## 9. Known live bugs (open at end of engagement)
 
-1. **🔴 Save 5 / Map.Nakiridaani black screen** — UI elements visible but 2D map not rendered. Persists after full offscreen-render revert; the cause predates `deb674d5`. **Open and not bisected.**
+1. **🔴 Save 5 / Map.Nakiridaani black screen** — UI elements visible but 2D map not rendered. Persists after full offscreen-render revert (commit `2c413fac`); the cause is NOT the offscreen refactor.
+   - **Smoke loads cleanly** — all 13 saves load + exit cleanly via `_smoke_all_saves.ps1`. The regression is purely visual / rendering, not a logic crash.
+   - Save 5 state (via harness) shows entire party `Unconscious` with HP=0. Whether the visual blackout is *caused* by that state, or is just coincident with it, is unknown.
+   - **Suggested bisect**: try save 11 (also `Map.Nakiridaani`) — if it renders correctly, the bug is save-state-specific (corruption from `SheetApplier.ExperienceChecks` re-enable or `StatusConditionTicker`). If save 11 also fails, the bug is map-rendering-code, not save-state.
+   - Sub-hypothesis: 2D maps render via `MapRenderable2D` + `TileLayerRenderable` going through `R_Tile` / `S_Tile` in `P_Game`. If those sources are mis-initialised for this specific map type, tiles wouldn't draw. Look at `FlatScene` setup and any post-`cdd0d60c` regressions on the 2D path.
+   - Sub-hypothesis 2: party-all-Unconscious state may pause `GameClock` (`StatusConditionTicker` decays per-tick), which may disable per-frame map updates somewhere in the 2D-rendering chain.
 2. **🟡 3D dungeon streaked walls/floors** — pre-existing, NOT from our work. Documented and partially analysed (§6); the renderer is technically correct, the appearance is aliasing. Mipmap fix not yet working.
 3. **🟡 `/screenshot` returns 503** — temporarily disabled with the offscreen-mirror revert. Needs window-resize-aware re-implementation.
 4. **🟡 PowerShell `_harness_explore.ps1` array-scoping bug** — script surfaces engine exceptions but the per-save report is empty. Fix: `$script:report` instead of `$report` inside `Run-Save`.
