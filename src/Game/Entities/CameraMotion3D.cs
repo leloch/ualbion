@@ -32,7 +32,10 @@ public class CameraMotion3D : Component
             if (map == null)
                 return;
 
-            _velocity += new Vector3(e.X, 0, e.Y) * map.TileSize;
+            // The camera looks along -Z at yaw 0 (CalculateView transforms -UnitZ), so a
+            // positive "forward" input must advance along -Z. Without the negation the
+            // party walked AWAY from whatever the camera was showing.
+            _velocity += new Vector3(e.X, 0, -e.Y) * map.TileSize;
         });
 
         On<CameraRotateEvent>(e =>
