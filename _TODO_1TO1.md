@@ -17,72 +17,64 @@ matches the RE'd formulas; the open items are mostly *small mechanics* and *cons
 
 ---
 
-## 1. RE in flight (background agents running now)
+## 1. RE clusters — status
 
-### Cluster A — combat action executors → output lands in `_RE_5A.md`
+### Cluster A (combat executors) — ✅ DECODED (`_RE_5A.md`) and ✅ APPLIED (`f0015333`)
+Melee Chebyshev reach + approach-move conversion; multi-strike (ActionPoints ×2 Hurry,
+stop on target death/ammo/battle end — NOT on hit); ranged usability + per-strike ammo
+(backpack first, snd 454); panic/insane autopilot (greedy flee stepper, Retreat at the
+edge, 50/50 insane move-vs-attack over BOTH sides); fleeing leaves the battle same round
+(monsters still pay XP; "party escaped" outcome); monster morale flight
+((deadPct+lostPct)/2 ≥ Morale + behaviour variants); hover bob (sine ±4-6 units,
+3.0-4.95 s, classes 2/3/4). "Summon" was dead code — no action exists.
+*Still open from A:* battle-view WALK animation for multi-tile monster moves (lerp at
+Move-anim length per tile — state side done, view-side pending); class-2 ghost
+translucency; party Move UI single-tile picker claim-mask (minor).
+
+### Cluster B (SPELLDAT & cast core) — ✅ DECODED (`_RE_5B.md`) and ✅ APPLIED (`9212f855`)
+Row/all target areas, Big traps = whole row, wrath picker (rejection sampling + grid
+order), item casts M=50 + charge flags, school 4/6 = dead data (premise wrong),
+LightningStrike ungated, shields = hour-duration entries in SavedGame.ActiveSpells
+(persist + decay hourly + no refresh).
+*Still open from B:* fizzle shouldn't charge SP (we still charge on attempt — verify
+original's SP timing vs zero-continuation casts); monster-AI spell pick should be
+uniform-random over candidates matching preferred target bits (ours = first affordable).
+
+### Cluster C (world tick & state) — RUNNING (retry; first run died without output)
 | # | Question | Unlocks |
 |---|---|---|
-| A1 | Move path-finding `fcn.00051b51` (+`fcn.00053871`): search algorithm, walk pacing, blocked-path behaviour | `Battle.MoveCombatant` walks the route instead of teleporting |
-| A2 | Ranged details `fcn.0004f057`: ammo matching/consumption/slot, row restrictions; **and whether MELEE has a reach restriction** (we currently let any tile hit any tile) | `Battle.cs:462` AI ranged commit, ammo in `ApplyMeleeAttack`, possible melee reach validation |
-| A3 | Summon action `fcn.0004f6a2`: what's copied, into which slot, gates/caps | New Summon handler — **we don't implement Summon at all** |
-| A4 | Insane/Panicking/Fleeing turn behaviour: insane target pick, panic move, when fleeing combatants LEAVE the battle | `MonsterAi.ResolveStatusBehavior` + `Battle` flee mechanic (comment at Battle.cs:476 admits "would flee if we had a flee mechanic") |
-| A5 | Morale byte (sheet+0x0F) reads in combat AI — monster flight formula | Monsters never flee in the remake; Morale is parsed but unused |
-| A6 | Hover bob: periodic bob on top of the MONCHAR hover offset (amplitude/period) | `BattleView.cs:26` placeholder |
+| C1 | Light's ambient entry {hours,pct} write + accumulation + percent→ambient mapping; whether Levitation is an active-spell entry | Real Light/Levitation decay (`DjiKasSpells.cs:58`, `MapRenderable3D.cs:48`, `ActivePartySpells`, `Collider3D.cs:35`) |
+| C2 | Lockpicking formula + trap-trigger + lockpick consumption | `InventoryLockPane.cs:102` |
+| C3 | Query opcodes 0xC / 0x19 / 0x1E / 0x21 | `Querier.cs:87-90` |
+| C4 | Rest interruption (mid-rest abort?) | rest fidelity |
 
-### Cluster B — SPELLDAT & cast core → output lands in `_RE_5B.md`
-| # | Question | Unlocks |
-|---|---|---|
-| B1 | SPELLDAT record layout + target-AREA enumeration: row spells, all-monster spells, the "Big" trap/mine tile shape | Area resolution in `Battle.CastQueuedSpell`; `TrapSpellEffect` area placement; `BanishDemons`/`DemonExodus` rows (`InstantKillSpellEffects.cs:101`); trap-vs-mine visibility (`OquloKamulosSpells.cs:25`) |
-| B2 | GoddessWrath's random picker `fcn.0005f7ec` exact algorithm | Match our picker to the original |
-| B3 | Per-item cast strength (the ITEMLIST byte the item-cast path reads) | `Battle.cs:793` — item casts currently run at M=100 |
-| B4 | School 6 (AI primary) + school 4 spell lists, handlers, Ks | `SpellClass.Unk6`; monster AI casts the real specials |
-| B5 | Insurance: fire/lightning lines margin-scaled? type-1 strength pool vestigial? | Confirms two generalisations made in code |
-
-## 2. RE queued — NOT yet launched
-
-### Cluster C — world tick & state (hour tick `fcn.00043acc`, 0x153b3e, query dispatcher)
-| # | Question | Unlocks |
-|---|---|---|
-| C1 | ActiveSpells decay: slot layout in `SavedGame.ActiveSpells[0x50]` (Light = slots 0..1; Levitation = ?), decay trigger + rate, percentage→ambient mapping | Real Light/Levitation: replace `ActivePartySpells` booleans + the guessed ambient +50 / decay (`DjiKasSpells.cs:58`, `MapRenderable3D.cs:48`, `SupportSpellEffects.cs:246`, `Collider3D.cs:35`); persist in the save's existing field |
-| C2 | Lockpicking: PickDifficulty vs LockPicking-skill formula + trap-trigger roll | `InventoryLockPane.cs:102` guessed probabilities |
-| C3 | Query opcodes 0xC / 0x19 / 0x1E / 0x21 | `Querier.cs:87-90` hardwired `false` |
-| C4 | Does an hourly hostile spawn interrupt rest? (small) | Possible rest-interruption mechanic |
-
-### Cluster D — NPC & misc constants (lowest priority; could fold into C)
-| # | Question | Unlocks |
-|---|---|---|
-| D1 | Chase give-up radius 2D/3D (we guess 16 Manhattan) | `Npc2D.cs:314`, `Npc3D.cs:114` |
-| D2 | 3D NPC walk speed | `Npc3D.cs:21` |
-| D3 | MonsterEye proximity levels (we guess 16 tiles) | `MonsterEye.cs:12` |
-| D4 | 3D party collision margin (we use min(T/4, 50) world units) | `DungeonMap`/`Movement3D` |
-| D5 | SetPartyLeader unk2/unk3 (we pass 3, 0) | `StatusBarPortrait.cs:89,198` |
-| D6 | Sheet offset 0x1C (party-leave related) | `CharacterSheet.cs:241` |
-| D7 | MapNpc / TickerSet / EventSet / BaseMapData leftover unknown fields | Format completeness |
-| D8 | PlaceAction Unk2 (last unknown service field) | `PlaceActionManager` |
+### Cluster D (NPC & misc constants) — RUNNING
+Give-up radius, 3D NPC walk speed, MonsterEye proximity, 3D collision margin,
+SetPartyLeader unk2/3, sheet+0x1C, MapNpc leftovers, PlaceAction Unk2.
 
 ## 3. Implementation blocked only on the above RE
-
-Each lands as soon as its cluster reports: A1→combat walk, A2→ammo+reach+AI ranged,
-A3→Summon, A4/A5→flee/morale/insane fidelity, A6→hover bob, B1→area spells + trap
-areas + trap/mine visibility, B2→wrath picker, B3→item cast strength, B4→school-6
-registration, C1→Light/Levitation, C2→lockpicking, C3→queries, D→constant swaps.
+C1→Light/Levitation, C2→lockpicking, C3→queries, C4→rest abort, D→constant swaps +
+unk decodes. Plus the cluster-A/B leftovers listed above (battle-view walk lerp, ghost
+translucency, fizzle SP timing, AI spell-pick randomisation).
 
 ## 4. Implementation possible NOW (no RE needed)
 
 | Item | Where | Notes |
 |---|---|---|
-| 3D `change_npc_*` dispatch | `DungeonMap.cs` | 2D morphs work (live+persisted); 3D maps have no ChangeNpc dispatch and sprite changes need an ObjectGroup rebuild |
-| AI ranged commit (interim) | `Battle.cs:462` | Could commit when the monster holds a LongRangeWeapon (gate exists since batch A); full ammo rules wait on A2 |
+| ~~3D `change_npc_*` dispatch~~ | `DungeonMap.cs` | DONE `021a3481` — live + persisted + replay, group rebuild |
+| ~~AI ranged commit~~ | `Battle.cs` | DONE `f0015333` — real usability (typeid 6 + ammo) |
+| ~~Dead `TacticalSpriteId`~~ | — | DONE `021a3481` — removed from interface + impls |
+| ~~VideoManager positioned pics~~ | `VideoManager.cs` | DONE `9212f855` — non-zero x/y draws at native size at UI coords |
 | Selection3D per-tile picking | `Selection3D.cs:22` | Ground-plane intersection only; wall-face ray refinement |
 | Conversation default block | `Conversation.cs:187` | Unhandled BlockId falls through silently — enumerate which ids hit it (harness trace) and handle |
 | Goddess' amulet activation | `InventoryManager.cs:223` | Special-item activation chain ("TODO: Goddess' amulet etc"); story-critical late-game item |
-| VideoManager positioned pics | `VideoManager.cs:90` | x/y args ignored (intro uses 0,0); matters for any non-origin show_pic |
 | TextFormatter Damage token | `TextFormatter.cs:40` | Guessed semantics; scan game texts for actual usage to confirm |
-| Dead `TacticalSpriteId` member | `PartyMember.cs:63`, `ICombatParticipant` | Unused (grid reads `Effective.TacticalGfx`, which works for party+monsters) — remove |
 | Animated 3D meshes | `MapObject.cs:102` | 3D map objects don't animate |
 | Z-fighting hack | `MapObject.cs:178` | "still happens sometimes" |
 | Weight limit on give | `InventoryManager.cs:514` | Party members can exceed carry weight |
 | ChangeNpcMovement "other flags" | `NpcManager2D.cs` InitialiseState | Only SimpleMsg flag is mapped from MapNpcFlags |
+| Battle-view walk lerp | `BattleView.cs` | Multi-tile monster moves should WalkPath-lerp (N engine frames per tile, N = Move anim length) — state side done |
+| Ghost translucency (class 2) | `BattleView.cs` | Render kind 8 (translucent) for ghostly monsters |
 
 ## 5. Doc drift / comment cleanups (5 minutes each, do with next touch)
 
