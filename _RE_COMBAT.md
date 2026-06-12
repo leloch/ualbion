@@ -1477,3 +1477,334 @@ both centered with +T/2**. Camera yaw init: `((-dir*4096) & 0x3FFF) << 16` - 409
 - Banish-demon family (62-64) chance math (x1000 / x250 factors against demon LP).
 - Initial mastery value when a spell is first learned (suspected = LevelRequirement-based
   or fixed; growth per cast = MagicTalent is confirmed).
+
+## Battle view rendering (RE'd 2026-06-12)
+
+> How MAIN.EXE draws the combat scene: grid->screen projection, sprite slots, animation
+> selection/timing, projectiles, shadows, and party (non-)rendering. All from radare2
+> against `albion_aaa`. CONFIRMED unless marked INFERRED.
+
+### 1. The projection — tile(col,row) -> (screenX, screenY, scale) (CONFIRMED)
+
+The combat scene is a tiny 3D world rendered with a single perspective divide.
+World units are stored **x100** (fixed point) in animation slots; "world units" below are
+the /100 values.
+
+**Constants:**
+
+| Addr | Value | Meaning |
+|---|---|---|
+| `0x13e3fe` | u16 = **148** | focal length `f` |
+| `0x13e400` | u16 = **83** | camera height `camY` (the old "83<<16" note was wrong — the dword is 83; `sar 16` of it yields 0, so the camZ term is 0) |
+| `0x13e146` | u32 = 3200 | half tile width x100 -> tile width = **64** world units |
+| `0x13e14a` | u32 = 6400 | tile depth x100 -> tile depth = **64** world units |
+
+Axes: X right, Y up (ground = 0), Z away from the camera. Viewport: the 360x192 combat
+backdrop at the top of the 360x240 screen; screen centre x = **180**, horizon y = **96**.
+
+```
+denom   = worldZ + 148            // if 0 -> 1; sprite culled entirely when worldZ < -110
+screenX = 180 + 148 * worldX / denom
+screenY =  96 - 148 * (worldY - 83) / denom      // ground (y=0) -> 96 + 12284/denom
+scale   = 148 / denom              // multiplied on top of the sprite's own W%/H%
+```
+
+Seen identically in `fcn.000542c9` (sprite renderer), `fcn.00055c10` (grid overlay),
+`fcn.0005304a` (projected-X comparator used for projectile facing).
+
+**TileToWorld — `fcn.00053382(col, row, &outX, &outZ)`** (161 B, 15 callers):
+
+```c
+if (row == -1) {                       // virtual "party row" (see section 6)
+    *outX = (2*col - 5) * 800;         // -> (2c-5)*8  world units
+    *outZ = -11000;                    // -> -110 = exactly the cull plane
+} else {
+    *outX = (2*col - 5) * 3200;        // -> (2c-5)*32 = 64*col - 160
+    *outZ = (row == 3) ? -6400/3       // -> -21.33 (row 3 special-cased!)
+                       : -(row-2) * 6400;  // -> 128 - 64*row
+}
+```
+
+**The key table** (tile centre, feet position y=0):
+
+| Row | worldZ | scale = 148/(z+148) | screenY (feet) | screenX(col) |
+|---|---|---|---|---|
+| 0 (mob back) | +128 | 0.536 | 140.5 | 180 + 0.536*(64*col-160) -> 94..266 |
+| 1 | +64 | 0.698 | 153.9 | 180 + 0.698*(64*col-160) -> 68..292 |
+| 2 | 0 | 1.000 | 179.0 | 180 + (64*col-160) -> 20..340 |
+| 3 (front/contact) | **-21.33** | 1.168 | 193.0 (~viewport bottom edge) | 180 + 1.168*(64*col-160) |
+| 4 (party back) | -128 (unused for sprites) | — | — | — |
+| -1 (party virtual) | -110 | 3.89 | 107.7 | 180 + 3.89*(16*col-40) -> 24..336 step ~62 |
+
+Row 3 is pulled in to -21.33 instead of -64 so monsters advancing into the contact row
+stay (barely) on screen at ~1.17x. Rows 3-4 party combatants are never drawn at all
+(section 6). Column spacing: 64 world units; the X centres are symmetric about 180.
+
+**Dotted grid overlay** (`fcn.00055c10`, called from the scene renderer only when
+`word[0x13e404] != 0` — the move/target selection mode flag): clip rect set to
+(0,96,360,208); colour 194 single-pixel dots. Verticals: 7 lines at x = (2c-6)*32
+(c=0..6, i.e. -192..+192 step 64), dotted along z from 15 down to -105 step -10.
+Horizontals: 6 lines at z = 32*(5-2r) (r=0..5 -> +160..-160 step 64), dotted along
+x -192..+192 step 10. These line positions confirm the 64-unit tile pitch and that row
+centres sit halfway between (z = 128 - 64*row).
+
+### 2. Scene renderer & animation-slot system
+
+**`fcn.00053ce9` = RenderCombatScene** (562 B; called from combat init `fcn.0004ac00`,
+round controller `fcn.0004b032`, and every frame by the combat screen callback `0x4af0b`):
+
+1. Blit 360x192 combat background (handle at `0x15e940`) at (0,0) via `fcn.0006ffff`.
+2. If `word[0x13e404]` -> dotted grid overlay (`fcn.00055c10`).
+3. Sort the active slot list `0x167ac4` (count `word[0x176d28]`) by **worldZ descending**
+   (qsort `fcn.00070fa6`, cmp `0x53f1b` compares `slot[+0x10]`) — painter's algorithm.
+4. Pass 1: draw every slot with flags bit2 set (**shadows / ground decals**);
+   Pass 2: draw the remaining slots. Both via `fcn.000542c9`.
+5. Debug text "COMOBs : %u" / "Behaviours : %u" when `word[0x147136] > 0`.
+
+**Anim slot (58 B each, 1000-slot pool at `0x168a84`, alloc `fcn.00053871`, free `fcn.0005395f`):**
+
+| Offset | Type | Field |
+|---|---|---|
+| +0x00 | u16 | flags: bit0 in-use, bit2 hidden (renderer skips), bit3 **has-velocity (auto-move + frame-cycle)**, bit5 moved-this-tick |
+| +0x02 | u16 | flags2: bit0 = frame-cycle variant select (fcn.00054ce7 vs fcn.00054c6d), bit2 = draw in pass 1 (shadow layer) |
+| +0x04 | u16 | render kind: 0 plain scaled blit, 1 +colour arg, 2/3 LUT-remap blits (slot[+0x32] handle + slot[+0x36] offset; 3 = shadow), 4/7/8 global-LUT blits (`[0x176d14]` +0 / +0x10000 / +0x20000 — translucency tiers), 5 single pixel, 6 2x2 dot (colour byte +0x30) |
+| +0x08/+0x0C/+0x10 | i32 | worldX / worldY / worldZ, x100 |
+| +0x14/+0x18/+0x1C | i32 | velocity per logic tick, x100 (projectiles) |
+| +0x06 | u16 | TTL in logic ticks for velocity slots (slot freed when it hits 0; 0 = no expiry) |
+| +0x20/+0x22 | u16 | anchorX% / anchorY% — fraction of the projected size subtracted from screen pos. (50,100) = bottom-centre (standing sprites), (50,50) = centred (effects) |
+| +0x24/+0x26 | u16 | width% / height% scale (monster `WidthPercentage`/`HeightPercentage` go here) |
+| +0x28 | u16 | current gfx frame index |
+| +0x2A | u16 | cached frame count (projectiles — enables auto frame-cycling) |
+| +0x2C | u32 | gfx resource handle |
+| +0x30 | u8 | colour (kinds 5/6/1) |
+| +0x32/+0x36 | u32 | LUT handle / LUT pointer-offset (kind 2/3; shadow uses LUT table `0x17d25c`) |
+
+**`fcn.000542c9` = DrawAnimSlot** (1463 B): does the projection above, then
+`projW = gfxFrameW * wScale%/100 * 148/denom` (same for H), anchors
+`screenX -= anchorX% * projW / 100`, and dispatches on render kind to the blitters
+(`0x9b3f9/0x9b4f1/0x9b6e8/0x9b5f6/0x9b7b1`). Asserts `frame < gfx[+5]` (frame count
+byte in the gfx header) at comobs.c:1124. Frame data: 6-byte header {u16 w, u16 h, ...}
++ w*h pixels, frames sequentially packed.
+
+### 3. Monster sprites, shadows, and the x2 frame interleave
+
+**`fcn.00051e0d` = ShowCombatant(c)** — vtable_2 row>=1 sub 0 (monsters only):
+
+```c
+sheet = Lock(c->sheet);
+gfxId = sheet[0x3AC];                          // MonsterData.CombatGfx
+c[+0x0C] = LoadAsset(file 0x26, gfxId);        // monster combat gfx (MONGFX)
+c[+0x46] = LoadAsset(file 0x29, gfxId + 12);   // tactical-grid icon — matches UAlbion
+                                               // TacticalGfx = CombatGfx.Id + 12 !
+slot = AllocSlot(); c[+0x1E] = slot;
+TileToWorld(c->col[+0x42], c->row[+0x44], &slot.x, &slot.z);
+slot.y      = -(i16)sheet[0x4B8] * 100;        // MonsterData.Unk152 = VERTICAL OFFSET
+                                               // (negative value -> hovers above ground)
+slot.wScale = sheet[0x4BA];                    // WidthPercentage
+slot.hScale = sheet[0x4BC];                    // HeightPercentage
+base = HasAnim(c,6) ? sheet[0x470]             // Initial[0] if Initial anim exists
+                    : sheet[0x3B0];            // else Move[0]
+slot.frame  = base * 2;                        // x2 — see below
+c[+0x1C]    = base;                            // idle base frame
+slot.anchor = (50, 100);                       // feet at the tile point
+slot.kind   = 0; slot.gfx = c[+0x0C];
+StartShadow(slot);                             // fcn.000558d2
+```
+
+**The x2 multiplier / shadow (`fcn.000558d2` + behaviour callback `0x55265`)**: every
+logical animation frame occupies **two physical frames in the combat gfx: even = body,
+odd = ground shadow**. The shadow is a second slot: same gfx, `frame = body.frame + 1`,
+y = 0 (flat on the ground), anchor (50,50), flags2 bit2 (drawn in pass 1, under everyone),
+render kind 3 with shadow colour LUT at `0x17d25c`. A behaviour re-syncs x/z/frame/scales
+from the parent every logic tick. (UAlbion's MonsterGfx loader must treat odd frames as
+shadow masks, not animation frames.)
+
+**Monster sheet tail (MONCHAR, sheet len 1214 = 0x376 char data + 0x148 MonsterData)** —
+all offsets confirmed against UAlbion `MonsterData.Serdes`:
+
+| Sheet offset | MonsterData field | Engine use |
+|---|---|---|
+| 0x3AC | CombatGfx (u8) | file 0x26 index; +12 -> file 0x29 tactical icon |
+| 0x3AD | **Unk37 = per-animation PING-PONG flag bitfield** | bit n set & len>2 -> anim n plays 0..len-1 then back down to 1 (see stepper). NOT an AI mask — UAlbion's placeholder comment is wrong. Values 2 = Melee bounces, 6 = Melee+Ranged, 0x10 = Hit, 0x12 = Melee+Hit. |
+| 0x3B0+kind*0x20 | Animations[kind][0..31] | frame lists (logical frames; x2 for physical) |
+| 0x4B0+kind | AnimLengths[kind] | 0 = animation absent (`fcn.0004d135(c,kind)` = HasAnim) |
+| 0x4B8 | Unk152 | vertical offset: slot.y = -value (flying monsters have negative values) |
+| 0x4BA/0x4BC | Width/HeightPercentage | slot scale |
+
+Animation kinds (= UAlbion `CombatAnimationId`): 0 Move, 1 Melee, 2 Ranged, 3 Magic,
+4 Hit, 5 Die, 6 Initial, 7 Retreat.
+
+### 4. Animation playback machinery
+
+**Combatant fields:** +0x18 current anim kind (0xFFFF = none), +0x1A frame cursor,
++0x1C idle base frame, +0x1E anim slot ptr, +0x0C combat gfx handle, +0x46 tactical
+gfx handle, +4 bit1 = ping-pong reversing, +4 bit3 = "self-animating, skip global stepper".
+
+- **`fcn.0004d0d3(c, kind)` = StartAnim** — if monster & `sheet[0x4B0+kind] != 0`:
+  `c[+0x18] = kind; c[+0x1A] = 0`, clear reverse flag.
+- **`fcn.0004d36f(c)` = StepAnim** — one frame advance:
+  cursor++; frame = `sheet[0x3B0 + kind*0x20 + cursor]`; at end: if ping-pong bit set
+  (sheet[0x3AD] & (1<<kind), len>2) bounce back down (reverse until cursor 1), else stop.
+  On stop: `c[+0x18]=0xFFFF`, frame = idle base `c[+0x1C]`. Always writes
+  `slot.frame = frame*2`.
+- **`fcn.0004d2e2` = StepAllMonsterAnims** — steps every monster (kind==2, not flag-bit3).
+- **`fcn.0004d268` = WaitAnimEnd** — blocks (running engine frames `fcn.00075e71`)
+  until `c[+0x18] == 0xFFFF`. This is how attack handlers synchronise.
+- **Idle is a STATIC frame** (Move[0], or Initial[0] before the Initial anim has played).
+  No idle frame-cycling. Hovering/ghost monsters get motion from sine behaviours instead.
+
+**`fcn.00075e71` = engine frame**: timing bookkeeping (`fcn.000757d7` — stores elapsed
+timer ticks, calls the active screen's callback from the 30-byte screen table at
+`0x179164[+0x1A]`), input (`fcn.0007382a`), present (`fcn.00075e9f`). All combat
+animation code "waits" by calling this in loops — the whole battle presentation is
+synchronous coroutine-style.
+
+**Combat screen per-frame callback (`0x4af0b`)** — the heartbeat:
+
+```c
+word[0x15f120] = 0;                       // logic ticks executed this frame
+RenderCombatScene();
+delta = timer - last;                     // timer = dword[0x1835f0], 60 Hz PIT
+accum(word[0x13e14e]) += delta;
+while (accum > 2) {                       // ONE LOGIC TICK PER 3 TIMER TICKS = 20 Hz
+    fcn.00053fd6();                       //   move velocity-slots, run behaviours, TTLs
+    if (++word[0x13e150] == 3) {          //   EVERY 3rd LOGIC TICK = 6.67 Hz:
+        fcn.0004d2e2();                   //     step all monster sheet-animations
+        fcn.00054bbc();                   //     cycle projectile frames
+        word[0x13e150] = 0;
+    }
+    if (word[0x15f120] < 15) word[0x15f120]++;
+    accum -= 3;
+}
+```
+
+**TIMING (CONFIRMED):** PIT reprogrammed at init (`fcn.0008973c`: out 0x43,0x36;
+divisor 0x4DAE = 19886 -> 1193182/19886 = **60.00 Hz**). So: combat logic ticks at
+**20 Hz** (50 ms); monster animation frames & projectile sprite frames at **6.67 fps**
+(150 ms/frame). A typical 4-frame Melee anim ~ 0.6 s; damage is applied after
+WaitAnimEnd returns (the swing fully plays before HP changes). Blocking effect loops
+play 1 effect frame per *engine frame*; hit-splash, soul-rise and similar call
+`fcn.00075e71` **twice** per frame (half rate). Engine frame rate itself is
+machine/vsync-bound (not PIT-throttled) — INFERRED ~60-70 Hz on period hardware.
+
+**Behaviours (the 800x44 B queue at `0x15f144` — these are "Behaviours", not damage
+events):** record = {+0 slot ptr, +4 optional 2nd slot, +8 callback, +0xC.. params}.
+Run each logic tick by `fcn.00053fd6` (enqueue `fcn.00053ba3`). Known callbacks:
+- `0x55265` — shadow sync (copy parent x/z/frame+1/scales).
+- `0x54eeb` — **sine oscillator**: `value = sin(2*pi*phase/period)*amplitude`, applied as
+  a delta to one of {x, y, z, wScale, hScale, both scales} per `param[+0xC]` (0..5);
+  period = rand%40+60 ticks (3-5 s), amplitude = rand%200+400 (4-6 world units).
+
+### 5. vtable_2 — the display vtable is 5 rows x 12 subs (`0x13e280`, CONFIRMED dump)
+
+Row = combatant render class `c[+0x10]` (0 = party; 1 = ground monster; 2 = ghostly;
+3 = flying; 4 = variant w/ extra sway). The earlier vtable_2 decode in this file had the
+offsets wrong — authoritative dump:
+
+| sub | Row 0 (party) | Rows 1-4 (monsters) | Purpose |
+|---|---|---|---|
+| 0 | — | `0x51e0d` / `0x526e1` (ghost: kind-8 translucent + 2 sine sways) / `0x5283f` (flying: +y-bob) / `0x52a23` (variant) | **Show** (create sprite + shadow) |
+| 1 | — | `0x51fde` | Hide (free gfx handles) |
+| 3 | — | `0x52019` | **WalkPath** — see below |
+| 4 | `0x51b51` | `0x52189` | party: move-marker effect at dest tile (gfx 0x28/#48, scale 150%, anchor 50/50, 1 frame/engine-frame). monster: z -= 1 nudge, StartAnim(Melee), WaitAnimEnd |
+| 5 | `0x51c91` | `0x521d5` | Ranged: party -> LaunchProjectile only; monster -> StartAnim(Ranged) + LaunchProjectile + WaitAnimEnd |
+| 6 | — | `0x52243` | **Flee**: StartAnim(Move); 20 ticks of z += 50/tick (runs into the distance); sprite freed |
+| 7 | — | `0x522ba` | Magic: StartAnim(Magic), WaitAnimEnd |
+| 8 | `0x51cd8` | `0x522f4` | **Hit**: party-row variant = cast-burst gfx 0x28/#47 at aim point (scale 200+4*param %). Monster: slot.z += 20 (pop forward), StartAnim(Hit) + **hit-splash gfx 0x28/#46** over the victim at scale (200+4*param)% — param is the queued event word (damage-scaled), 2 engine-frames per splash frame |
+| 9 | — | `0x5241f` (rows 1,2) / `0x528fc` (row 3 flying) | **Die**: z += 20; StartAnim(Die)+wait; demonic targets (`fcn.00036701(sheet) & 0x44`) additionally spawn a **soul-rise**: gfx 0x28/#43, kind 7 (translucent), 2x scale, y driven by word-table at `0x51a97` (scaled by hScale/86), 2 engine-frames/frame. Non-demonic: sprite set to LAST Die frame (corpse). Flying variant `0x528fc`: corpse **falls with gravity** (vy -= 0.16/tick^2, until y <= -40) onto/below the ground, then last-Die-frame corpse |
+| 10 | `0x51dd1` | `0x52619` | wrapper -> `fcn.00099233(c, word[arg])` (spell-anim module; big-spell visual on a combatant) |
+| 11 | — | `0x52655` | **PlayInitialThenIdle**: if Initial anim exists play it once (battle intro "unfold"), then idle base = Move[0]. Combat init `fcn.0004d028` calls this for every monster, then waits 20 engine frames |
+
+Row selector (`c[+0x10]` = 2/3/4) write site **not located** — INFERRED to come from
+monster data during spawn (sheet bytes 0x3AE/0x3AF are never read by code, so it's
+probably derived elsewhere; open item).
+
+**WalkPath (`0x52019`)** — monster movement is smooth, not teleport:
+takes a path list {count, (col,row)...}. Per tile step: target = TileToWorld(col,row);
+then for j = 0..N-1 (N = `fcn.0004d1ac(c,0)` ~ Move anim length): slot position is
+linearly interpolated start->target, `c[+0x18]=0` (Move anim) re-asserted and StepAnim
+called **every engine frame** (so the walk cycle runs at frame rate, faster than the
+6.67 fps idle stepper), one engine frame per interpolation step. Combatant flag bit3 set
+during the walk so the global stepper leaves it alone.
+
+### 6. Party members are NOT drawn (CONFIRMED)
+
+- `fcn.0004d028` (ShowAllCombatants, called from combat init) iterates **only the monster
+  table** `0x15e944`; no party slot is ever created. vtable_2 row 0 has NULL Show/Hide.
+- ShowCombatant reads sheet fields >= 0x3AC which only exist in 1214-byte monster sheets
+  (party PRTCHAR is 940 = 0x3AC bytes — the monster block starts exactly where the party
+  sheet ends).
+- For effect/projectile endpoints, party members get a **virtual position** from
+  `fcn.00053208` (GetAimPoint): kind==1 -> TileToWorld(col, row=-1) =>
+  world (16*col-40, 80, -109.99) => screen ~ (24 + 62.4*col, 108) — i.e. party melee
+  swings, casts and incoming/outgoing projectiles originate/terminate at six points
+  spread across the screen just below the horizon, as if the party stood just behind
+  the camera. For monsters GetAimPoint returns the sprite's 3/4-height chest point
+  (x centred, y = feet + 3/4 * scaledH).
+
+### 7. Projectiles (CONFIRMED)
+
+`fcn.00052b71` = LaunchProjectile(attacker, weaponSlotIdx, targetCol, targetRow)
+(both party sub-5 and monster sub-5 use it):
+
+1. **Anim class** (0..9): from the AMMO item's `+0x14` (`ammoAnim`) when the weapon's
+   `+0x0E` ammoType != 0 and matching typeid-7 ammo is in the ammo slot (sheet+0x304);
+   otherwise from the weapon's own `+0x14`. Asserted < 10 (comshow.c:1608).
+2. **Start point** = attacker AimPoint (party virtual point / monster chest).
+   **End point** = target occupant's AimPoint, or tile ground point if empty.
+3. **Velocity** (`fcn.00052ee8`): `speed = strikeTable[class].word[+0xC] * 100`
+   (units x100 per logic tick; data: classes 0-3 -> 10, 4-5 -> 15, 6-7 -> 7, 8-9 -> 12
+   world units/tick = 200-300 units/s); `dist = sqrt(dx^2+dy^2+dz^2)`;
+   `v = d*speed/dist`; **flightTicks = max(1, dist/speed)** (returned).
+4. **Sprite** — the strike table `0x13e370` (10 x 14 B) fields +0/+2/+4/+6 are the
+   **four flight-direction variants** of the projectile gfx in file 0x28
+   (correcting the earlier "direction/hit variants" guess):
+   - target right of shooter on screen (`fcn.0005304a` compares projected Xs) & vz >= 0 (flying away) -> +0
+   - left & away -> +2; right & toward camera -> +4; left & toward -> +6
+   Fields +8/+10 = width%/height% (150/150 in data — these are scales, not coords);
+   +0xC = speed (the old "Frames" column label was wrong).
+   Slot: kind 0, anchor (50,50), frame count cached at +0x2A.
+5. **Flight**: the slot auto-moves each logic tick (`fcn.00053fd6` adds the velocity;
+   slot flag bit3) and its frames cycle at 6.67 fps (`fcn.00054bbc` -> `fcn.00054c6d`);
+   the builder blocks `while (flightTicks > 0) { EngineFrame(); flightTicks -= word[0x15f120]; }`
+   (0x15f120 = logic ticks executed that frame) then frees the slot. Straight line,
+   no arc, no rotation beyond the 4 pre-baked direction sprites.
+
+### 8. Combat-gfx file 0x28 — known effect indices
+
+| Index | Used by | Effect |
+|---|---|---|
+| 43 (0x2B) | Die handler | soul/wraith rising from demonic corpses (translucent, 2x scale) |
+| 46 (0x2E) | Hit handler | impact splash over victim, scale 200%+4*damage-param |
+| 47 (0x2F) | party sub-8 | cast-burst at party aim point, scale 200%+4*param |
+| 48 (0x30) | party sub-4 | tile move-marker at Move destination, 150% |
+| 49..85 | strike table | projectile sprites, 4 direction variants per ammoAnim class |
+
+Monster body gfx come from **file 0x26** (index = `MonsterData.CombatGfx`), tactical-grid
+icons from **file 0x29** (index +12). Combat background bitmap handle lives at `0x15e940`.
+
+### 9. Corrections to earlier sections of this file
+
+- `fcn.00051b51` is **not** a "melee animation" — it is the party Move **destination tile
+  marker** (gfx 0x28/#48). Its "(50,150)" are anchor (50%,50%) + scale (150%,150%), not
+  baseline coordinates.
+- `fcn.000526e1` is **not** "the melee animation handler enqueuing 5 sound events" — it
+  is the ghostly-monster Show variant; the rand(60..99)/rand(400..599) rolls are
+  **sine-sway behaviour periods/amplitudes**, not sound parameters.
+- The 800x44 queue at `0x15f144` is the **behaviour queue** (per-tick slot callbacks:
+  shadow-sync, sine bobs), not the combat damage-event queue.
+- Strike table `0x13e370` fields: 4 x direction-variant gfx ids, w%/h% = 150/150,
+  +0xC = projectile speed (10/15/7/12).
+- vtable_2 layout corrected: **5 rows** (render classes) x 12 subs; party row only has
+  subs 4/5/8/10.
+- `0x13e400` holds 83 (camera height), not 83<<16.
+- `MonsterData.Unk37` = per-animation ping-pong bitfield; `MonsterData.Unk152` = vertical
+  draw offset (negated, world units; flying monsters hover).
+
+### 10. Open items
+
+- Combatant render-class (`c[+0x10]` rows 2-4) selection — where 2/3/4 get written.
+- Exact semantics of `fcn.00099233` (sub-10 "big spell visual") and `fcn.00054ce7`
+  (alternate projectile frame-cycler, flags2 bit0).
+- `0x13e146/0x13e14a` are writable globals (default 3200/6400) — nothing in combat seems
+  to change them, but a zoom/config writer may exist (INFERRED constant).

@@ -19,11 +19,7 @@ public class CombatDialog : Dialog
     public CombatDialog(int depth, IReadOnlyBattle battle) : base(DialogPositioning.Center, depth)
     {
         On<EndCombatEvent>(_ => Remove());
-        On<ShowCombatDialogEvent>(e =>
-        {
-            foreach(var child in Children)
-                child.IsActive = e.Show;
-        });
+        On<ShowCombatDialogEvent>(e => SetVisible(e.Show));
 
         _battle = battle ?? throw new ArgumentNullException(nameof(battle));
         var stack = new List<IUiElement>();
@@ -47,12 +43,20 @@ public class CombatDialog : Dialog
         });
     }
 
+    void SetVisible(bool show)
+    {
+        foreach (var child in Children)
+            child.IsActive = show;
+    }
+
     void StartRound()
     {
-        // Keep the grid visible so the round playback (turn highlights, damage flashes,
-        // movement) is watchable — only the confirm button goes away while it runs.
-        _startRoundButton.IsActive = false;
-        RaiseA(new BeginCombatRoundEvent()).OnCompleted(() => _startRoundButton.IsActive = true);
+        // The original hides the planning grid during round playback — the player watches
+        // the battle view (monster animations, hit splashes) and the status-bar messages,
+        // then the grid returns for the next round's orders. (Direct calls, not Raise —
+        // Raise skips the sender's own handlers.)
+        SetVisible(false);
+        RaiseA(new BeginCombatRoundEvent()).OnCompleted(() => SetVisible(true));
     }
 
     HorizontalStacker BuildRow(int row)

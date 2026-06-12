@@ -61,6 +61,8 @@ public class Battle : GameComponent, IReadOnlyBattle
         Mobs = _mobs;
         AttachChild(new CombatActionPicker());
         AttachChild(new CombatAudio());
+        if (System.Environment.GetEnvironmentVariable("UALBION_BATTLEVIEW") == "1")
+            AttachChild(new BattleView(this)); // EXPERIMENTAL: projection confirmed, but palette + some monster textures render wrong — see BattleView.cs notes
 
         // The painted combat backdrop fills the screen below the combat UI like the
         // original. It renders through the UI sprite path (Interface layer, NoDepthTest)
