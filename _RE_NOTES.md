@@ -1075,3 +1075,104 @@ For actual audio: SAMPLES0.XLD is file-table id 30, WAVELIB0.XLD id 31 (filename
 
 - Any UAlbion mapping that treats 443/444/445 or 762-773 as `SampleId`s should instead use `Base.SystemText` ids: 443=MoveBlocked, 444=IsMoving, 445=IsFleeing, 762-773=per-condition status lines (order: unconscious, poisoned, ill, exhausted, paralysed, fled, intoxicated, blinded, panicking, asleep, insane, irritated).
 - The 800-entry limit (0x320) is the engine's SYSTEXTS table size, not a sound table size.
+
+## Combat SFX (RE'd 2026-06-12)
+
+### Playback architecture (CONFIRMED)
+
+All in-game sound effects — including every combat sound — are **SAMPLES entries (file-table id 0x1e = 30, SAMPLES0-2.XLD)**. There is no code path that plays WAVELIB (0x1f) entries as SFX: wave libraries feed the XMIDI wave-synth as *music instruments* only (no game-side callers of `AIL_send_channel_voice_message`; the M-HT SR recompile of MAIN.EXE exposes only the AIL *sample* APIs + XMI player, confirming the same).
+
+- **`fcn.00062a41` = PlaySample(eax=sampleId, edx=priority, ebx=volume 0-127, ecx=randomVariation, push rateHz)** — the one-shot SFX entry point (74 call sites).
+  - Resource fetch: `fcn.000233b8(eax=0x1e, edx=sampleId)` → cached XLD entry pointer (id/100 selects SAMPLES0/1/2, id%100 the sub-entry).
+  - Defaults: volume 0 → 100; rate 0 → **0x2AF8 = 11000 Hz**. Pan is always 0x40 (centre).
+  - Variation (ecx≠0): volume += (rand()%(100·var) − 50·var)/100 (≈ ±var/2 units, clamped ≤ 0x7F); rate += rand()%(100·var) − 50·var (±50·var Hz, clamped 1000..0xAC44).
+  - Fills a 21-byte request in the 8-slot one-shot pool @ 0x177e7c: `{status@0 (1=pending,2=playing), flagsWord@1 (bit0=loop), prio@3, sampleId@5, vol@7, rate@9, pan@0xB, dataPtr@0xD, len@0x11}`.
+- **`fcn.00062f60` = PlayLoopedSample3D(eax=id, edx=prio, ebx=vol, ecx (==100 → loop), stack: rateHz, srcPtrA, srcPtrB)** — 64-slot pool @ 0x1775bc (35-byte slots; extra: id copy @+0x15, vol @+0x17, loopArg @+0x19, two position pointers @+0x1B/+0x1F). Returns slot handle. Users: 3D-map ambient table (`fcn.0004356a`, 13×0x28 table @ 0x13db10, rows of {id,prio,vol,loop,rate}×4) and the map "sound" event (positional case @ 0x3b63f). Same SAMPLES file (0x1e) — *not* wavelib.
+- **Mixer pump `fcn.000634fb`** (from sound tick `fcn.000625ac` @ 0x6261d): gathers pending/playing requests from both pools, priority-sorts (`fcn.00070fa6` qsort, comparators 0x637ca/0x63828), keeps the best **12** on the AIL voice table @ 0x177f38 (9-byte slots `{active, requestPtr@1, AIL_handle@5}`), stopping the rest (`fcn.00063e96`).
+- **Voice start `fcn.00063bf0`**: finds a free AIL slot then `AIL_set_sample_address` (fcn.0008da0d) → volume (0x8dd3b) → playback rate (0x8dcc5) → pan (0x8ddb1) → loop-count 0 if flag bit0 (0x8de27) → `AIL_start_sample` (fcn.0008db11). `fcn.0008b739/0008ba38` = header-parse data-ptr / length of the raw sample blob.
+- **`fcn.00062925` = PlaySong** (file 0x1d = 29, SONGS → AIL XMIDI sequence via fcn.0008f2cb). Map sound-event case 0 routes here. `fcn.00062cb4` re-resolves looping-sample buffers after an XLD cache flush.
+
+### Combat sound usage (CONFIRMED call sites)
+
+| action | function / site | sample | params |
+|---|---|---|---|
+| Combatant dies (type A, `word[obj]==1`) | `fcn.0004dec9` @ 0x4df78 | **268** (death scream) | prio 100, vol 100, var 50, rate 11000 |
+| Combatant dies (type B, else-branch) | `fcn.0004dec9` @ 0x4e03c | **268** | prio 100, vol 60, var 50, rate **15000** (higher pitch, quieter) |
+| Melee swing / hit / miss | — | **none** | see below |
+| Spell casts | per-spell handlers | 38, 201-268 | prio 100, vol 100, var 0, rate 11000 (table below) |
+
+INFERRED: the two death variants distinguish party members vs monsters (struct word[0] flag; both then emit the SYSTEXTS 13/14 messages via the 0x15f126 block). The *pitch*, not the sample, differs — there is **one** death sound for everything.
+
+**Melee strikes are silent in the DOS engine.** The strike path (`fcn.00051c91` → `fcn.00052b71`, comshow.c:1608) picks a strike type 0-9 from the attacker's weapon/ammo item sheet **byte +0x14**, indexes the 14-byte strike table @ **0x13e370** = `{gfx ×4 (direction/hit variants), w4=150, w5=150, projectileSpeed}` — entry +0xC (values 10/15/7/12) is the projectile *speed* (×100 in `fcn.00052ee8` velocity calc), **not** a sound id. The graphics ids load combat-gfx file 0x28. No PlaySample call is reachable from `fcn.0004e6d1` (MeleeResolve), `fcn.00051b51` (melee anim, file 0x28 sub 0x30), `fcn.00051c91`, or `fcn.00052b71`. Likewise **no per-monster attack sample exists** — nothing reads a MONCHAR sheet sound field anywhere in the audio paths. Monster-specific audio flavour in the original comes solely from the combat *music* (each combat song's WAVELIB contains the monster screech instruments, triggered by the XMI sequence itself).
+
+### Spell SFX dispatch (CONFIRMED mechanism, ids read off handler disasm)
+
+`fcn.0005ecda`: `school = [castEvent+6]>>16`, `spellNo = [castEvent+8]>>16`, handler = `[[0x13e930 + school*4] + (spellNo-1)*4]`; `fcn.0005fdf7` validates/deducts SP first. School pointer arrays: 0=Dji-Kas @ 0x13e83c (21 entries), 1=Dji-Kantos @ 0x13e890 (11), 2=Druid @ 0x13e8bc (10), 3=Oqulo-Kamulos @ 0x13e8e4 (15), 4=null, 5=Zombie @ 0x13e920 (4) — sizes match UAlbion `Base.Spell` exactly.
+
+`fcn.0009b827` = shared "throw magic projectile" helper: plays **201** (ThrowMagicSeed) then flies the projectile caster→target. Per-spell samples (UAlbion `Base.Sample` names where defined):
+
+| spell (Base.Spell) | handler | samples played |
+|---|---|---|
+| ThornSnare 1 | 0x9b95e | 201 + 203 PoweringUp |
+| Hurry 4 | 0x9bd5f | — |
+| ViewOfLife 5 | 0x9bddf | 208 TechTension |
+| FrostSplinter 6 | 0x9c109 | 201, 209 LaserDoor, 210 MiniPyiew |
+| FrostCrystal 7 | 0x9c7ba | 201, 209, 210 |
+| FrostAvalanche 8 | 0x9cf43 | 201, 209, 210 |
+| LightHealing 9 | 0x640c5 | 38 Healing |
+| BlindingSpark 10 | 0x9d6ca | 201, 213 BeamMeDown, 214 Choonk |
+| BlindingRay 11 | 0x9dab3 | 201, 213, 214 |
+| BlindingStorm 12 | 0x9e292 | 201, 213, 214 |
+| SleepSpores 13 | 0x9ea71 | 201, 215 DiddlyDiddly |
+| ThornTrap 14 | 0x9f123 | 201, 216 Drrzh, 218 RockCrumbling, 219 Takwow |
+| RemoveTrapDK 15 | 0x9fa2d | 221 Bwoowoo, 206 EchoingPing |
+| HealParalysis 16 | (null) | — |
+| HealIntoxication 17 | 0x641af | 38 |
+| HealBlindness 18 | 0x6423d | 38 |
+| HealPoisoning 19 | 0x642cb | 38 |
+| Fungification 20 | 0x9fd5c | 201, 223 LoHiHiHiHi ×2, 225 MultipleImpacts |
+| Light 21 | 0x64359 | 38 |
+| Regeneration 31 | 0x643aa | 38 |
+| MapView 32 | 0x64571 | 38 |
+| Lifebringer 33 | 0x645d1 | 38 |
+| Teleporter 34 | 0xa068b | 215, 226 Strings, 210 |
+| HealingDC 35 | 0x64621 | 38 |
+| QuickWithdrawal 36 | 0xa1021 | — |
+| GoddessWrath 39 | 0xa1134 | 266, 267 (unnamed in enum) |
+| Irritation 40 | 0xa1799 | 215 |
+| Recuperation 41 | 0x6470b | 38 |
+| Berserk 61 / BanishDemon 62 / BanishDemons 63 / DemonExodus 64 | 0xa1a69/0xa1aec/0xa1fed/0xa2021 | — |
+| SmallFireball 65 | 0xa2055 | 233 FireballChargeUp, 234 FireballLaunch, 235 (impact) |
+| MagicShield 66 | 0xa2510 | — |
+| HealingD 67 | 0x647bd | 38 |
+| Boasting 68 | 0xa2612 | 230 LongGrowlWithLaugh, 231 AngryDissonantBuzz |
+| Shock 69 / Panic 70 | 0xa2eaf/0xa2ee3 | (stubs, delegate) |
+| Fireball 91 | 0xa2f17 | 233, 234, 235 |
+| LightningStrike 92 | 0xa33d2 | 234, 235 |
+| FireRain 93 | 0xa43c6 | 260 (unnamed) |
+| Thunderbolt 94 | 0xa477a | 239, 235 |
+| FireHail 95 | 0xa50ef | 261, 235, 241 |
+| Thunderstorm 96 | 0xa5aad | 239, 235 |
+| LightningTrap 97 | 0xa6567 | 242, 243, 265 |
+| BigLightningTrap 98 | 0xa6fd0 | (stub) |
+| LightningMine 99 | 0xa7004 | 242, 206 |
+| BigLightningMine 100 | 0xa777f | (stub) |
+| StealLife 101 | 0xa77b3 | 206 |
+| StealMagic 102 | 0xa80e3 | 206 |
+| PersonalProtection 103 | 0xa8a3f | — |
+| KamulosGaze 104 | 0xa8b12 | 263, 264 (unnamed) |
+| RemoveTrapKK 105 | 0xa92ae | — observed |
+| Zombie spells 151-154 | 0xa95a4/0xa96fc/0xa9854/0xa99ac | (stubs — likely reuse Panic/Irritation displays) |
+
+INFERRED in the table: handler→spell-name pairing follows the array index order (mechanism itself CONFIRMED); samples were attributed to handlers by address range, and projectile-launch helper sound 201 applies wherever `fcn.0009b827` is called (0x9ba4a, 0x9c227, 0x9c8a5, 0x9d030, 0x9d761, 0x9db54, 0x9e333, 0x9eb36, 0x9f1e6, 0x9fe01).
+
+### Other PlaySample users (for reference)
+- Map "sound" event handler @ 0x3b4e0 (switch on event byte+1): case 0 → PlaySong, case 1 → PlaySample(id, b3, b4, b5, w6) @ 0x3b56d, positional looped case @ 0x3b63f. CONFIRMED.
+- Script-opcode play-sample @ 0x6aea9 (args parsed via fcn.0006a7ca) — cutscene scripts.
+- UI: 104 Kalunk @ 0x5a90e, 108 WoogityTack @ 0x5ac66 (inventory/shop area, paired with SYSTEXTS 525). INFERRED non-combat.
+
+### Remake implications
+- **Combat SFX are `Sample` asset ids (SAMPLES0-2.XLD), never WaveLib entries.** Keep `AudioManager.GetBuffer(songId, instrument)` for music only; combat one-shots should resolve `Base.Sample` ids directly.
+- Faithful behaviour: melee swing/hit = **no sound**; combatant death = Sample 268 at 11000 Hz (party side) / 15000 Hz + ~60% volume (other side, INFERRED which is which), with ±25 volume and ±2500 Hz random jitter; spell casts = the table above at default 11000 Hz, no jitter.
+- `Base.Sample` is missing names for ids 252-299; ids **260, 261, 263, 264, 265, 266, 267, 268** are definitely present in SAMPLES2.XLD (entries 60-68) and used by the engine — they need enum entries before the spell/death sounds can be wired up.
+- Default playback rate when an event passes rate 0 is 11000 Hz; clamps: rate 1000..44100 Hz, volume 0..127.

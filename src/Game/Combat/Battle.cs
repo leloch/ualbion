@@ -666,6 +666,9 @@ public class Battle : GameComponent, IReadOnlyBattle
         Info($"[Combat] {caster.SheetId} casts {spellId} at tile {targetTile}: {outcome}");
         TraceLog.Emit("combat_cast", ("actor", caster.SheetId), ("spell", spellId), ("tile", targetTile), ("outcome", outcome));
 
+        if (outcome != SpellCastOutcome.Failed)
+            Raise(new CombatCastEvent(spellId)); // cast SFX (CombatAudio)
+
         // SP is consumed when the cast is attempted, regardless of resist — matches the
         // original engine's charge/SP handling for unfulfilled casts.
         if (cost > 0)
@@ -710,6 +713,9 @@ public class Battle : GameComponent, IReadOnlyBattle
         var outcome = SpellEffectRegistry.Cast(pending.Spell, context);
         Info($"[Combat] {user.SheetId} uses item {pending.Item} ({pending.Spell}): {outcome}");
         TraceLog.Emit("combat_use_item", ("actor", user.SheetId), ("item", pending.Item), ("spell", pending.Spell), ("outcome", outcome));
+
+        if (outcome != SpellCastOutcome.Failed)
+            Raise(new CombatCastEvent(pending.Spell)); // cast SFX (CombatAudio)
     }
 
     /// <summary>

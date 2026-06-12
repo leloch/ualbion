@@ -14,3 +14,9 @@ public record CombatTurnHighlightEvent(int TileIndex) : EventRecord, IVerboseEve
 /// Amount 0 with Heal false is a miss (shown as "0" with no flash).
 /// </summary>
 public record CombatHitEvent(int TileIndex, int Amount, bool Killed, bool Heal) : EventRecord, IVerboseEvent;
+
+/// <summary>
+/// Round-playback presentation: a spell or magic item was cast (after SP gating).
+/// CombatAudio maps the spell to its RE'd sample sequence.
+/// </summary>
+public record CombatCastEvent(UAlbion.Formats.Ids.SpellId SpellId) : EventRecord, IVerboseEvent;
