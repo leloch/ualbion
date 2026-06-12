@@ -38,6 +38,12 @@ public interface IGameState
     bool IsAutomapMarkerFound(int markerId);
     /// <summary>Mark a goto-point visited (party stepped on its tile).</summary>
     void SetAutomapMarkerFound(int markerId);
+    /// <summary>
+    /// Active-spell percent for a party member (the original's 0x153b3e table): type 1 =
+    /// physical-defense boost, type 2 = magic-resistance boost (MagicShield /
+    /// PersonalProtection). 0 when no entry is active. Decays hourly.
+    /// </summary>
+    int GetActiveSpellPct(PartyMemberId member, int type);
     bool IsChainDisabled(MapId mapId, ushort chain);
     bool IsNpcDisabled(MapId mapId, byte npcNum);
     bool IsEventUsed(AssetId eventSetId, ActionEvent action);

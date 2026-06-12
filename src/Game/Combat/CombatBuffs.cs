@@ -35,14 +35,6 @@ public static class CombatBuffs
         /// <summary>Critical-hit skill bonus — feeds the instant-kill crit roll (Berserk).</summary>
         CritSkill,
         /// <summary>
-        /// MagicShield/PersonalProtection's active-spell percentage (the original's
-        /// 0x153b3e table, percent = max over casts of M; type-1 and type-2 entries are
-        /// written with identical values). Feeds BOTH effects: physical defense
-        /// (rawDef += rawDef·pct/100 in fcn.0004ee3b) and Magic Resistance in the spell
-        /// success gate (resist += resist·pct/100 in fcn.000601a6).
-        /// </summary>
-        ShieldPct,
-        /// <summary>
         /// Frost-line freeze (the original's buff kind 1, base 3): the target skips its
         /// turns until the duration expires. Battle's turn gate checks IsFrozen.
         /// </summary>

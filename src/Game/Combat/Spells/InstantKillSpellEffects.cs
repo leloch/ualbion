@@ -44,11 +44,11 @@ public static class SpellSuccessGate
 
         int resist = target.Effective.Attributes?.MagicResistance?.Current ?? 0;
 
-        // Party targets get the MagicShield/PersonalProtection boost:
-        // resist += resist·pct/100, pct = max over casts of M (table 0x153b3e).
-        if (target.SheetId.Type == AssetType.PartySheet)
+        // Party targets get the MagicShield/PersonalProtection type-2 boost:
+        // resist += resist·pct/100 (table 0x153b3e — hour-duration entries, RE 5B).
+        if (target.SheetId.Type == AssetType.PartySheet && context.GetActiveSpellPct != null)
         {
-            int shieldPct = CombatBuffs.Bonus(target.SheetId, CombatBuffs.BuffKind.ShieldPct);
+            int shieldPct = context.GetActiveSpellPct(target, 2);
             resist += resist * shieldPct / 100;
         }
 
@@ -72,18 +72,32 @@ public sealed class GoddessWrathEffect : ISpellEffect
 
     public SpellCastOutcome Apply(SpellCastContext context)
     {
-        var living = context?.GetLiveEnemies?.Invoke();
+        // RE 5B (fcn.0005f7ec): kills = max(1, living·M/100); selection is uniform
+        // WITHOUT replacement via rejection re-roll on an ordinal bitmask (matches the
+        // original's RNG stream); victims are then applied in GRID ORDER (row-major),
+        // each still individually gated — a high-resist pick is wasted, not re-rolled.
+        var living = context?.GetLiveEnemies?.Invoke(); // grid order (Battle enumerates tiles row-major)
         if (living == null || living.Count == 0 || context.InstantKill == null)
             return SpellCastOutcome.Failed;
 
-        int count = Math.Max(1, living.Count * context.MasteryMultiplier / 100);
-        var pool = new List<ICombatParticipant>(living);
-        bool anyKilled = false;
-        for (int i = 0; i < count && pool.Count > 0; i++)
+        int kills = Math.Max(1, living.Count * context.MasteryMultiplier / 100);
+        kills = Math.Min(kills, living.Count);
+
+        ulong picked = 0;
+        for (int i = 0; i < kills; i++)
         {
-            int pick = context.Random?.Invoke(pool.Count) ?? 0;
-            var victim = pool[pick];
-            pool.RemoveAt(pick);
+            int r;
+            do { r = context.Random?.Invoke(living.Count) ?? i; }
+            while ((picked & (1UL << r)) != 0);
+            picked |= 1UL << r;
+        }
+
+        bool anyKilled = false;
+        for (int ord = 0; ord < living.Count; ord++)
+        {
+            if ((picked & (1UL << ord)) == 0)
+                continue;
+            var victim = living[ord];
             if (!SpellSuccessGate.Lands(context, victim))
                 continue;
             context.InstantKill(victim);

@@ -70,6 +70,20 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public bool IsNpcDisabled(MapId mapId, byte npcNum) => _game.IsNpcDisabled(mapId, npcNum);
     public bool IsAutomapMarkerFound(int markerId) => _game?.IsAutomapMarkerFound(markerId) ?? false;
     public void SetAutomapMarkerFound(int markerId) => _game?.SetAutomapMarkerFound(markerId, true);
+
+    int PartySlotOf(PartyMemberId member)
+    {
+        var order = _party?.StatusBarOrder;
+        if (order == null)
+            return -1;
+        for (int i = 0; i < order.Count; i++)
+            if (order[i]?.Id == member)
+                return i;
+        return -1;
+    }
+
+    public int GetActiveSpellPct(PartyMemberId member, int type)
+        => _game?.GetActiveSpellPct(PartySlotOf(member), type) ?? 0;
     public bool IsEventUsed(AssetId eventSetId, ActionEvent action) => _game.IsEventUsed(eventSetId, action);
 
     public MapId MapId => _game.MapId;
@@ -96,8 +110,18 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyMTicksEvent>(OnModifyMTicks);
         On<RestEvent>(OnRest);
         OnAsync<PartyWaitEvent>(OnWait);
-        On<HourElapsedEvent>(_ => { if (_game != null && _game.HoursSinceResting < ushort.MaxValue) _game.HoursSinceResting++; }); // fatigue clock (rest resets it)
+        On<HourElapsedEvent>(_ =>
+        {
+            if (_game == null) return;
+            if (_game.HoursSinceResting < ushort.MaxValue) _game.HoursSinceResting++; // fatigue clock (rest resets it)
+            _game.TickActiveSpells(); // shield/light entries decay hourly (fcn.000605ed)
+        });
         On<ResetFatigueEvent>(_ => { if (_game != null) _game.HoursSinceResting = 0; }); // Recuperation = magical full rest
+        On<AddActiveSpellEvent>(e =>
+        {
+            // Write-once while empty (fcn.000607da) — re-casts on an active entry do nothing.
+            _game?.TryAddActiveSpell(PartySlotOf(e.MemberId), e.EntryType, e.Hours, e.Percent);
+        });
         On<SetSpecialItemActiveEvent>(ActivateItem);
         On<EventChainOffEvent>(e => _game.SetChainDisabled(e.Map, e.ChainNumber, SetFlag(e.Operation, _game.IsChainDisabled(e.Map, e.ChainNumber))));
         On<ModifyNpcOffEvent>(e => _game.SetNpcDisabled(e.Map, e.NpcNum, SetFlag(e.Operation, _game.IsNpcDisabled(e.Map, e.NpcNum))));

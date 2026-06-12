@@ -27,11 +27,19 @@ public sealed class DamageSpellEffect : ISpellEffect
     /// </summary>
     public int FreezeBase { get; }
 
-    public DamageSpellEffect(SpellId spellId, int k, int freezeBase = 0)
+    /// <summary>
+    /// Whether the success gate applies. Every damage spell runs it EXCEPT
+    /// LightningStrike (RE batch 5B: its continuation 0xa3406 never calls the gate —
+    /// damage = max(1, raw M·33/100), ignoring MagicResist entirely).
+    /// </summary>
+    public bool Gated { get; }
+
+    public DamageSpellEffect(SpellId spellId, int k, int freezeBase = 0, bool gated = true)
     {
         SpellId = spellId;
         K = k;
         FreezeBase = freezeBase;
+        Gated = gated;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
@@ -41,9 +49,17 @@ public sealed class DamageSpellEffect : ISpellEffect
         if (combat?.LifePoints == null) return SpellCastOutcome.Failed;
         if (combat.LifePoints.Current <= 0) return SpellCastOutcome.Failed;
 
-        int margin = SpellSuccessGate.Margin(context, context.Target);
-        if (margin <= 0)
-            return SpellCastOutcome.Resisted;
+        int margin;
+        if (Gated)
+        {
+            margin = SpellSuccessGate.Margin(context, context.Target);
+            if (margin <= 0)
+                return SpellCastOutcome.Resisted;
+        }
+        else
+        {
+            margin = context.MasteryMultiplier; // LightningStrike: raw M, no resist check
+        }
 
         int damage = Math.Max(1, margin * K / 100);
         var amount = (ushort)Math.Min(ushort.MaxValue, damage);

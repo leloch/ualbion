@@ -33,8 +33,8 @@ public class VideoManager : Component
         On<StartAnimEvent>(Start);
         On<StopAnimEvent>(_ => Clear());
         OnAsync<PlayEvent>(PlayCycles);
-        On<ShowPicEvent>(e => ShowPicture(e.PicId));
-        On<ShowPictureEvent>(e => ShowPicture(e.PictureId));
+        On<ShowPicEvent>(e => ShowPicture(e.PicId, e.X ?? 0, e.Y ?? 0));
+        On<ShowPictureEvent>(e => ShowPicture(e.PictureId, e.X, e.Y));
         On<UnloadMapEvent>(_ => Clear());
     }
 
@@ -77,7 +77,7 @@ public class VideoManager : Component
         return source.UntypedTask;
     }
 
-    void ShowPicture(PictureId pictureId)
+    void ShowPicture(PictureId pictureId, int x, int y)
     {
         if (_picture != null)
         {
@@ -85,17 +85,34 @@ public class VideoManager : Component
             _picture = null;
         }
 
-        // Fullscreen still behind any subsequent overlay anims (NoDepthTest sprite on
-        // the UI layer — same mechanism as the combat backdrop). The original supports
-        // positioned pictures (x/y args) but the intro always uses 0,0 — PLACEHOLDER.
+        // Still picture behind any subsequent overlay anims (NoDepthTest sprite on the
+        // UI layer — same mechanism as the combat backdrop). (0,0) draws fullscreen
+        // like the intro; a non-zero origin positions the picture at UI pixels
+        // (360x240 space) at its native size, matching the original's blit-at-x/y.
+        Vector3 position;
+        Vector2 size;
+        if (x == 0 && y == 0)
+        {
+            position = new Vector3(-1.0f, 1.0f, 0);
+            size = new Vector2(2.0f, -2.0f);
+        }
+        else
+        {
+            var texture = TryResolve<UAlbion.Formats.IAssetManager>()?.LoadTexture((SpriteId)(AssetId)pictureId);
+            float w = texture?.Width ?? 360;
+            float h = texture?.Height ?? 240;
+            position = new Vector3(-1.0f + 2.0f * x / 360.0f, 1.0f - 2.0f * y / 240.0f, 0);
+            size = new Vector2(2.0f * w / 360.0f, -2.0f * h / 240.0f);
+        }
+
         _picture = AttachChild(new Sprite(
             (SpriteId)(AssetId)pictureId,
             DrawLayer.Interface,
             SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest,
             SpriteFlags.LeftAligned)
         {
-            Position = new Vector3(-1.0f, 1.0f, 0),
-            Size = new Vector2(2.0f, -2.0f)
+            Position = position,
+            Size = size
         });
     }
 
