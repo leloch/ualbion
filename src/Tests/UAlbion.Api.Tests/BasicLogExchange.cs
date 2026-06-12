@@ -19,6 +19,7 @@ public class BasicLogExchange : ILogExchange
         });
     }
     public bool IsActive { get; set; }
+    public bool IsSubscribed => true;
     public int ComponentId => -1;
     public void EnqueueEvent(IEvent e) { }
     public event EventHandler<LogEventArgs> Log;

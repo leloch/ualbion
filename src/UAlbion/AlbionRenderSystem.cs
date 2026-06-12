@@ -39,7 +39,17 @@ public sealed class AlbionRenderSystem : Component, IDisposable
         var globalProvider1 = new GlobalResourceSetProvider();
         var globalProvider2 = new GlobalResourceSetProvider();
 
+        // Offscreen mirror so /screenshot can read the rendered frame. The D3D11/Vulkan
+        // swapchain back buffer is not readable via Veldrid's CopyTexture, but a
+        // SimpleFramebuffer's color attachment is. P_Game targets FB_Render and
+        // P_Composite blits FB_Render -> FB_Screen. Unlike the first (reverted) attempt
+        // this is window-resize-aware: C_WindowUpdater resizes FB_Render alongside the
+        // GameWindow whenever WindowResizedEvent fires, so the mirror always matches the
+        // swapchain dimensions.
+        var fbRender = new SimpleFramebuffer(FB_Render, 720, 480);
+
         _manager = RenderManagerBuilder.Create()
+            .Framebuffer(FB_Render, fbRender)
             .Renderer(R_Sprite, new SpriteRenderer(screenFormat))
             .Renderer(R_Blended, new BlendedSpriteRenderer(screenFormat))
             .Renderer(R_Tile, new TileRenderer(screenFormat))
@@ -47,6 +57,7 @@ public sealed class AlbionRenderSystem : Component, IDisposable
             .Renderer(R_Mesh, new MeshRenderer(screenFormat))
             .Renderer(R_Sky, new SkyboxRenderer(screenFormat))
             .Renderer(R_Debug, new ImGuiRenderer(screenFormat))
+            .Renderer(R_Quad, new FullscreenQuadRenderer())
 
             .Source(S_Sprite,  new BatchManager<SpriteKey, SpriteInfo>(       static (key, f) => f.CreateSpriteBatch(key)))
             .Source(S_Blended, new BatchManager<SpriteKey, BlendedSpriteInfo>(static (key, f) => f.CreateBlendedSpriteBatch(key)))
@@ -55,6 +66,15 @@ public sealed class AlbionRenderSystem : Component, IDisposable
             .Source(S_Etm, new EtmManager())
             .Source(S_Sky, new SkyboxManager())
             .Source(S_Debug, new ImGuiRenderable())
+            // S_Composite emits a single FullscreenQuad whose source is FB_Render's
+            // color attachment. P_Composite uses R_Quad to sample it onto FB_Screen.
+            .Source(S_Composite, new SingleQuadSource(
+                new FullscreenQuad(
+                    "composite",
+                    DrawLayer.Compositing,
+                    fbRender.Color,
+                    new System.Numerics.Vector4(0, 0, 1, 1),
+                    screenFormat)))
 
             .System(Sys_Default, sys =>
                 sys
@@ -83,25 +103,36 @@ public sealed class AlbionRenderSystem : Component, IDisposable
                         });
                     }))
                 .Component(C_GameWindow, new GameWindow(1,1, UiConstants.UiExtents.Width, UiConstants.UiExtents.Height))
-                .Component(C_WindowUpdater, // Minimal component to ensure the game resizes with the window
+                .Component(C_WindowUpdater, // Minimal component to ensure the game (and FB_Render mirror) resize with the window
                     AdHocComponent.Build(C_WindowUpdater,
-                        (GameWindow)sys.GetComponent(C_GameWindow),
-                        static (gameWindow, x) 
-                            => x.On<WindowResizedEvent>(e => gameWindow.Resize(e.Width, e.Height))))
+                        ((GameWindow)sys.GetComponent(C_GameWindow), fbRender),
+                        static (ctx, x)
+                            => x.On<WindowResizedEvent>(e =>
+                            {
+                                ctx.Item1.Resize(e.Width, e.Height);
+                                if (e.Width >= 1 && e.Height >= 1)
+                                {
+                                    ctx.Item2.Width = (uint)e.Width;
+                                    ctx.Item2.Height = (uint)e.Height;
+                                }
+                            })))
                 .Resources(globalProvider1)
                 .Component("c_globalUpdater", new GlobalResourceSetUpdater(globalProvider1))
-                // Reverted: P_Game targets FB_Screen directly. The previous offscreen
-                // FB_Render + P_Composite plumbing broke 2D map rendering (Map.Nakiridaani
-                // and similar 2D saves showed only UI sprites on black). The hardcoded
-                // 720x480 FB_Render and/or camera mismatch was the cause. /screenshot
-                // returns 503 again until a window-aware offscreen mirror exists.
                 .Pass(P_Game, pass =>
                     pass
                     .Renderers(R_Sprite, R_Blended, R_Tile, R_Etm, R_Mesh, R_Sky)
                     .Sources(S_Sprite, S_Blended, S_Tile, S_Etm, S_Mesh, S_Sky)
-                    .Target(FB_Screen)
-                    .Resources(new MainPassResourceProvider(sys.GetFramebuffer(FB_Screen), mainCamera))
+                    .Target(FB_Render)
+                    .Resources(new MainPassResourceProvider(sys.GetFramebuffer(FB_Render), mainCamera))
                     .Render(MainRenderFunc)
+                    .Build()
+                )
+                .Pass(P_Composite, pass =>
+                    pass
+                    .Renderer(R_Quad)
+                    .Source(S_Composite)
+                    .Target(FB_Screen)
+                    .Dependency(P_Game)
                     .Build()
                 )
                 .Build()

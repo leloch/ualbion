@@ -6,5 +6,6 @@ public interface IComponent
     void Remove();
     void Receive(IEvent e, object sender);
     bool IsActive { get; set; }
+    bool IsSubscribed { get; }
     int ComponentId { get; }
 }

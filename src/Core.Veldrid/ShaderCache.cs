@@ -97,11 +97,13 @@ public sealed class ShaderCache(string shaderCachePath) : Component, IShaderCach
 
         using (PerfTracker.InfrequentEvent($"Compiling {info.Name} to SPIR-V"))
         {
-#if DEBUG
+            // Always compile with debug=true (no SPIR-V-level optimization). The optimizer
+            // run by debug=false breaks D3D11: it strips never-referenced resource
+            // declarations (shifting every later HLSL register off the slots Veldrid binds
+            // — the 3D "striped walls rendering the palette" bug) and produced structured
+            // buffer reads that returned zeros on D3D11 (the 2D black-map bug). The driver
+            // re-optimizes the cross-compiled HLSL anyway, so this costs nothing at runtime.
             var options = new GlslCompileOptions(true, []);
-#else
-            var options = new GlslCompileOptions(false, []);
-#endif
 
             try
             {

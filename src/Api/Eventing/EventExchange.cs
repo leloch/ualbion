@@ -86,6 +86,7 @@ namespace UAlbion.Api.Eventing
             foreach (var handler in handlers)
             {
                 if (sender == handler.Component) continue;
+                if (!handler.Component.IsSubscribed) continue; // Component detached mid-raise by an earlier handler (e.g. map teardown during load_game)
 
                 switch (handler)
                 {
@@ -112,6 +113,7 @@ namespace UAlbion.Api.Eventing
             foreach (var handler in handlers)
             {
                 if (sender == handler.Component) continue;
+                if (!handler.Component.IsSubscribed) continue; // Component detached mid-raise by an earlier handler (e.g. map teardown during load_game)
 
                 switch (handler)
                 {
@@ -156,6 +158,7 @@ namespace UAlbion.Api.Eventing
             foreach (var handler in handlers)
             {
                 if (sender == handler.Component) continue;
+                if (!handler.Component.IsSubscribed) continue; // Component detached mid-raise by an earlier handler (e.g. map teardown during load_game)
 
                 switch (handler)
                 {
@@ -193,6 +196,7 @@ namespace UAlbion.Api.Eventing
             foreach (var handler in handlers)
             {
                 if (sender == handler.Component) continue;
+                if (!handler.Component.IsSubscribed) continue; // Component detached mid-raise by an earlier handler (e.g. map teardown during load_game)
 
                 switch (handler)
                 {

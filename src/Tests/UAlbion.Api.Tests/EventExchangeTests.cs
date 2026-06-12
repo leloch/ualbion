@@ -16,6 +16,7 @@ public class EventExchangeTests
         public void Receive(IEvent e, object sender) => ReceivedEvents.Add(e);
 
         public bool IsActive { get; set; }
+        public bool IsSubscribed => true;
         public int ComponentId => 1;
     }
 
