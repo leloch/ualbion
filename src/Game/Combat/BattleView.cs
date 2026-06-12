@@ -275,6 +275,13 @@ public class BattleView : GameComponent
                     mob.Shadow?.Remove();
                 }
 
+                // Render class (MONCHAR +0x0D): class 2 (ghostly) draws translucent
+                // (the original's render kind 8) — resolved before sprite creation.
+                int renderClass = Math.Max((int)occupant.Effective.UnkownD, 1);
+                var bodyFlags = SpriteFlags.LeftAligned;
+                if (renderClass == 2)
+                    bodyFlags = bodyFlags.SetOpacity(0.6f);
+
                 mob = new Mob
                 {
                     Participant = occupant,
@@ -283,7 +290,7 @@ public class BattleView : GameComponent
                         occupant.Effective.CombatGfx,
                         RowLayer(row), // above the backdrop+shadows, below the UI; back rows draw first
                         SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest,
-                        SpriteFlags.LeftAligned)),
+                        bodyFlags)),
                     // The ground shadow: the odd physical frame is the mask, drawn in the
                     // original's pass 1 (under every body sprite) centred on the feet
                     // (anchor 50,50). PLACEHOLDER: drawn as a half-opacity BLACK silhouette
@@ -296,9 +303,8 @@ public class BattleView : GameComponent
                         SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest,
                         (SpriteFlags.LeftAligned | SpriteFlags.DropShadow).SetOpacity(0.5f))),
                 };
-                // Hover-bob oscillators (RE 5A): render class = MONCHAR byte sheet+0x0D
-                // (UnkownD), 0 defaults to 1 (ground, no bob).
-                mob.RenderClass = Math.Max((int)occupant.Effective.UnkownD, 1);
+                // Hover-bob oscillators (RE 5A): classes 2/3/4 bob, 2/4 sway.
+                mob.RenderClass = renderClass;
                 if (mob.RenderClass >= 2)
                 {
                     var rng = TryResolve<IRandom>();
