@@ -703,6 +703,8 @@ public class Battle : GameComponent, IReadOnlyBattle
             PlaceTrap = (tile, damage) => _traps[tile] = damage,
             RemoveTrap = tile => _traps.Remove(tile),
             GetLiveEnemies = () => LiveParticipants(forParty: !IsParty(caster)).ToList(),
+            GetAllies = () => LiveParticipants(forParty: IsParty(caster)).ToList(),
+            HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
             // Instant kill = LP wipe through the normal damage path so death / corpse /
             // XP-pool handling resolve identically (the original's fcn.0004e247).
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
@@ -755,6 +757,8 @@ public class Battle : GameComponent, IReadOnlyBattle
             PlaceTrap = (tile, damage) => _traps[tile] = damage,
             RemoveTrap = tile => _traps.Remove(tile),
             GetLiveEnemies = () => LiveParticipants(forParty: !IsParty(user)).ToList(),
+            GetAllies = () => LiveParticipants(forParty: IsParty(user)).ToList(),
+            HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
         };
 

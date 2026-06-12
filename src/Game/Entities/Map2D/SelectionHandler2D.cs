@@ -150,12 +150,28 @@ public sealed class SelectionHandler2D : GameComponent
             }
         }
 
-        // PLACEHOLDER: the original gates Rest by map flags ("It's too dangerous here") —
-        // offered unconditionally until the map-flag check is RE'd.
-        options.Add(new ContextMenuOption(
-            S(Base.SystemText.MapPopup_Rest),
-            new RestEvent(),
-            ContextMenuGroup.Actions2));
+        // Rest availability by map RestMode (mapFlags & 0xC, RE'd popup builder 0x2204e):
+        // cities (0) get a Wait option instead, interiors (3) get neither. The
+        // "too dangerous" / "nobody is tired" gates run in GameState when the option fires.
+        var restMode = Resolve<IMapManager>().Current?.MapData?.RestMode ?? RestMode.NoResting;
+        switch (restMode)
+        {
+            case RestMode.Wait:
+                options.Add(new ContextMenuOption(
+                    S(Base.SystemText.MapPopup_Wait),
+                    new PartyWaitEvent(),
+                    ContextMenuGroup.Actions2));
+                break;
+            case RestMode.RestEightHours:
+            case RestMode.RestUntilDawn:
+                options.Add(new ContextMenuOption(
+                    S(Base.SystemText.MapPopup_Rest),
+                    new RestEvent(0), // 0 = duration auto-computed from RestMode + time of day
+                    ContextMenuGroup.Actions2));
+                break;
+            default:
+                break; // RestMode.NoResting: no option at all (interiors)
+        }
 
         options.Add(new ContextMenuOption(
             S(Base.SystemText.MapPopup_MainMenu),

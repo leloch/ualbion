@@ -237,11 +237,28 @@ public sealed class SelectionHandler3D : GameComponent
             }
         }
 
-        // PLACEHOLDER: Rest gating by map flags pending RE (see SelectionHandler2D).
-        options.Add(new ContextMenuOption(
-            S(Base.SystemText.MapPopup_Rest),
-            new UAlbion.Game.Events.RestEvent(),
-            ContextMenuGroup.Actions2));
+        // Rest availability by map RestMode (mapFlags & 0xC, RE'd popup builder 0x2204e):
+        // cities (0) get Wait instead, interiors (3) get neither — see SelectionHandler2D.
+        var restMode = Resolve<IMapManager>().Current?.MapData?.RestMode
+                       ?? UAlbion.Formats.Assets.Maps.RestMode.NoResting;
+        switch (restMode)
+        {
+            case UAlbion.Formats.Assets.Maps.RestMode.Wait:
+                options.Add(new ContextMenuOption(
+                    S(Base.SystemText.MapPopup_Wait),
+                    new UAlbion.Game.Events.PartyWaitEvent(),
+                    ContextMenuGroup.Actions2));
+                break;
+            case UAlbion.Formats.Assets.Maps.RestMode.RestEightHours:
+            case UAlbion.Formats.Assets.Maps.RestMode.RestUntilDawn:
+                options.Add(new ContextMenuOption(
+                    S(Base.SystemText.MapPopup_Rest),
+                    new UAlbion.Game.Events.RestEvent(0), // 0 = auto duration
+                    ContextMenuGroup.Actions2));
+                break;
+            default:
+                break; // RestMode.NoResting: no option (interiors)
+        }
 
         options.Add(new ContextMenuOption(
             S(Base.SystemText.MapPopup_Map),
