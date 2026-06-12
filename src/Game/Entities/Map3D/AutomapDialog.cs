@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using UAlbion.Api.Eventing;
 using UAlbion.Api.Visual;
@@ -29,8 +30,10 @@ public class RevealAutomapEvent : Event { }
 /// </summary>
 public class AutomapDialog : GameComponent
 {
-    const int TilePx = 8;          // AutomapTiles graphics are 8×8
-    const int DiscoveryRadius = 2; // PLACEHOLDER: original discovery radius not RE'd yet
+    const int TilePx = 8;         // AutomapTiles graphics are 8×8
+    const int DiscoveryDepth = 10; // AUTOMAP_Discover(10): both original call sites pass 10
+                                   // (map entry fcn.0001183b, movement fcn.0001e52d; the
+                                   // function clamps 3..10 but only ever receives 10)
 
     readonly LogicalMap3D _map;
     readonly MapData3D _mapData;
@@ -80,17 +83,117 @@ public class AutomapDialog : GameComponent
             state.Automaps[new AutomapId(_mapData.Id.Id)] = _discovered.AsBytes;
     }
 
-    public void MarkDiscovered(int centreX, int centreY)
+    /// <summary>
+    /// Original discovery rule (MAIN.EXE fcn.0005c40e — see _RE_NOTES.md "automap.c"):
+    /// build a facing-oriented candidate region around an origin one tile behind the
+    /// party (cardinal facing → widening 90° wedge, row i at depth i is 2i+1 wide;
+    /// diagonal facing → the full 11×11 quadrant), then flood-fill from the party tile
+    /// through sight-open cells. Cardinal steps propagate freely; diagonal steps are
+    /// blocked when either adjacent cardinal neighbour is a sight-blocking wall
+    /// (corner occlusion). Reached floors and every wall the flood touches become
+    /// discovered.
+    /// </summary>
+    public void MarkDiscovered(int partyX, int partyY)
     {
-        for (int y = centreY - DiscoveryRadius; y <= centreY + DiscoveryRadius; y++)
+        var (fx, fy) = FacingStep();
+        int ox = partyX - fx, oy = partyY - fy; // origin one tile behind the party
+
+        var candidates = new HashSet<(int X, int Y)>();
+        if (fx == 0 || fy == 0)
         {
-            for (int x = centreX - DiscoveryRadius; x <= centreX + DiscoveryRadius; x++)
+            for (int i = 0; i <= DiscoveryDepth; i++)
+                for (int j = -i; j <= i; j++)
+                    candidates.Add((ox + fx * i + (fx == 0 ? j : 0),
+                                    oy + fy * i + (fy == 0 ? j : 0)));
+        }
+        else
+        {
+            for (int a = 0; a <= DiscoveryDepth; a++)
+                for (int b = 0; b <= DiscoveryDepth; b++)
+                    candidates.Add((ox + fx * a, oy + fy * b));
+        }
+        candidates.Add((partyX, partyY));
+
+        var reached = new HashSet<(int X, int Y)> { (partyX, partyY) };
+        var queue = new Queue<(int X, int Y)>();
+        queue.Enqueue((partyX, partyY));
+        Discover(partyX, partyY);
+
+        while (queue.Count > 0)
+        {
+            var (cx, cy) = queue.Dequeue();
+            for (int dy = -1; dy <= 1; dy++)
             {
-                if (x < 0 || y < 0 || x >= _map.Width || y >= _map.Height)
-                    continue;
-                _discovered.Set(x, y, true);
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    if (dx == 0 && dy == 0) continue;
+                    int nx = cx + dx, ny = cy + dy;
+                    if (nx < 0 || ny < 0 || nx >= _map.Width || ny >= _map.Height) continue;
+                    if (reached.Contains((nx, ny)) || !candidates.Contains((nx, ny))) continue;
+                    if (dx != 0 && dy != 0 && (BlocksSight(cx + dx, cy) || BlocksSight(cx, cy + dy)))
+                        continue; // corner occlusion
+
+                    if (BlocksSight(nx, ny))
+                    {
+                        Discover(nx, ny); // walls touched by the flood become visible but don't propagate
+                        continue;
+                    }
+
+                    reached.Add((nx, ny));
+                    Discover(nx, ny);
+                    queue.Enqueue((nx, ny));
+                }
             }
         }
+    }
+
+    void Discover(int x, int y)
+    {
+        if (x >= 0 && y >= 0 && x < _map.Width && y < _map.Height)
+            _discovered.Set(x, y, true);
+    }
+
+    /// <summary>
+    /// A wall blocks sight when its flags bit 0x04 is set (MAP_BlocksSight,
+    /// fcn.00012f4f) — the bit the remake names WriteOverlay; on the automap it means
+    /// "opaque". Out-of-map blocks. Tiles without walls are sight-open.
+    /// </summary>
+    bool BlocksSight(int x, int y)
+    {
+        if (x < 0 || y < 0 || x >= _map.Width || y >= _map.Height)
+            return true;
+        var (wallIndex, wall) = _map.GetWall(x, y);
+        if (wallIndex == 0 || wall == null)
+            return false;
+        return (wall.Properties & UAlbion.Formats.Assets.Labyrinth.Wall.WallFlags.WriteOverlay) != 0;
+    }
+
+    /// <summary>
+    /// Facing octant as a unit tile step (tile Y = world Z; the camera looks -Z at
+    /// yaw 0, so octant 0 = (0,-1)). Matches the original's yaw→octant compass at
+    /// 0x134bf4. Defaults to north when no camera is available.
+    /// </summary>
+    (int X, int Y) FacingStep()
+    {
+        var camera = TryResolve<ICameraProvider>()?.Camera;
+        if (camera == null)
+            return (0, -1);
+
+        var look = camera.LookDirection;
+        double angle = Math.Atan2(look.X, -look.Z); // 0 = -Z, clockwise positive
+        int octant = (int)Math.Round(angle / (Math.PI / 4), MidpointRounding.AwayFromZero);
+        octant = (octant % 8 + 8) % 8;
+        return octant switch
+        {
+            0 => (0, -1),
+            1 => (1, -1),
+            2 => (1, 0),
+            3 => (1, 1),
+            4 => (0, 1),
+            5 => (-1, 1),
+            6 => (-1, 0),
+            _ => (-1, -1),
+        };
     }
 
     void Toggle()

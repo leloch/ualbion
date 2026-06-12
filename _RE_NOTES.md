@@ -853,3 +853,136 @@ Total: 365
 | 34 | flag | UnkFf | flag-bit |  | 3D only? |
 
 
+## automap.c (RE'd 2026-06-12)
+
+Reverse-engineered from MAIN.EXE (radare2 project `albion_aaa`). `__FILE__` string `g:\albion\src\automap.c` at 0x13168c.
+The source file spans roughly **0x5acbeâ€“0x5ea68** (the next file, `magic.c`, starts at fcn.0005ea69). Status tags: **CONFIRMED** = read directly from disasm; **INFERRED** = consistent interpretation, not byte-traced.
+
+### Key globals
+
+| Address | Meaning | Status |
+|---|---|---|
+| `0x153b32` | current map id (word); `0x153b34/36` = party X/Y (1-based) | CONFIRMED |
+| `0x14799a` / `0x147994` | map width / height | CONFIRMED |
+| `0x14799c` | map-has-walls / 3D flag (gates BlocksSight) | INFERRED |
+| `0x14799e` | labyrinth automap-style selector: !=0 â†’ AUTOGFX id 2 + palette 0x2E, ==0 â†’ AUTOGFX id 1 + palette 0x15 | CONFIRMED |
+| `0x147130` | "whole map visible" override (TestTile always 1; also unlocks all markers) | CONFIRMED behaviour, source of flag INFERRED (likely map flag/cheat/spell) |
+| `0x13e780` | special-item bitfield: bit0 â†’ monster markers, bit1 â†’ person markers, bit2 â†’ trap/secret + type-5 event markers | CONFIRMED bits, item identity INFERRED |
+| `0x176fec` / `0x176fe8` | discovery bitfield handle / size in bytes | CONFIRMED |
+| `0x177588` | discovery dirty flag (set on SetTile, cleared on flush) | CONFIRMED |
+| `0x176fdc` | AUTOGFX resource handle (type 0x1C); `0x176ff0` = compose buffer (2 words/cell); `0x176ff4` = floor mini-tile array | CONFIRMED |
+| `0x14a48c` | camera yaw, 16.16 fixed, full circle = 0x4000 | CONFIRMED |
+| `0x147134` | automap zoom/detail mode; `>>16 == 2` â†’ generic event markers drawn as glyph 19 | CONFIRMED use, semantics INFERRED |
+
+### Function inventory
+
+| Address | Size | Name (inferred) | Notes |
+|---|---|---|---|
+| 0x5acff | ~4.5k (undefined in r2; contains 0x5b0d6 assert, line 441) | `AUTOMAP_Show` | UI main: computes buffer dims (map + 8-cell border; stride `[0x17758a]`, height `[0x177592]`, map offset `[0x17758e]/[0x177590]`), allocates compose buffer W*H*4, loads AUTOGFX (type 0x1C, id 1 or 2 by `[0x14799e]`), registers cell callback 0x5c206 (cell 8x8) with tile engine fcn.0006c5e9, calls draw fns below |
+| fcn.0005be9a | 194 | text/legend helper | INFERRED (goto-point name display, recursive text breaker) |
+| fcn.0005bf5c | 211 | text/legend helper | INFERRED |
+| fcn.0005c02f | 219 | `AUTOMAP_ListGotoPoints` | loops AutomapInfo records checking switch type 7 â€” builds discovered-location list. INFERRED |
+| fcn.0005c10a | 252 | `AUTOMAP_CheckGotoPointDiscovery` | called from step handler fcn.000128bd. If party pos == AutomapInfo.X/Y and switch(7, MarkerId) unset: set it + show msg 0xA7. CONFIRMED |
+| fcn.0005c206 | 198 | `AUTOMAP_CellCallback` | cell code >= 0x2710 â†’ blit 8x8 from floor mini-tiles at (codeâˆ’0x2710)*64; else AUTOGFX frame code*64. CONFIRMED |
+| fcn.0005c2cc | 202 | `AUTOMAP_Open` | loads resource type **0x1B** (per-map automap bits). Assert line 1407: load failed; line 1415: resource size < `(W*H+7)/8`. Clears dirty flag. CONFIRMED |
+| fcn.0005c396 | 46 | `AUTOMAP_Close` | flush + free (caller: fcn.00011cfa = map leave) |
+| fcn.0005c3c4 | 74 | `AUTOMAP_Flush` | if dirty: write resource 0x1B back, clear dirty (also called from fcn.00024842, save path) |
+| fcn.0005c40e | 3012 (really ends 0x5d183) | `AUTOMAP_Discover(sightDist)` | THE discovery rule, see below. Callers: fcn.0001183b (map enter, after Open) and fcn.0001e52d (party position set / move / teleport), **both pass eax=10** |
+| fcn.0005d184 | 263 | `AUTOMAP_TestTile(x,y)` | bounds + bit test; `[0x147130]` short-circuits to 1 |
+| fcn.0005d28b | 205 | `AUTOMAP_SetTile(x,y)` | sets bit, dirty=1. Only caller: 0x5d166 (commit loop of Discover) |
+| fcn.0005d358 | 2381 | `AUTOMAP_DrawBorder` | fills compose-buffer border with AUTOGFX frames 0..0xD8 + animated edge frames 0x100/0x140/0x180 + table at 0x5ac9e, PRNG `seed = seed*17+87 & 7` seeded from map id |
+| fcn.0005dca5 | 803 | `AUTOMAP_PrepareGfx` | allocs `floorCount[0x1511c4] * 64` bytes â†’ 8x8 mini-tile per floor texture (built by fcn.0005dfc8); splices automap palette (type 3, id 0x2E or 0x15) into live palette entries **152..191**. Assert line 2357: palette load failed. CONFIRMED |
+| fcn.0005dfc8 | 341 | `AUTOMAP_ShrinkFloorTexture` | 64x64 floor texture â†’ 8x8 (sampling). INFERRED detail |
+| fcn.0005e12c | 481 | `AUTOMAP_DrawTiles` | per discovered tile: floor + wall/object glyphs, see glyph mapping |
+| fcn.0005e30d | 580 | `AUTOMAP_DrawEventMarkers` | per event zone, see markers |
+| fcn.0005e551 | 643 | `AUTOMAP_DrawNpcMarkers` | per NPC slot (96 slots Ã— 0x80 bytes at 0x159c5c area) |
+| fcn.0005e7e5 | 188 | `AUTOMAP_DrawGotoPoints` | AutomapInfo records â†’ glyph 18 |
+| fcn.0005e8a1 | 255 | `AUTOMAP_DrawWallGlyph(x,y)` | connection-mask wall glyph, see below |
+| fcn.0005e9a0 | 201 | `AUTOMAP_PlaceMarker(x,y,type)` | writes marker type (valid 2..19) into overlay word of cell |
+| fcn.00012f4f | 454 | `MAP_BlocksSight(x,y)` (dungeon.c side, used heavily here) | see below |
+
+### Discovery mechanics (fcn.0005c40e) â€” CONFIRMED
+
+Called with sight distance in eax; **both call sites pass 10** (map-enter fcn.0001183b@0x11c75, move/teleport fcn.0001e52d@0x1e639). The code clamps `dist = clamp(dist, 3, 10)`, so 10 is the effective constant.
+
+Not a radius â€” a **facing-direction field-of-view + flood fill with wall occlusion**:
+
+```
+AUTOMAP_Discover(dist):                      # dist = 10 always
+    dist = clamp(dist, 3, 10)
+    byte grid[21][21] = {0}                  # local cells, party at [10][10]
+    ox = partyX; oy = partyY
+    dir = (((0x4000 - camYaw) + 0x400) & 0x3FFF) >> 11        # 0..7: 0=N,1=NE,2=E,...,7=NW
+    (ox,oy) -= compass8[dir]                 # origin shifted ONE TILE BEHIND the facing dir
+                                             # compass8 @ 0x134bf4: (0,-1)(1,-1)(1,0)(1,1)(0,1)(-1,1)(-1,0)(-1,-1)
+    switch (dir):
+      cardinal (0/2/4/6): for i in 0..dist:           # widening 90-degree wedge
+                            for j in 0..2*i:           # row i has width 2i+1, centred
+                              cell = origin + i*facing + (j-i)*perpendicular
+      diagonal (1/3/5/7): for i in 0..dist, j in 0..dist:   # full square quadrant
+                              cell = origin + i*forwardAxis + j*sideAxis
+      each in-cone cell:  out of map        -> grid = 2
+                          MAP_BlocksSight   -> grid = 3   (wall)
+                          else              -> grid = 1   (open, candidate)
+    grid[10][10] = 4                        # seed: party tile reached
+    # flood fill, repeat passes until no change:
+    for each cell with grid==4:
+        for k in 0..3:                      # cardinals N,E,S,W (tab @ 0x134be4)
+            n = cell + cardinal[k]
+            if grid[n]==1: grid[n]=4 (changed)
+            if grid[n]==3: grid[n]=5; wallFlag[k]=0xFF      # wall becomes visible
+            if grid[n]==5: wallFlag[k]=0xFF
+        wallFlag[4] = wallFlag[0]
+        for k in 0..3:                      # diagonals NE,SE,SW,NW (tab @ 0x134bf8, stride 8)
+            n = cell + diagonal[k]
+            if grid[n]==1 and wallFlag[k]==0 and wallFlag[k+1]==0:
+                grid[n]=4 (changed)         # corner rule: diagonal blocked if either
+                                            # adjacent cardinal neighbour is a wall
+    # commit:
+    for cy in 0..20, cx in 0..20:
+        if grid[cy][cx] in {4,5}: AUTOMAP_SetTile(ox-10+cx, oy-10+cy)
+```
+
+So: **sight depth 10 tiles, 90-degree cone in the facing direction (square quadrant when facing diagonally), origin one tile behind the party, walls occlude via 4-connected flood fill with a corner rule, and the blocking walls themselves are discovered (state 5).** Nothing outside the cone is ever discovered; tiles behind walls are not.
+
+`MAP_BlocksSight(x,y)` (fcn.00012f4f): out-of-bounds â†’ blocked. Tile contents byte (3-byte map cells: contents/floor/ceiling):
+`0` or `1..100` (objects) â†’ not blocking; `>=101` â†’ wall id = contentsâˆ’101; blocking iff the wall definition's flags byte0 has **bit 0x04** â€” which the C# remake calls `WallFlags.WriteOverlay`. CONFIRMED â€” that bit is actually the "opaque on automap / blocks discovery" bit.
+
+### Save-game / resource bitfield layout â€” CONFIRMED
+
+Resource type 0x1B per map (the savegame `Automap` blob). `index = (y-1)*Width + (x-1)` (0-based: `y*W+x`), byte = `index >> 3`, bit = `1 << (index & 7)` (LSB-first), **no row padding**, total `ceil(W*H/8)` bytes. The C# `UAlbion.Formats.Assets.Automap` packing matches exactly.
+
+### Drawing / glyph mapping
+
+Compose buffer: one 4-byte cell per map tile (plus border): word[0] = base layer, word[2] = marker overlay. Cell renderer fcn.0005c206 resolves codes to 8x8 source bitmaps:
+
+| Cell code | Meaning |
+|---|---|
+| 0 | blank/undiscovered |
+| 1..~0x1FF (border fn) | AUTOGFX frame index directly (border decorations 0..0xD8, animated edges 0x100+, 0x140+, 0x180+) |
+| **0x230 + mask** (560..575) | wall piece; mask bit0=N, bit1=E, bit2=S, bit3=W â€” set when that cardinal neighbour is discovered AND blocks sight (fcn.0005e8a1). 16 connection variants |
+| **0x270F + floorId** (>=10000) | discovered floor: NOT an AUTOGFX glyph â€” an 8x8 **downscaled copy of the actual floor texture** (mini-tile array built per labyrinth floor by fcn.0005dca5/fcn.0005dfc8). Codes > 0x4E20 reset to 0 |
+| overlay word 2..0x13 (2..19) | marker glyph = AUTOGFX frame index (fcn.0005e9a0 rejects type <=1 and >19) |
+
+Tile pass (fcn.0005e12c), per tile with TestTile()==1:
+- floor byte != 0 â†’ word[0] = 0x270F + floor
+- contents 1..100 (object): `ObjectGroup.AutoGraphicsId` (word 0 of the 0x42-byte group record)
+- contents >=101 (wall): `Wall.AutoGfxType` (byte 7 of wall record â€” already named correctly in C# `Wall.cs`)
+- AutoGfx type **1 â†’ connectable wall** (fcn.0005e8a1 mask glyph into word[0]); type 2..19 â†’ marker overlay glyph of that index; 0 â†’ nothing.
+
+### Markers / legend
+
+- **Event markers** (fcn.0005e30d): for each event zone on a discovered tile, fcn.00032f87(eventChain) finds the marker/text event (0xFFFF = none); skipped if global switch type 4 index `(mapId-1)*250 + n` is set (event chain disabled â€” note the 250-chains-per-map stride). Marker byte read from map data + `[0x147544]`. If zoom mode (`[0x147134]>>16`)==2 â†’ generic glyph **19**. Marker type 5 (trap/secret) only drawn when item bit `[0x13e780]&4` or show-all; type 1 â†’ connectable wall; else direct glyph index. (Lookup chain INFERRED in detail, glyph numbers CONFIRMED.)
+- **NPC markers** (fcn.0005e551): 96 NPC slots (0x80 bytes each, base ~0x159c5c): active + on discovered tile. If NPC has event â†’ as above (type 5 gated by `&4`). Else by NPC type byte (+0x159c5c): 0/1 (monster) â†’ glyph **17**, needs item bit `&1`; 2 (person) â†’ glyph **8**, needs item bit `&2`; 3 â†’ ObjectGroup.AutoGraphicsId of word(+0x159c5a). Glyph 1 â†’ connectable wall. CONFIRMED
+- **Goto points** (fcn.0005e7e5): AutomapInfo records (0x13 bytes: X@0, Y@1, MarkerId@3 â€” matches C# `AutomapInfo`): drawn as glyph **18** when switch(7, MarkerId) set (or show-all). Discovery of the point itself happens by **stepping on its tile** (fcn.0005c10a, msg 0xA7). CONFIRMED
+- Wall glyphs **560..575**, floors = real floor texture minis, marker glyphs 2..19 = AUTOGFX frames. The party position itself is not specially marked in these fns (the UI cursor handles it).
+
+### Discrepancies vs the C# remake (src/Game/Entities/Map3D/AutomapDialog.cs)
+
+1. `DiscoveryRadius = 2` square around the party (PLACEHOLDER) â€” original is **depth-10 facing cone/quadrant + wall-occluding flood fill**, origin one tile behind the party. Net effect: original discovers much larger areas in open rooms, nothing behind the party beyond ~1 tile, and nothing through walls.
+2. Remake discovers on every party move event with no facing input; original recomputes on map enter and every position change **using camera yaw**.
+3. Remake draws discovered floors with a fixed tile glyph; original blits an 8x8 shrunken copy of each tile's actual floor texture, and walls use the 16 connection-mask glyphs (AUTOGFX 560+mask) keyed on *sight-blocking* (Wall flag 0x04), not mere presence.
+4. `WallFlags.WriteOverlay (0x04)` is actually "blocks automap sight/discovery" â€” worth renaming or documenting.
+5. Marker gating by the three special-item bits (`[0x13e780]` bits 0/1/2) and the show-all override (`[0x147130]`) is absent from the remake.
+6. Bitfield layout in `Formats/Assets/Automap.cs` already matches the original byte-for-byte â€” no change needed there.
+
