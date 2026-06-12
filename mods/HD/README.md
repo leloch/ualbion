@@ -25,19 +25,26 @@ The numeric id matches the leading number of the files exported by
 These categories are stretch-to-fit at render time, so any source resolution works —
 4x/8x upscales are fine.
 
-## Known issue (partially resolved)
+## Known issue (resolved)
 
-The original blocker was a buffer-math bug in `Png32Loader.Read` that threw for any
-image taller than one pixel (the png32 path had only ever been exercised for writing).
-Fixed — overrides now resolve through the asset pipeline (verified via
-`UAlbion.exe --dump --formats png --ids "CombatBackground.5" -mods "Albion HD"`:
-a 1440×768 override wins over the 360×192 original, and falls back correctly without
-the mod). NB `--ids` needs full enum names (`CombatBackground.5`), not aliases.
+Two separate bugs originally blocked the override:
 
-Still open: in-game display of the 32-bit override through the UI sprite path hasn't
-been confirmed visually yet — the combat backdrop showed the original in a quick test.
-Needs a check of whether the sprite batch renders `IReadOnlyTexture<uint>` textures and
-whether the in-game load takes a different branch from the dump path.
+1. A buffer-math bug in `Png32Loader.Read` threw for any image taller than one pixel
+   (the png32 path had only ever been exercised for writing). Fixed — verified via
+   `UAlbion.exe --dump --formats png --ids "CombatBackground.5" -mods "Albion HD"`.
+   NB `--ids` needs full enum names (`CombatBackground.5`), not aliases.
+
+2. The "dump works but in-game shows the original" follow-up was not an asset-pipeline
+   bug at all: the game and dump use the identical load path. The in-game test launched
+   the game via PowerShell 5.1 `Start-Process`, which does **not** quote `ArgumentList`
+   entries containing spaces — the process received `-mods Albion HD` as two tokens, so
+   only `Albion` was loaded and the stray `HD` token was silently discarded.
+   `CommandLineOptions` now (a) treats non-flag tokens following `-mods` as additional
+   mod names, so the override loads even when a launcher strips the quoting, and
+   (b) warns about any unrecognised argument instead of ignoring it silently.
+   Verified in-game: with the mod, `CombatBackground.BarrelDungeon` loads 720×384
+   (the override); without it, 360×192 (the original). The UI sprite path renders
+   `IReadOnlyTexture<uint>` textures fine.
 
 ## Current limitation
 

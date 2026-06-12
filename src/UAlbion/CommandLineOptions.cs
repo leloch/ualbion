@@ -42,6 +42,17 @@ public sealed class CommandLineOptions
     public ISet<AssetType> DumpAssetTypes { get; }
     public string[] DumpLanguages { get; }
 
+    static readonly HashSet<string> KnownArgs = new(StringComparer.Ordinal)
+    {
+        "--GAME", "--DUMP", "-D", "--ISO", "-ISO", "--CONVERT", "--BUILD", "-B",
+        "-H", "--HELP", "/?", "HELP",
+        "-GL", "--OPENGL", "-GLES", "--OPENGLES", "-VK", "--VULKAN", "-METAL", "--METAL", "-D3D", "--DIRECT3D",
+        "--MENUS", "--NO-AUDIO", "-MUTE", "--MUTE", "--TRACE", "--STARTUPONLY", "-S", "--RENDERDOC", "-RD",
+        "--HARNESS", "--HARNESS-HTTP", "-HH", "--COMMANDS", "-C", "--TYPE", "-T",
+        "--ID", "-ID", "-IDS", "--IDS", "--LANGUAGES", "--LANG", "-L",
+        "--FILES", "-F", "--FORMATS", "--FORMAT", "--MODS", "--MOD", "-MODS", "-MOD", "-M"
+    };
+
     public CommandLineOptions(string[] args)
     {
         // Defaults
@@ -51,6 +62,16 @@ public sealed class CommandLineOptions
         for (int i = 0; i < args.Length; i++)
         {
             var arg = args[i].ToUpperInvariant();
+
+            if (!KnownArgs.Contains(arg))
+            {
+                // Don't fail silently: a stray token usually means an argument value lost its
+                // quoting somewhere along the launch chain (e.g. PowerShell 5.1's Start-Process
+                // doesn't quote ArgumentList entries containing spaces, turning
+                // -mods "Albion HD" into -mods Albion HD and silently dropping the HD mod).
+                Console.WriteLine($"Warning: unrecognised command-line argument \"{args[i]}\" was ignored");
+                continue;
+            }
 
             // Mode
             if (arg == "--GAME") Mode = ExecutionMode.Game;
@@ -215,6 +236,13 @@ Valid Types: {string.Join(" ", Enum.GetNames<AssetType>().OrderBy(x => x))}";
                 }
 
                 Mods = [.. args[i].Split(' ', StringSplitOptions.RemoveEmptyEntries)];
+
+                // Quoting is easily lost when another process launches the game (e.g.
+                // PowerShell 5.1's Start-Process doesn't quote ArgumentList entries containing
+                // spaces), turning -mods "Albion HD" into -mods Albion HD. Rather than silently
+                // dropping the extra mods, treat following non-flag tokens as part of the list.
+                while (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
+                    Mods.AddRange(args[++i].Split(' ', StringSplitOptions.RemoveEmptyEntries));
             }
         }
     }

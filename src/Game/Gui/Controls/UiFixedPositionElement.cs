@@ -38,6 +38,7 @@ public class UiFixedPositionElement : UiElement
                 Warn($"UiFixedPositionElement: no texture for {_id}");
                 return;
             }
+            Info($"UiFixedPositionElement: {_id} loaded {texture.Width}x{texture.Height} ({texture.GetType().Name})");
             var key = new SpriteKey(texture, SpriteSampler.Point, DrawLayer.Interface, SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest);
             _sprite = sm.Borrow(key, 1, this);
         }
