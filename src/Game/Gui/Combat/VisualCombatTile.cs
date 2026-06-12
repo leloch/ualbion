@@ -30,6 +30,7 @@ public class VisualCombatTile : UiElement
         {
             if (_sprite.Id == value) return;
             _sprite.Id = value;
+            _sprite.SubId = 0; // frame index is per-texture; reset when the occupant changes
             _sprite.IsActive = !value.IsNone;
         }
     }
@@ -82,10 +83,23 @@ public class VisualCombatTile : UiElement
         AttachChild(_button);
     }
 
+    // Idle animation: cycle the tactical sprite's frames like the original's combat grid.
+    // PostEngineUpdate fires per render frame; stepping every 15 gives ~4 fps at 60 Hz.
+    const int FramesPerAnimStep = 15;
+    int _frameCounter;
+
     void OnPostUpdate()
     {
         ICombatParticipant mob = _battle.GetTile(_tileIndex);
         Icon = mob == null ? SpriteId.None : mob.Effective.TacticalGfx;
+
+        if (_sprite.Id.IsNone || ++_frameCounter % FramesPerAnimStep != 0)
+            return;
+
+        var texture = Assets.LoadTexture(_sprite.Id);
+        int frames = texture?.Regions?.Count ?? 1;
+        if (frames > 1)
+            _sprite.SubId = (_sprite.SubId + 1) % frames;
     }
 
     void ClearHitFeedback()
