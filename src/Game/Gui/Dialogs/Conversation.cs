@@ -290,8 +290,10 @@ public class Conversation : GameComponent
 
             case TextLocation.StandardOptions:
                 {
-                    var standardOptions = BuildStandardOptions();
-                    var blockId = await _optionsWindow.GetOption(null, standardOptions);
+                    // In the original game the StandardOptions text event doesn't block the chain:
+                    // the chain continues (showing the greeting text etc.) and the standard options
+                    // menu is presented afterwards (see Run()'s loop). Blocking here swallowed the
+                    // player's first click and hid the greeting until after a click.
                     return;
                 }
         }

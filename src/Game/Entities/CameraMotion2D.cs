@@ -25,6 +25,9 @@ public class CameraMotion2D : Component
         On<BeginFrameEvent>(_ => _velocity = Vector3.Zero);
         On<CameraLockEvent>(_ => _locked = true);
         On<CameraUnlockEvent>(_ => _locked = false);
+        // Map scripts (e.g. ShuttleCrashed_166) often camera_lock for a cutscene and then change
+        // map without unlocking; the original engine resumes following the party on map load.
+        On<Events.MapInitEvent>(_ => _locked = false);
 
         On<CameraJumpEvent>(e =>
         {
