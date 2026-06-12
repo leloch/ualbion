@@ -25,6 +25,7 @@ public class MapRenderable3D : GameComponent
     // bool _isSorting;
     bool _fullUpdate = true;
     int _frameCount;
+    int _spellLightRemaining;
 
     public MapRenderable3D(LogicalMap3D logicalMap, LabyrinthData labyrinthData, TilemapRequest properties)
     {
@@ -37,7 +38,21 @@ public class MapRenderable3D : GameComponent
             if (_tilemap == null) return;
             int level = (int)_tilemap.AmbientLightLevel + e.Delta;
             _tilemap.AmbientLightLevel = (uint)Math.Clamp(level, 0, 255);
+            if (e.Delta > 0)
+                _spellLightRemaining += e.Delta; // track the Light spell's contribution so it can wear off
             Info($"[Light] dungeon ambient light now {_tilemap.AmbientLightLevel}");
+        });
+        On<HourElapsedEvent>(_ =>
+        {
+            // Light-spell decay: the original tracks Light as an active-spell percentage
+            // (SavedGame.ActiveSpells[0..1]) that wears off over time. PLACEHOLDER rate:
+            // the spell-added ambient fades by 10 per game hour back to the LABDATA base.
+            if (_tilemap == null || _spellLightRemaining <= 0) return;
+            int decay = Math.Min(10, _spellLightRemaining);
+            _spellLightRemaining -= decay;
+            int level = (int)_tilemap.AmbientLightLevel - decay;
+            _tilemap.AmbientLightLevel = (uint)Math.Clamp(level, 0, 255);
+            Info($"[Light] spell light fading: ambient now {_tilemap.AmbientLightLevel} ({_spellLightRemaining} spell-light left)");
         });
         // On<SortMapTilesEvent>(e => _isSorting = e.IsSorting);
         _logicalMap = logicalMap;
