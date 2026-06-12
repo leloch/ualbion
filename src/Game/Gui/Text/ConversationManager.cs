@@ -22,6 +22,35 @@ public class ConversationManager : GameServiceComponent<IConversationManager>, I
         OnAsync<TextEvent>(OnBaseTextEvent);
         OnAsync<NpcTextEvent>(OnNpcTextEvent);
         OnAsync<PartyMemberTextEvent>(OnPartyMemberTextEvent);
+        On<DumpEventSetEvent>(OnDumpEventSet);
+    }
+
+    [Event("dump_eventset", "Diagnostic: log every action chain in an NPC's event set")]
+    public class DumpEventSetEvent : Event
+    {
+        public DumpEventSetEvent(NpcSheetId npcId) => NpcId = npcId;
+        [EventPart("npc")] public NpcSheetId NpcId { get; }
+    }
+
+    void OnDumpEventSet(DumpEventSetEvent e)
+    {
+        var npc = Assets.LoadSheet(e.NpcId);
+        if (npc == null) { Warn($"[DumpEventSet] no sheet for {e.NpcId}"); return; }
+        foreach (var setId in new[] { npc.EventSetId, npc.WordSetId })
+        {
+            if (setId.IsNone) continue;
+            var set = Assets.LoadEventSet(setId);
+            if (set == null) { Warn($"[DumpEventSet] {setId} failed to load"); continue; }
+            Info($"[DumpEventSet] {setId}: {set.Chains.Count} chains");
+            foreach (var chainStart in set.Chains)
+            {
+                var evt = set.Events[chainStart].Event;
+                if (evt is ActionEvent action)
+                    Info($"  chain@{chainStart}: Action {action.ActionType} block={action.Block} arg={action.Argument}");
+                else
+                    Info($"  chain@{chainStart}: {evt?.GetType().Name}");
+            }
+        }
     }
 
     StringSetId ContextTextSource =>
