@@ -512,9 +512,28 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
     {
         ArgumentNullException.ThrowIfNull(donor);
 
-        // TODO: Ensure weight limit is not exceeded?
         ushort totalTransferred = 0;
         ushort remaining = amount ?? ushort.MaxValue;
+
+        // Carry-weight cap for party members: don't accept more than fits under
+        // MaxWeight (Strength × grams-per-STR; the Effective sheet tracks totals).
+        if (id.Type == InventoryType.Player && donor.Item.Type == AssetType.Item)
+        {
+            var member = TryResolve<IParty>()?.StatusBarOrder
+                ?.FirstOrDefault(x => x.Id.Id == id.Id);
+            var eff = member?.Effective;
+            var itemData = _getItem(donor.Item);
+            if (eff != null && itemData != null && itemData.Weight > 0)
+            {
+                long spare = (long)eff.MaxWeight - eff.TotalWeight;
+                int fit = (int)Math.Max(0, spare / itemData.Weight);
+                if (fit < remaining)
+                    remaining = (ushort)fit;
+                if (remaining == 0)
+                    return 0;
+            }
+        }
+
         var inventory = _getInventory(id);
 
         if (donor.Item == AssetId.Gold)
