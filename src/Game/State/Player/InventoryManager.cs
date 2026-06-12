@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Numerics;
 using UAlbion.Api;
@@ -221,7 +221,8 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
 
     static bool CanItemBeTaken(ItemSlot slot)
     {
-        // TODO: Goddess' amulet etc
+        // Vital plot items can be moved between members but never discarded (the
+        // discard path blocks ItemFlags.PlotItem); cursed equipped gear can't be taken.
         switch (slot.Item.Type)
         {
             case AssetType.Gold:
@@ -441,6 +442,21 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
     async AlbionTask OnDiscard(InventoryDiscardEvent e)
     {
         var inventory = _getInventory(e.Id);
+
+        // Vital plot items (ItemFlags.PlotItem — the Goddess' amulet, quest keys etc)
+        // can never be thrown away: losing one would soft-lock the game.
+        var discardSlot = inventory.GetSlot(e.SlotId);
+        if (discardSlot?.Item.Type == AssetType.Item)
+        {
+            var itemData = _getItem(discardSlot.Item);
+            if (itemData != null && (itemData.Flags & ItemFlags.PlotItem) != 0)
+            {
+                var tf = Resolve<ITextFormatter>();
+                Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.InvMsg_ThisIsAVitalItem)));
+                return;
+            }
+        }
+
         var quantity = await GetQuantity(true, inventory, e.SlotId);
 
         if (quantity <= 0)
