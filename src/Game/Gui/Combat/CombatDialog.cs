@@ -14,6 +14,7 @@ public class CombatDialog : Dialog
 {
     public record ShowCombatDialogEvent(bool Show) : EventRecord, IVerboseEvent;
     readonly IReadOnlyBattle _battle;
+    readonly Button _startRoundButton;
 
     public CombatDialog(int depth, IReadOnlyBattle battle) : base(DialogPositioning.Center, depth)
     {
@@ -31,13 +32,13 @@ public class CombatDialog : Dialog
             stack.Add(BuildRow(row));
 
         stack.Add(new Spacing(0, 2));
-        var startRoundButton =
+        _startRoundButton =
             new Button(Base.SystemText.Combat_StartRound)
             {
                 DoubleFrame = true
             }.OnClick(StartRound);
 
-        stack.Add(new NonGreedy(startRoundButton));
+        stack.Add(new NonGreedy(_startRoundButton));
         stack.Add(new Spacing(0, 2));
 
         AttachChild(new DialogFrame(new VerticalStacker(stack) { ProgressiveOverlap = true })
@@ -48,8 +49,10 @@ public class CombatDialog : Dialog
 
     void StartRound()
     {
-        IsActive = false;
-        RaiseA(new BeginCombatRoundEvent()).OnCompleted(() => IsActive = true);
+        // Keep the grid visible so the round playback (turn highlights, damage flashes,
+        // movement) is watchable — only the confirm button goes away while it runs.
+        _startRoundButton.IsActive = false;
+        RaiseA(new BeginCombatRoundEvent()).OnCompleted(() => _startRoundButton.IsActive = true);
     }
 
     HorizontalStacker BuildRow(int row)

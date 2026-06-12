@@ -6,6 +6,7 @@ using UAlbion.Core.Visual;
 using UAlbion.Formats.Ids;
 using UAlbion.Game.Combat;
 using UAlbion.Game.Gui.Controls;
+using UAlbion.Game.Gui.Text;
 using UAlbion.Game.State;
 
 namespace UAlbion.Game.Gui.Combat;
@@ -20,6 +21,7 @@ public class VisualCombatTile : UiElement
     readonly IReadOnlyBattle _battle;
     readonly UiSpriteElement _sprite;
     readonly Button _button;
+    readonly SimpleText _feedback;
 
     public SpriteId Icon
     {
@@ -35,9 +37,28 @@ public class VisualCombatTile : UiElement
     public VisualCombatTile(int tileIndex, IReadOnlyBattle battle)
     {
         On<PostEngineUpdateEvent>(_ => OnPostUpdate());
+        On<CombatTurnHighlightEvent>(e =>
+        {
+            // New active combatant: highlight them, and clear the hit feedback the
+            // previous turn left on any tile.
+            _sprite.Flags = e.TileIndex == _tileIndex
+                ? _sprite.Flags | SpriteFlags.Highlight
+                : _sprite.Flags & ~SpriteFlags.Highlight;
+            ClearHitFeedback();
+        });
+        On<CombatHitEvent>(e =>
+        {
+            if (e.TileIndex != _tileIndex)
+                return;
+            _sprite.Flags &= ~(SpriteFlags.RedTint | SpriteFlags.GreenTint);
+            if (e.Amount > 0)
+                _sprite.Flags |= e.Heal ? SpriteFlags.GreenTint : SpriteFlags.RedTint;
+            _feedback.Text = e.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        });
         _tileIndex = tileIndex;
         _battle = battle ?? throw new ArgumentNullException(nameof(battle));
         _sprite = new UiSpriteElement(SpriteId.None) { IsActive = false, Flags = SpriteFlags.BottomAligned };
+        _feedback = new SimpleText(string.Empty);
 
         var stack =
             new VerticalStacker(
@@ -48,7 +69,10 @@ public class VisualCombatTile : UiElement
                 Greedy = false
             };
 
-        _button = new Button(stack) { Margin = 0 }
+        // Damage/heal numbers overlay the tile contents during round playback.
+        var layers = new LayerStacker(stack, _feedback);
+
+        _button = new Button(layers) { Margin = 0 }
             .OnHover(() => Hover?.Invoke())
             .OnBlur(() => Blur?.Invoke())
             .OnClick(() => Click?.Invoke())
@@ -62,6 +86,12 @@ public class VisualCombatTile : UiElement
     {
         ICombatParticipant mob = _battle.GetTile(_tileIndex);
         Icon = mob == null ? SpriteId.None : mob.Effective.TacticalGfx;
+    }
+
+    void ClearHitFeedback()
+    {
+        _sprite.Flags &= ~(SpriteFlags.RedTint | SpriteFlags.GreenTint);
+        _feedback.Text = string.Empty;
     }
 
     // public ButtonState State { get => _frame.State; set => _frame.State = value; }
