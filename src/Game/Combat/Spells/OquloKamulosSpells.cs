@@ -20,19 +20,19 @@ public static class OquloKamulosSpells
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Thunderstorm,    k: 40));
 
         // Traps and mines — placed on a target tile, trigger when stepped on.
-        // LightningTrap 30 / LightningMine 42 are CONFIRMED K; the Big variants weren't
-        // extracted (PLACEHOLDER). (Trap = visible to enemies in the original, mine =
-        // hidden; UAlbion doesn't distinguish yet — PLACEHOLDER.)
+        // All four K constants CONFIRMED: the Big variants share the small versions'
+        // damage (trap 30, mine 42) and differ only in placement AREA (not modelled yet
+        // — PLACEHOLDER). (Trap = visible to enemies, mine = hidden; not distinguished.)
         SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.LightningTrap,    k: 30));
-        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.BigLightningTrap, k: 42));
+        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.BigLightningTrap, k: 30));
         SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.LightningMine,    k: 42));
-        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.BigLightningMine, k: 56));
+        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.BigLightningMine, k: 42));
         SpellEffectRegistry.Register(new RemoveTrapEffect(Base.Spell.RemoveTrapKK));
 
         // Drains (30 % of target max — CONFIRMED) + defense + gaze
         SpellEffectRegistry.Register(new StealLifeEffect(Base.Spell.StealLife));
         SpellEffectRegistry.Register(new StealMagicEffect(Base.Spell.StealMagic));
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.PersonalProtection, CombatBuffs.BuffKind.Defense, amount: 12, rounds: 4));
+        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.PersonalProtection, CombatBuffs.BuffKind.Defense, amount: 12, baseDuration: 0, persistent: true)); // battle-persistent (active-spell table)
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.KamulosGaze, k: 50)); // K not extracted — PLACEHOLDER
     }
 }

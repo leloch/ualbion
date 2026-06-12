@@ -41,6 +41,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public ItemData Weapon => _weapon;
 
     public DateTime Time => SavedGame.Epoch + (_game?.ElapsedTime ?? TimeSpan.Zero);
+    public int HoursSinceResting => _game?.HoursSinceResting ?? 0;
     public IParty Party => _party;
     public ICharacterSheet GetSheet(SheetId id) => _game.Sheets.TryGetValue(id, out var sheet) ? sheet : null;
     public short GetTicker(TickerId id) => _game.Tickers.TryGetValue(id, out var value) ? value : (short)0;
@@ -92,6 +93,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyHoursEvent>(OnModifyHours);
         On<ModifyMTicksEvent>(OnModifyMTicks);
         On<RestEvent>(OnRest);
+        On<HourElapsedEvent>(_ => { if (_game != null && _game.HoursSinceResting < ushort.MaxValue) _game.HoursSinceResting++; }); // fatigue clock (rest resets it)
         On<SetSpecialItemActiveEvent>(ActivateItem);
         On<EventChainOffEvent>(e => _game.SetChainDisabled(e.Map, e.ChainNumber, SetFlag(e.Operation, _game.IsChainDisabled(e.Map, e.ChainNumber))));
         On<ModifyNpcOffEvent>(e => _game.SetNpcDisabled(e.Map, e.NpcNum, SetFlag(e.Operation, _game.IsNpcDisabled(e.Map, e.NpcNum))));
@@ -396,8 +398,21 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         if (_game == null || _party == null)
             return;
 
-        // NOTE: these route through the handler methods directly rather than Raise() —
-        // the exchange skips a sender's own subscriptions, and GameState owns all of them.
+        // RE'd rest semantics (_RE_COMBAT.md "Placeholder formulas" item 4): recovery is
+        // a ONE-SHOT restore, not per-hour — each member regains 50 % of max LP plus
+        // Stamina/15 and 50 % of max SP plus MagicTalent/15, costs 2 rations (no food →
+        // no recovery, SYSTEXTS 606), and Exhausted is cured. "Nobody is tired" blocks
+        // resting again within 3 hours. (The 6-condition clear previously done here came
+        // from a mislabelled function — those conditions clear at combat end instead.)
+        if (_game.HoursSinceResting < 3)
+        {
+            var tf = Resolve<ITextFormatter>();
+            Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_NobodyInThePartyIsTired)));
+            return;
+        }
+
+        // NOTE: handler methods are called directly rather than Raise() — the exchange
+        // skips a sender's own subscriptions, and GameState owns all of them.
         OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)e.Hours));
         _game.HoursSinceResting = 0;
 
@@ -405,20 +420,27 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         {
             if (member == null) continue;
             var target = member.Id;
+            var sheet = GetSheet(member.Id.ToSheet());
+            if (sheet == null) continue;
 
-            // Clear exactly the six conditions the original engine's rest-recovery clears
-            // (fcn.0003822d, byte-exact set — Poisoned/Ill/Exhausted/Intoxicated/Blind/
-            // Irritated need explicit cures and are deliberately left alone).
-            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Unconscious, NumericOperation.SetToMinimum));
-            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Paralysed,   NumericOperation.SetToMinimum));
-            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Insane,      NumericOperation.SetToMinimum));
-            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Asleep,      NumericOperation.SetToMinimum));
-            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Panicking,   NumericOperation.SetToMinimum));
-            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Fleeing,     NumericOperation.SetToMinimum));
+            // 2 rations per member; a member with no food doesn't recover.
+            if (sheet.Inventory?.Rations == null || sheet.Inventory.Rations.Amount < 2)
+            {
+                var tf = Resolve<ITextFormatter>();
+                Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_XCannotRecuperateHeHasNoFoodLeft, sheet.GetName(ReadVar(V.User.Gameplay.Language)))));
+                continue;
+            }
+            OnDataChange(new DataChangeEvent(target, ChangeProperty.Food, NumericOperation.SubtractAmount, 2));
 
-            // PLACEHOLDER recovery rates pending RE: 2 LP and 1 SP per hour rested.
-            OnDataChange(new DataChangeEvent(target, ChangeProperty.Health, NumericOperation.AddAmount, (ushort)(2 * e.Hours)));
-            OnDataChange(new DataChangeEvent(target, ChangeProperty.Mana,   NumericOperation.AddAmount, (ushort)e.Hours));
+            int lpGain = (sheet.Combat?.LifePoints?.Max ?? 0) / 2 + (sheet.Attributes?.Stamina?.Current ?? 0) / 15;
+            int spGain = (sheet.Magic?.SpellPoints?.Max ?? 0) / 2 + (sheet.Attributes?.MagicTalent?.Current ?? 0) / 15;
+
+            if (lpGain > 0)
+                OnDataChange(new DataChangeEvent(target, ChangeProperty.Health, NumericOperation.AddAmount, (ushort)Math.Min(ushort.MaxValue, lpGain)));
+            if (spGain > 0)
+                OnDataChange(new DataChangeEvent(target, ChangeProperty.Mana, NumericOperation.AddAmount, (ushort)Math.Min(ushort.MaxValue, spGain)));
+
+            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Exhausted, NumericOperation.SetToMinimum));
         }
 
         Info($"The party rests for {e.Hours} hours.");
