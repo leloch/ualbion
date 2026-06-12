@@ -124,8 +124,11 @@ public class DungeonMap : GameComponent, IMap
 
         // Raise(new LogEvent(LogEvent.Level.Info, $"WallHeight: {_labyrinthData.WallHeight} MaxObj: {maxObjectHeightRaw} EffWallWidth: {_labyrinthData.EffectiveWallWidth}"));
 
-        foreach (var npc in _logicalMap.Npcs)
-            BuildNpc(npc, properties);
+        var game = Resolve<IGameState>();
+        bool initialiseNpcState = game.MapIdForNpcs != MapId;
+        for (int i = 0; i < _logicalMap.Npcs.Count; i++)
+            BuildNpc(_logicalMap.Npcs[i], i, properties, game, initialiseNpcState);
+        game.MapIdForNpcs = MapId;
 
         // Build props
         for (int y = 0; y < _logicalMap.Height; y++)
@@ -168,7 +171,7 @@ public class DungeonMap : GameComponent, IMap
         base.Unsubscribed();
     }
 
-    void BuildNpc(MapNpc npc, TilemapRequest properties)
+    void BuildNpc(MapNpc npc, int index, TilemapRequest properties, IGameState game, bool initialiseState)
     {
         if (npc.SpriteOrGroup.IsNone)
             return;
@@ -187,16 +190,25 @@ public class DungeonMap : GameComponent, IMap
             return;
         }
 
-        var objectData = _labyrinthData.ObjectGroups[npc.SpriteOrGroup.Id - 1]; // TODO: Build proper NPC objects with AI, sound effects etc
+        var state = game.Npcs[index];
+        if (state == null)
+        {
+            state = new UAlbion.Formats.Assets.Save.NpcState();
+            game.Npcs[index] = state;
+        }
+
+        if (initialiseState)
+            NpcManager2D.InitialiseState(npc, state, true, _logicalMap.Events, Vector2.One);
+
+        var npc3d = new Npc3D(state, npc, properties);
+        var objectData = _labyrinthData.ObjectGroups[npc.SpriteOrGroup.Id - 1];
         foreach (var subObject in objectData.SubObjects)
         {
-            _sceneObjects.Add(MapObject.Build(
-                npc.Waypoints[0].X,
-                npc.Waypoints[0].Y,
-                _labyrinthData,
-                subObject,
-                properties));
+            var obj = MapObject.Build(state.X, state.Y, _labyrinthData, subObject, properties);
+            npc3d.AddPart(obj, state.X, state.Y);
         }
+
+        _sceneObjects.Add(npc3d);
     }
 
     void TileTriggered(TriggerMapTileEvent e)

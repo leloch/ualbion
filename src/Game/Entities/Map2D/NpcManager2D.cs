@@ -88,7 +88,7 @@ class NpcManager2D : Component
         game.MapIdForNpcs = _logicalMap.Id;
     }
 
-    static void InitialiseState(MapNpc npc, NpcState state, bool active, IEventSet mapEvents, Vector2 tileSize)
+    internal static void InitialiseState(MapNpc npc, NpcState state, bool active, IEventSet mapEvents, Vector2 tileSize)
     {
         state.Id = npc.Id;
         state.SpriteOrGroup = npc.SpriteOrGroup;

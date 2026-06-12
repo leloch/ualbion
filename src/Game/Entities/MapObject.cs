@@ -105,6 +105,10 @@ public class MapObject : GameComponent
 
     public MapObjectId Id { get; }
 
+    /// <summary>The position the object was built at (tile contribution + sub-object offset).
+    /// Used by Npc3D to derive each part's offset so the group can be repositioned.</summary>
+    public Vector3 InitialPosition => _initialPosition;
+
     [DiagEdit(Style = DiagEditStyle.Position)]
     public Vector3 Position
     {
