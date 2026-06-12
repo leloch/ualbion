@@ -234,12 +234,19 @@ public class AutomapDialog : GameComponent
         int partyX = (int)MathF.Floor(leaderPos.X);
         int partyY = (int)MathF.Floor(leaderPos.Z);
 
+        _floorMinis.Clear();
         for (int y = 0; y < _map.Height; y++)
         {
             for (int x = 0; x < _map.Width; x++)
             {
                 if (!_discovered[x, y] && !(x == partyX && y == partyY))
                     continue;
+
+                // Base layer (original tile pass fcn.0005e12c): floor mini, then object
+                // glyph, then wall glyph — later layers overwrite earlier ones.
+                var mini = FloorMini(x, y);
+                if (mini != null)
+                    BlitMini(mini, buffer, x * TilePx, y * TilePx, w);
 
                 int region = PickTileRegion(x, y, tiles.Regions.Count);
                 if (x == partyX && y == partyY)
@@ -249,6 +256,21 @@ public class AutomapDialog : GameComponent
                     continue;
 
                 BlitRegion(tiles, region, buffer, x * TilePx, y * TilePx, w);
+            }
+        }
+
+        // Goto-point markers (glyph 18) for visited markers — fcn.0005e7e5 draws them
+        // when switch(7, MarkerId) is set (stepping on the tile sets it).
+        var state = TryResolve<IGameState>();
+        if (state != null && _mapData.Automap != null && GotoGlyph < tiles.Regions.Count)
+        {
+            foreach (var marker in _mapData.Automap)
+            {
+                if (marker == null || !state.IsAutomapMarkerFound(marker.MarkerId))
+                    continue;
+                if (marker.X >= _map.Width || marker.Y >= _map.Height)
+                    continue;
+                BlitRegion(tiles, GotoGlyph, buffer, marker.X * TilePx, marker.Y * TilePx, w);
             }
         }
 
@@ -269,30 +291,105 @@ public class AutomapDialog : GameComponent
         Info($"[Automap] shown for {_mapData.Id} ({_map.Width}x{_map.Height}, party at {partyX},{partyY})");
     }
 
+    const int WallMaskGlyphBase = 560; // AUTOGFX 0x230 + connection mask (fcn.0005e8a1)
+    const int GotoGlyph = 18;          // goto-point marker glyph (fcn.0005e7e5)
+
+    readonly Dictionary<byte, byte[]> _floorMinis = [];
+
     /// <summary>
-    /// Wall tiles map through MapData3D.AutomapGraphics (wall index → automap tile graphic,
-    /// the on-disk table the original engine uses). Discovered floor uses tile 1; oob/none
-    /// stays blank.
+    /// The original glyph rules (tile pass fcn.0005e12c, see _RE_NOTES.md "automap.c"):
+    /// a wall's <c>AutoGfxType</c> selects the glyph — type 1 = connectable wall
+    /// (AUTOGFX 560 + connection mask, bits N/E/S/W set when that neighbour is
+    /// discovered AND sight-blocking), types 2..19 = that AUTOGFX marker glyph, 0 =
+    /// nothing; objects draw their group's AutoGraphicsId; floors are handled
+    /// separately as texture minis.
     /// </summary>
     int PickTileRegion(int x, int y, int regionCount)
     {
-        var (wallIndex, _) = _map.GetWall(x, y);
-        if (wallIndex != 0)
+        var (wallIndex, wall) = _map.GetWall(x, y);
+        if (wallIndex != 0 && wall != null)
         {
-            int idx = wallIndex - 1 < _mapData.AutomapGraphics.Length
-                ? _mapData.AutomapGraphics[wallIndex - 1]
-                : 0;
-            if (idx <= 0 || idx >= regionCount)
-                idx = 8; // PLACEHOLDER: generic solid wall tile when the table has no entry
-            return idx;
+            int glyph = wall.AutoGfxType switch
+            {
+                1 => WallMaskGlyphBase + WallConnectionMask(x, y),
+                >= 2 and <= 19 => wall.AutoGfxType,
+                _ => -1
+            };
+            if (glyph >= regionCount)
+                glyph = Math.Min(regionCount - 1, 8); // set lacks the frame — degrade gracefully
+            return glyph;
         }
 
-        var (floorIndex, _) = _map.GetFloor(x, y);
-        return floorIndex != 0 ? 1 : -1; // PLACEHOLDER: tile 1 = open floor
+        var group = _map.GetObject(x, y);
+        if (group != null && group.AutoGraphicsId > 0 && group.AutoGraphicsId < regionCount)
+            return group.AutoGraphicsId;
+
+        return -1; // floor mini (blitted separately) or blank
     }
 
+    /// <summary>
+    /// Wall connection mask (fcn.0005e8a1): bit0=N, bit1=E, bit2=S, bit3=W — set when
+    /// that cardinal neighbour is discovered and sight-blocking, so adjoining wall
+    /// pieces join up on the map.
+    /// </summary>
+    int WallConnectionMask(int x, int y)
+    {
+        int mask = 0;
+        if (Connectable(x, y - 1)) mask |= 1;
+        if (Connectable(x + 1, y)) mask |= 2;
+        if (Connectable(x, y + 1)) mask |= 4;
+        if (Connectable(x - 1, y)) mask |= 8;
+        return mask;
+
+        bool Connectable(int nx, int ny) =>
+            nx >= 0 && ny >= 0 && nx < _map.Width && ny < _map.Height
+            && _discovered[nx, ny]
+            && BlocksSight(nx, ny);
+    }
+
+    /// <summary>
+    /// The original draws discovered floors as an 8×8 downscaled copy of the tile's
+    /// actual floor texture (fcn.0005dca5/fcn.0005dfc8), not an AUTOGFX glyph.
+    /// </summary>
+    byte[] FloorMini(int x, int y)
+    {
+        var (floorIndex, fc) = _map.GetFloor(x, y);
+        if (floorIndex == 0 || fc == null)
+            return null;
+        if (_floorMinis.TryGetValue(floorIndex, out var cached))
+            return cached;
+
+        byte[] mini = null;
+        if (Assets.LoadTexture(fc.SpriteId) is IReadOnlyTexture<byte> floorTex && floorTex.Regions.Count > 0)
+        {
+            var src = floorTex.GetRegionBuffer(0);
+            if (src.Width > 0 && src.Height > 0)
+            {
+                mini = new byte[TilePx * TilePx];
+                for (int j = 0; j < TilePx; j++)
+                    for (int i = 0; i < TilePx; i++)
+                        mini[j * TilePx + i] = src.Buffer[(j * src.Height / TilePx) * src.Stride + i * src.Width / TilePx];
+            }
+        }
+
+        _floorMinis[floorIndex] = mini; // cache nulls too — don't retry failures per tile
+        return mini;
+    }
+
+    static void BlitMini(byte[] mini, ImageBuffer<byte> dest, int dx, int dy, int destWidth)
+    {
+        for (int row = 0; row < TilePx; row++)
+        {
+            var from = new ReadOnlySpan<byte>(mini, row * TilePx, TilePx);
+            var to = dest.Buffer.Slice((dy + row) * destWidth + dx, TilePx);
+            from.CopyTo(to);
+        }
+    }
+
+    // The original doesn't blit a party glyph into the compose buffer (the UI cursor
+    // marks the position); the remake draws one as a usability affordance.
     static int PartyMarkerRegion(int regionCount)
-        => Math.Min(regionCount - 1, 213); // PLACEHOLDER: directional party figures live near the set's end
+        => Math.Min(regionCount - 1, 213);
 
     static void BlitRegion(IReadOnlyTexture<byte> tiles, int region, ImageBuffer<byte> dest, int dx, int dy, int destWidth)
     {

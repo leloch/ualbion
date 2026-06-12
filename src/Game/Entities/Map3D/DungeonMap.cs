@@ -49,6 +49,24 @@ public class DungeonMap : GameComponent, IMap
     {
         _automap?.MarkDiscovered(e.X, e.Y);
 
+        // Stepping on a goto-point (automap marker) tile discovers it — the original's
+        // fcn.0005c10a sets switch(7, MarkerId). Gates the automap goto glyph (18) and
+        // the Teleporter spell's destination list.
+        var state = TryResolve<IGameState>();
+        if (state != null && _mapData.Automap != null)
+        {
+            foreach (var marker in _mapData.Automap)
+            {
+                if (marker == null || marker.X != e.X || marker.Y != e.Y)
+                    continue;
+                if (!state.IsAutomapMarkerFound(marker.MarkerId))
+                {
+                    state.SetAutomapMarkerFound(marker.MarkerId);
+                    Info($"[Automap] Discovered goto-point {marker.MarkerId} '{marker.Name}' at ({e.X},{e.Y})");
+                }
+            }
+        }
+
         // Fire any tile-scoped Normal-trigger event chain on the tile the party just entered.
         // Mirrors FlatMap.OnPlayerEnteredTile (2D); the 3D variant emits PlayerEnteredTileEvent
         // from Movement3D once the camera position crosses a tile boundary.
