@@ -268,36 +268,55 @@ public class Npc2D : Component
     }
 
     bool _inContactCombat;
+    bool _contactTriggered;
 
     void MovementChaseParty()
     {
+        var party = Resolve<IParty>();
+        var pos = party.Leader.GetPosition();
+
+        // Contact triggers (same or adjacent tile): a chasing MONSTER group starts combat
+        // (victory removes it via npc_off); a chasing HUMAN NPC starts their dialogue —
+        // that's how scripted fetch sequences work (e.g. Anne Dorbeck collecting Tom on
+        // the Toronto in the intro). The dialogue chain is expected to change the NPC's
+        // movement/state; the trigger re-arms once the party moves away. Checked BEFORE
+        // the at-target early-out so a path-blocked chaser still reacts when the party
+        // walks up to them.
+        int cdx = System.Math.Abs((int)pos.X - _state.X);
+        int cdy = System.Math.Abs((int)pos.Y - _state.Y);
+        bool inContact = System.Math.Max(cdx, cdy) <= 1;
+
+        if (!inContact)
+            _contactTriggered = false;
+        else if (!_inContactCombat && !_contactTriggered)
+        {
+            if (_state.Id.Type == AssetType.MonsterGroup)
+            {
+                _inContactCombat = true;
+                Raise(new EncounterEvent((MonsterGroupId)_state.Id, CombatBackgroundId.None));
+                return;
+            }
+
+            if (_state.Id.Type == AssetType.NpcSheet)
+            {
+                _contactTriggered = true;
+                Raise(new StartDialogueEvent((NpcSheetId)(AssetId)_state.Id));
+                return;
+            }
+        }
+
         // Only retarget on tile arrival — same rationale as MovementRandom: re-aiming on
         // every FastClock tick stalls the sprite step before it completes.
         if (_state.X != _targetX || _state.Y != _targetY)
             return;
 
-        var party = Resolve<IParty>();
-        var pos = party.Leader.GetPosition();
-
-        // Contact: a chasing monster group that catches the party (same or adjacent tile)
-        // starts combat — the original's touch trigger. Victory removes the group from
-        // the map via npc_off; any other outcome resumes the chase.
-        int cdx = System.Math.Abs((int)pos.X - _state.X);
-        int cdy = System.Math.Abs((int)pos.Y - _state.Y);
-        if (!_inContactCombat && System.Math.Max(cdx, cdy) <= 1 && _state.Id.Type == AssetType.MonsterGroup)
-        {
-            _inContactCombat = true;
-            Raise(new EncounterEvent((MonsterGroupId)_state.Id, CombatBackgroundId.None));
-            return;
-        }
-
-        // PLACEHOLDER give-up distance — 16 tiles Manhattan radius. The original engine
-        // likely had a per-NPC pursue range (MapNpc field), but until that's RE'd this
-        // prevents off-map NPCs from following the party across an entire 100×100 map.
+        // PLACEHOLDER give-up distance for MONSTERS — 16 tiles Manhattan radius, so
+        // wandering encounters don't follow the party across an entire 100×100 map.
+        // Scripted human chasers (intro fetch sequences etc) pursue without limit.
         const int GiveUpRadius = 16;
         int dx = System.Math.Abs((int)pos.X - _state.X);
         int dy = System.Math.Abs((int)pos.Y - _state.Y);
-        if (dx + dy > GiveUpRadius)
+        if (_state.Id.Type == AssetType.MonsterGroup && dx + dy > GiveUpRadius)
         {
             // Out of range — stop where we are rather than oscillating toward the party.
             SetTarget(_state.X, _state.Y);
