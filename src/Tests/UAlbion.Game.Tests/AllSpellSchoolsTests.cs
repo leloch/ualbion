@@ -99,12 +99,15 @@ public class AllSpellSchoolsTests
     }
 
     [Fact]
-    public void Fire_Hail_Hits_Harder_Than_Fire_Ball()
+    public void Fire_Line_Uses_The_REd_K_Constants()
     {
+        // RE'd per-spell K constants (damage at 100 % mastery): Fireball 22, FireHail 20.
+        // Hail is WEAKER per bolt — it's a multi-target spell in the original.
         RegisterEverything();
         Assert.True(SpellEffectRegistry.TryGet((SpellId)Base.Spell.Fireball, out var ball));
         Assert.True(SpellEffectRegistry.TryGet((SpellId)Base.Spell.FireHail, out var hail));
-        Assert.True(((DamageSpellEffect)hail).BaseDamage > ((DamageSpellEffect)ball).BaseDamage);
+        Assert.Equal(22, ((DamageSpellEffect)ball).K);
+        Assert.Equal(20, ((DamageSpellEffect)hail).K);
     }
 
     [Fact]
@@ -113,6 +116,6 @@ public class AllSpellSchoolsTests
         RegisterEverything();
         Assert.True(SpellEffectRegistry.TryGet((SpellId)Base.Spell.LightningStrike, out var strike));
         Assert.True(SpellEffectRegistry.TryGet((SpellId)Base.Spell.Thunderstorm,    out var storm));
-        Assert.True(((DamageSpellEffect)storm).BaseDamage > ((DamageSpellEffect)strike).BaseDamage);
+        Assert.True(((DamageSpellEffect)storm).K > ((DamageSpellEffect)strike).K); // 40 > 33
     }
 }

@@ -33,6 +33,7 @@ public class InterpolatedCharacterSheet : IEffectiveCharacterSheet
     public PlayerClass PlayerClass => _b().PlayerClass;
     public ICharacterAttribute Age { get; }
     public byte Level => _b().Level;
+    public ushort ExperienceReward => _b().ExperienceReward;
     public SpriteId SpriteId => _b().SpriteId;
     public SpriteId PortraitId => _b().PortraitId;
     public SpriteId CombatGfx => _b().CombatGfx;

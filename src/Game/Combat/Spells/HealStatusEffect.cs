@@ -67,6 +67,6 @@ public sealed class HealStatusEffect : ISpellEffect
         SpellEffectRegistry.Register(new HealStatusEffect(Base.Spell.HealIntoxication, PlayerCondition.Intoxicated));
         SpellEffectRegistry.Register(new HealStatusEffect(Base.Spell.HealBlindness,    PlayerCondition.Blind));
         SpellEffectRegistry.Register(new HealStatusEffect(Base.Spell.HealPoisoning,    PlayerCondition.Poisoned));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.LightHealing, baseAmount: 5, strengthScale: 1));
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.LightHealing, k: 25));
     }
 }

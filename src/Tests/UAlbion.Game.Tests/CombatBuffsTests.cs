@@ -66,8 +66,8 @@ public class CombatBuffsTests
     {
         CombatBuffs.Clear();
         var effect = new BuffSpellEffect(new SpellId(61), CombatBuffs.BuffKind.Berserk, 0, 3);
-        var target = new FakeParticipant(Sheet(2));
-        var result = effect.Apply(new SpellCastContext { Caster = new FakeParticipant(Sheet(1)), Target = target });
+        var target = new FakeParticipant(Sheet(2), null);
+        var result = effect.Apply(new SpellCastContext { Caster = new FakeParticipant(Sheet(1), null), Target = target });
         Assert.Equal(SpellCastOutcome.Hit, result);
         Assert.True(CombatBuffs.IsBerserk(Sheet(2)));
     }
@@ -76,50 +76,59 @@ public class CombatBuffsTests
     public void TrapEffect_Places_And_RemoveTrap_Removes()
     {
         var traps = new System.Collections.Generic.Dictionary<int, int>();
-        var trap = new TrapSpellEffect(new SpellId(97), damage: 10);
+        var trap = new TrapSpellEffect(new SpellId(97), k: 10);
         var remove = new RemoveTrapEffect(new SpellId(105));
 
         var placeCtx = new SpellCastContext
         {
             CombatTargetPosition = 7,
-            SpellStrength = 2,
+            MasteryMultiplier = 100, // full mastery → trap damage = K
             PlaceTrap = (tile, dmg) => traps[tile] = dmg,
             RemoveTrap = tile => traps.Remove(tile)
         };
 
         Assert.Equal(SpellCastOutcome.Hit, trap.Apply(placeCtx));
-        Assert.Equal(12, traps[7]); // damage + strength
+        Assert.Equal(10, traps[7]); // max(1, M*K/100) = 100*10/100
 
         Assert.Equal(SpellCastOutcome.Hit, remove.Apply(placeCtx));
         Assert.Empty(traps);
     }
 
     [Fact]
-    public void StealLife_Damages_Target_And_Heals_Caster()
+    public void StealLife_Drains_Percent_Of_Target_Max_Lp()
     {
         int damaged = 0, healed = 0;
-        var effect = new StealLifeEffect(new SpellId(101), baseAmount: 8, strengthScale: 2);
+        var effect = new StealLifeEffect(new SpellId(101)); // K = 30 % of target max LP
+        var target = new UAlbion.Formats.Assets.Sheets.EffectiveCharacterSheet(Sheet(2))
+        {
+            Combat = { LifePoints = new UAlbion.Formats.Assets.Sheets.CharacterAttribute { Max = 50 } }
+        };
         var ctx = new SpellCastContext
         {
-            Caster = new FakeParticipant(Sheet(1)),
-            Target = new FakeParticipant(Sheet(2)),
-            SpellStrength = 3,
+            Caster = new FakeParticipant(Sheet(1), null),
+            Target = new FakeParticipant(Sheet(2), target),
+            MasteryMultiplier = 100, // full mastery → drains the whole 30 %
             ApplyDamage = (_, amt) => damaged = amt,
             ApplyHeal = (_, amt) => healed = amt
         };
 
         Assert.Equal(SpellCastOutcome.Hit, effect.Apply(ctx));
-        Assert.Equal(14, damaged); // 8 + 3*2
-        Assert.Equal(14, healed);
+        Assert.Equal(15, damaged); // 50 * 30 % = 15
+        Assert.Equal(15, healed);
     }
 
     sealed class FakeParticipant : UAlbion.Game.State.ICombatParticipant
     {
-        public FakeParticipant(SheetId id) => SheetId = id;
+        public FakeParticipant(SheetId id, UAlbion.Formats.Assets.Sheets.IEffectiveCharacterSheet effective)
+        {
+            SheetId = id;
+            Effective = effective;
+        }
+
         public int CombatPosition => 0;
         public SheetId SheetId { get; }
         public SpriteId TacticalSpriteId => default;
         public SpriteId CombatSpriteId => default;
-        public UAlbion.Formats.Assets.Sheets.IEffectiveCharacterSheet Effective => null;
+        public UAlbion.Formats.Assets.Sheets.IEffectiveCharacterSheet Effective { get; }
     }
 }

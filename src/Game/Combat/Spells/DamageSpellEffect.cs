@@ -6,23 +6,23 @@ using UAlbion.Formats.MapEvents;
 namespace UAlbion.Game.Combat.Spells;
 
 /// <summary>
-/// Direct-damage spell. Damage = <see cref="BaseDamage"/> + caster spell-strength × <see
-/// cref="StrengthScale"/>, with the same ±10 % uniform variance applied by melee attacks.
-/// Used today by Dji-Kas FrostSplinter / FrostCrystal / FrostAvalanche / BlindingSpark /
-/// BlindingRay / BlindingStorm — magnitudes are first-pass estimates pending the real
-/// formula RE.
+/// Direct-damage spell. RE'd formula (MAIN.EXE fcn.0005fdf7 → per-spell handlers, see
+/// _RE_COMBAT.md "Punch-list RE" item 1): damage = max(1, M*K/100) where M is the caster's
+/// mastery multiplier (max(1, (mastery+50)/100), mastery 0..10000 grown by MagicTalent per
+/// cast) and K is the per-spell constant — the damage dealt at 100 % mastery. No variance
+/// roll and no caster-attribute term.
 /// </summary>
 public sealed class DamageSpellEffect : ISpellEffect
 {
     public SpellId SpellId { get; }
-    public int BaseDamage { get; }
-    public int StrengthScale { get; }
 
-    public DamageSpellEffect(SpellId spellId, int baseDamage, int strengthScale = 1)
+    /// <summary>Damage at 100 % mastery (the per-spell K constant).</summary>
+    public int K { get; }
+
+    public DamageSpellEffect(SpellId spellId, int k)
     {
         SpellId = spellId;
-        BaseDamage = baseDamage;
-        StrengthScale = strengthScale;
+        K = k;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
@@ -32,11 +32,8 @@ public sealed class DamageSpellEffect : ISpellEffect
         if (combat?.LifePoints == null) return SpellCastOutcome.Failed;
         if (combat.LifePoints.Current <= 0) return SpellCastOutcome.Failed;
 
-        int raw = BaseDamage + context.SpellStrength * StrengthScale;
-        if (raw <= 0) return SpellCastOutcome.Failed;
-        int rolled = context.Random?.Invoke(21) ?? 10;          // mid-range default if no RNG
-        int varied = DamageCalculator.VaryDamage(raw, rolled);
-        var amount = (ushort)Math.Min(ushort.MaxValue, varied);
+        int damage = Math.Max(1, context.MasteryMultiplier * K / 100);
+        var amount = (ushort)Math.Min(ushort.MaxValue, damage);
 
         if (context.ApplyDamage != null)
         {

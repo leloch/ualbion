@@ -18,29 +18,28 @@ public class HealHpEffectTests
     [Fact]
     public void Spell_Id_Matches_Constructor_Arg()
     {
-        var effect = new HealHpEffect(Base.Spell.LightHealing, baseAmount: 5);
+        var effect = new HealHpEffect(Base.Spell.LightHealing, k: 25);
         Assert.Equal((SpellId)Base.Spell.LightHealing, effect.SpellId);
     }
 
     [Fact]
-    public void Stores_BaseAmount_And_StrengthScale()
+    public void Stores_K()
     {
-        var effect = new HealHpEffect(Base.Spell.LightHealing, baseAmount: 7, strengthScale: 2);
-        Assert.Equal(7, effect.BaseAmount);
-        Assert.Equal(2, effect.StrengthScale);
+        var effect = new HealHpEffect(Base.Spell.LightHealing, k: 40);
+        Assert.Equal(40, effect.K);
     }
 
     [Fact]
     public void Returns_Failed_When_Context_Is_Null()
     {
-        var effect = new HealHpEffect(Base.Spell.LightHealing, 5);
+        var effect = new HealHpEffect(Base.Spell.LightHealing, 25);
         Assert.Equal(SpellCastOutcome.Failed, effect.Apply(null));
     }
 
     [Fact]
     public void Returns_Failed_When_Context_Has_No_Target()
     {
-        var effect = new HealHpEffect(Base.Spell.LightHealing, 5);
+        var effect = new HealHpEffect(Base.Spell.LightHealing, 25);
         Assert.Equal(SpellCastOutcome.Failed, effect.Apply(new SpellCastContext()));
     }
 }

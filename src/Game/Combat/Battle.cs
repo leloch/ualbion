@@ -38,12 +38,22 @@ public class Battle : GameComponent, IReadOnlyBattle
     // combatant moves onto the tile (MoveCombatant); single-use like the original's.
     readonly Dictionary<int, int> _traps = [];
 
+    // XP pool: each kill adds the monster sheet's ExperienceReward (offset 0x20); on
+    // victory every LIVING party member receives max(1, total/livingCount) — RE'd from
+    // MAIN.EXE (pool at 0x15f104), see _RE_COMBAT.md "Punch-list RE" item 3. No factor.
+    int _xpPool;
+
     public IReadOnlyList<ICombatParticipant> Mobs { get; }
     public event Action Complete;
 
     public Battle(MonsterGroupId groupId, SpriteId backgroundId)
     {
-        On<EndCombatEvent>(_ => Complete?.Invoke());
+        On<EndCombatEvent>(e =>
+        {
+            if (e.Result == CombatResult.Victory)
+                AwardExperience();
+            Complete?.Invoke();
+        });
         OnAsync<BeginCombatRoundEvent>(BeginRoundAsync);
         OnAsync<ObserveCombatEvent>(Observe);
         On<QueueCombatActionEvent>(OnQueueAction);
@@ -218,6 +228,30 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (tile >= 0)
             _tiles[tile] = null;
         _corpses.Add(p);
+        _xpPool += p.Effective?.ExperienceReward ?? 0;
+    }
+
+    void AwardExperience()
+    {
+        if (_xpPool <= 0)
+            return;
+
+        var living = LiveParticipants(forParty: true).ToList();
+        if (living.Count == 0)
+            return;
+
+        int each = Math.Max(1, _xpPool / living.Count);
+        foreach (var member in living)
+        {
+            var target = TryToTarget(member);
+            if (target == null)
+                continue;
+            Raise(new DataChangeEvent(target.Value, ChangeProperty.Experience, NumericOperation.AddAmount, (ushort)Math.Min(ushort.MaxValue, each)));
+        }
+
+        Info($"[Combat] Victory: {_xpPool} XP pooled, {each} each to {living.Count} living members");
+        TraceLog.Emit("combat_xp", ("total", _xpPool), ("each", each), ("members", living.Count));
+        _xpPool = 0;
     }
 
     /// <summary>
@@ -287,21 +321,31 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// </summary>
     void TakeTurn(ICombatParticipant attacker, bool forParty)
     {
-        // Monster turns route through MonsterAi.ChooseNormalAction to pick a weighted-random
-        // action bit (Summon / Action2 / Action4). All three currently fall through to melee
-        // because the per-bit handlers aren't implemented yet — but exercising the AI keeps
-        // the structure honest and ready for the per-action wire-up later.
+        // Monster turns: weighted-random action pick, RE'd from MAIN.EXE (_RE_COMBAT.md
+        // "Punch-list RE" item 4). Setup grants every monster Melee|Ranged and adds Magic
+        // when the sheet has spells; Magic is disabled at 0 SP. The 16-entry weight table
+        // favours Magic/Ranged 6/16 each over Melee 4/16; failed commits clear their bit.
         if (!forParty)
         {
-            var available = MonsterAi.AvailableActions.None;       // PLACEHOLDER: read from
-            // mob sheet's action mask when that field is decoded. For now every mob defaults
-            // to plain melee, so available stays None and ChooseNormalAction returns None.
-            if (available != MonsterAi.AvailableActions.None)
+            var available = MonsterAi.AvailableActions.Melee | MonsterAi.AvailableActions.Ranged;
+            int sp = attacker?.Effective?.Magic?.SpellPoints?.Current ?? 0;
+            if (sp > 0 && (attacker?.Effective?.Magic?.KnownSpells?.Count ?? 0) > 0)
+                available |= MonsterAi.AvailableActions.Magic;
+
+            var aiRng = Resolve<IRandom>();
+            var picked = MonsterAi.ChooseNormalAction(available, () => aiRng.Generate(16), bit => bit switch
             {
-                var rng = Resolve<IRandom>();
-                var picked = MonsterAi.ChooseNormalAction(available, () => rng.Generate(16), _ => true);
-                _ = picked; // TODO: dispatch per-bit (Summon→spawn, etc.) once decoded
-            }
+                MonsterAi.AvailableActions.Magic => TryMonsterCast(attacker),
+                MonsterAi.AvailableActions.Melee => true, // resolved by the AP loop below
+                // PLACEHOLDER: ranged commits need the equipped-weapon ItemType 6 check
+                // (the original auto-equips the best backpack weapon mid-fight); refusing
+                // the commit makes the AI fall through to melee/magic like a weaponless mob.
+                MonsterAi.AvailableActions.Ranged => false,
+                _ => false,
+            });
+
+            if (picked == MonsterAi.AvailableActions.Magic)
+                return; // the cast already resolved this turn
         }
 
         // Honour the per-combatant status gate (Sleep/Panicking/Insane) — RE'd from
@@ -404,15 +448,33 @@ public class Battle : GameComponent, IReadOnlyBattle
     }
 
     /// <summary>
-    /// Move a combatant to an empty tile. First pass: teleport-style reposition with no
-    /// path-find or movement-range limit (the original engine path-finds via
-    /// fcn.00051b51 / fcn.00053871 and limits distance by Speed; that grid walk isn't
-    /// fully decoded yet — PLACEHOLDER until it is).
+    /// Move a combatant to an empty tile. Rules RE'd from MAIN.EXE fcn.0004d85b
+    /// (_RE_COMBAT.md "Punch-list RE" item 2): range = clamp(Speed/30, 1, 3) tiles,
+    /// Chebyshev distance (8-directional); only the DESTINATION tile must be empty
+    /// (intermediate occupancy is ignored); party members may only stand in the bottom
+    /// two rows, monsters in rows 0..CombatRowsForMobs.
     /// </summary>
     void MoveCombatant(ICombatParticipant mover, int targetTile)
     {
         if (mover == null || targetTile < 0 || targetTile >= _tiles.Length)
             return;
+
+        int oldTile = System.Array.IndexOf(_tiles, mover);
+        int speed = mover.Effective?.Attributes?.Speed?.Current ?? 0;
+        int range = Math.Clamp(speed / 30, 1, 3);
+        int dx = Math.Abs(targetTile % SavedGame.CombatColumns - oldTile % SavedGame.CombatColumns);
+        int dy = Math.Abs(targetTile / SavedGame.CombatColumns - oldTile / SavedGame.CombatColumns);
+        int targetRow = targetTile / SavedGame.CombatColumns;
+        bool rowAllowed = IsParty(mover)
+            ? targetRow >= SavedGame.CombatRowsForMobs                       // party: bottom rows only
+            : targetRow <= SavedGame.CombatRowsForMobs;                      // monsters: rows 0..3 (may advance one row into the party zone)
+
+        if (Math.Max(dx, dy) > range || !rowAllowed)
+        {
+            Info($"[Combat] {mover.SheetId} move to {targetTile} refused (range {range}, row ok {rowAllowed})");
+            ShowCombatMessage(Base.SystemText.CombatMsg_MoveWasBlocked); // SYSTEXTS 443
+            return;
+        }
 
         if (_tiles[targetTile] != null && LifePoints(_tiles[targetTile]) > 0)
         {
@@ -421,7 +483,6 @@ public class Battle : GameComponent, IReadOnlyBattle
             return;
         }
 
-        int oldTile = System.Array.IndexOf(_tiles, mover);
         if (oldTile >= 0)
             _tiles[oldTile] = null;
         _tiles[targetTile] = mover;
@@ -479,6 +540,35 @@ public class Battle : GameComponent, IReadOnlyBattle
     }
 
     /// <summary>
+    /// Monster AI magic commit: cast the first affordable known spell at the nearest live
+    /// enemy. Returns false (clearing the Magic bit for this turn) when nothing is castable.
+    /// Monster SP isn't shadow-tracked yet, so repeated casts don't drain it — PLACEHOLDER
+    /// until monster SP joins the battle shadow like _liveHp.
+    /// </summary>
+    bool TryMonsterCast(ICombatParticipant caster)
+    {
+        var spells = caster?.Effective?.Magic?.KnownSpells;
+        if (spells == null || spells.Count == 0)
+            return false;
+
+        int sp = caster.Effective?.Magic?.SpellPoints?.Current ?? 0;
+        foreach (var spellId in spells)
+        {
+            var spell = Assets.LoadSpell(spellId);
+            if (spell == null || (spell.Cost > 0 && spell.Cost > sp))
+                continue;
+
+            var target = LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault();
+            if (target == null)
+                return false;
+
+            CastQueuedSpell(caster, spellId, TileOf(target));
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Resolve a queued spell cast through the SpellEffectRegistry: consume SP, apply the
     /// effect to the occupant of the target tile (or the caster for self-target picks).
     /// </summary>
@@ -512,6 +602,12 @@ public class Battle : GameComponent, IReadOnlyBattle
                 : caster;
         }
 
+        // RE'd mastery multiplier M = max(1, (mastery+50)/100); mastery is the per-spell
+        // 0..10000 value grown by MagicTalent on each cast (_RE_COMBAT.md "Punch-list RE").
+        ushort mastery = 0;
+        caster.Effective?.Magic?.SpellStrengths?.TryGetValue(spellId, out mastery);
+        int m = Math.Max(1, (mastery + 50) / 100);
+
         var rng = Resolve<IRandom>();
         var context = new SpellCastContext
         {
@@ -519,6 +615,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             Target = target,
             CombatTargetPosition = targetTile,
             SpellStrength = (byte)(caster.Effective?.Level ?? 1),
+            MasteryMultiplier = m,
             Random = max => rng.Generate(max),
             RaiseEvent = Raise,
             ApplyDamage = ApplyDirectDamage,
@@ -560,7 +657,10 @@ public class Battle : GameComponent, IReadOnlyBattle
             Caster = user,
             Target = target,
             CombatTargetPosition = pending.TargetTile,
-            SpellStrength = 1, // Item casts use the item's fixed strength, not caster level
+            SpellStrength = 1,
+            // PLACEHOLDER: item casts run at full strength until the per-item cast-strength
+            // field is decoded (the original reads it off the ITEMLIST record).
+            MasteryMultiplier = 100,
             Random = max => rng.Generate(max),
             RaiseEvent = Raise,
             ApplyDamage = ApplyDirectDamage,

@@ -36,19 +36,18 @@ public sealed class BuffSpellEffect : ISpellEffect
 
 /// <summary>
 /// Drains HP from the target and heals the caster by the same amount (Steal Life).
-/// Magnitude PLACEHOLDER pending RE.
+/// RE'd magnitude (_RE_COMBAT.md "Punch-list RE" item 1): drains
+/// max(1, M*30/100) percent of the TARGET's max LP.
 /// </summary>
 public sealed class StealLifeEffect : ISpellEffect
 {
     public SpellId SpellId { get; }
-    readonly int _baseAmount;
-    readonly int _strengthScale;
+    readonly int _k;
 
-    public StealLifeEffect(SpellId spellId, int baseAmount, int strengthScale)
+    public StealLifeEffect(SpellId spellId, int k = 30)
     {
         SpellId = spellId;
-        _baseAmount = baseAmount;
-        _strengthScale = strengthScale;
+        _k = k;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
@@ -56,7 +55,12 @@ public sealed class StealLifeEffect : ISpellEffect
         if (context?.Target == null || context.Caster == null || context.ApplyDamage == null || context.ApplyHeal == null)
             return SpellCastOutcome.Failed;
 
-        int amount = _baseAmount + context.SpellStrength * _strengthScale;
+        int maxLp = context.Target.Effective?.Combat?.LifePoints?.Max ?? 0;
+        if (maxLp <= 0)
+            return SpellCastOutcome.Failed;
+
+        int pct = Math.Max(1, context.MasteryMultiplier * _k / 100);
+        int amount = Math.Max(1, maxLp * pct / 100);
         context.ApplyDamage(context.Target, amount);
         context.ApplyHeal(context.Caster, amount);
         return SpellCastOutcome.Hit;
@@ -64,19 +68,20 @@ public sealed class StealLifeEffect : ISpellEffect
 }
 
 /// <summary>
-/// Drains SP from the target into the caster (Steal Magic). Routed through Mana
+/// Drains SP from the target into the caster (Steal Magic). RE'd magnitude: drains
+/// max(1, M*30/100) percent of the TARGET's max SP. Routed through Mana
 /// DataChangeEvents so only party members persist the change — monsters don't track SP
 /// in the battle shadow yet (PLACEHOLDER).
 /// </summary>
 public sealed class StealMagicEffect : ISpellEffect
 {
     public SpellId SpellId { get; }
-    readonly int _amount;
+    readonly int _k;
 
-    public StealMagicEffect(SpellId spellId, int amount)
+    public StealMagicEffect(SpellId spellId, int k = 30)
     {
         SpellId = spellId;
-        _amount = amount;
+        _k = k;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
@@ -84,12 +89,16 @@ public sealed class StealMagicEffect : ISpellEffect
         if (context?.Caster == null || context.RaiseEvent == null)
             return SpellCastOutcome.Failed;
 
+        int maxSp = context.Target?.Effective?.Magic?.SpellPoints?.Max ?? 0;
+        int pct = Math.Max(1, context.MasteryMultiplier * _k / 100);
+        int amount = Math.Max(1, maxSp * pct / 100);
+
         if (context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {
             var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);
             context.RaiseEvent(new UAlbion.Formats.MapEvents.DataChangeEvent(
                 targetId, UAlbion.Formats.MapEvents.ChangeProperty.Mana,
-                UAlbion.Formats.MapEvents.NumericOperation.SubtractAmount, (ushort)_amount));
+                UAlbion.Formats.MapEvents.NumericOperation.SubtractAmount, (ushort)amount));
         }
 
         if (context.Caster.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
@@ -97,7 +106,7 @@ public sealed class StealMagicEffect : ISpellEffect
             var casterId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Caster.SheetId.Id);
             context.RaiseEvent(new UAlbion.Formats.MapEvents.DataChangeEvent(
                 casterId, UAlbion.Formats.MapEvents.ChangeProperty.Mana,
-                UAlbion.Formats.MapEvents.NumericOperation.AddAmount, (ushort)_amount));
+                UAlbion.Formats.MapEvents.NumericOperation.AddAmount, (ushort)amount));
         }
 
         return SpellCastOutcome.Hit;
@@ -119,23 +128,26 @@ public sealed class WithdrawEffect : ISpellEffect
     }
 }
 
-/// <summary>Places a damage trap on the chosen combat tile (trap/mine spells).</summary>
+/// <summary>
+/// Places a damage trap on the chosen combat tile (trap/mine spells). Trap damage uses
+/// the RE'd magnitude formula max(1, M*K/100) with the per-spell K constant.
+/// </summary>
 public sealed class TrapSpellEffect : ISpellEffect
 {
     public SpellId SpellId { get; }
-    readonly int _damage;
+    readonly int _k;
 
-    public TrapSpellEffect(SpellId spellId, int damage)
+    public TrapSpellEffect(SpellId spellId, int k)
     {
         SpellId = spellId;
-        _damage = damage;
+        _k = k;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
     {
         if (context?.PlaceTrap == null || context.CombatTargetPosition < 0)
             return SpellCastOutcome.Failed;
-        context.PlaceTrap(context.CombatTargetPosition, _damage + context.SpellStrength);
+        context.PlaceTrap(context.CombatTargetPosition, Math.Max(1, context.MasteryMultiplier * _k / 100));
         return SpellCastOutcome.Hit;
     }
 }

@@ -14,6 +14,7 @@ public interface ICharacterSheet
     PlayerClass PlayerClass { get; }
     ICharacterAttribute Age { get; }
     byte Level { get; }
+    ushort ExperienceReward { get; } // XP pool contribution when killed in combat (sheet offset 0x20)
 
     // Visual
     SpriteId SpriteId { get; } // Overworld / 3D graphics
