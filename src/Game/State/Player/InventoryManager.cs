@@ -52,6 +52,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         OnAsync<ReadItemEvent>(OnReadItem);
         On<ReadSpellScrollEvent>(OnReadSpellScroll);
         On<ConsumeItemChargeEvent>(OnConsumeCharge);
+        On<ConsumeAmmoEvent>(OnConsumeAmmo);
         On<BreakInventorySlotEvent>(OnBreakSlot);
         On<RepairInventorySlotEvent>(OnRepairSlot);
         On<IdentifyInventorySlotEvent>(OnIdentifySlot);
@@ -704,6 +705,55 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
                 return;
             }
         }
+    }
+
+    void OnConsumeAmmo(ConsumeAmmoEvent e)
+    {
+        // One round per ranged strike (fcn.0004f3e2/fcn.0004f4da): the backpack stack
+        // depletes first (in the original it refills the equipped ammo slot), then the
+        // equipped stack itself.
+        var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
+        var inv = _getInventory(invId);
+        if (inv == null)
+            return;
+
+        ItemSlot equipped = null;
+        // Backpack slots first
+        for (int i = 0; i < (int)ItemSlotId.NormalSlotCount; i++)
+        {
+            var slot = inv.Slots[i];
+            if (IsMatchingAmmo(slot, e.AmmoType))
+            {
+                DecrementAmmo(slot, invId, e.MemberId);
+                return;
+            }
+        }
+
+        foreach (var slot in inv.EnumerateBodyParts())
+            if (equipped == null && IsMatchingAmmo(slot, e.AmmoType))
+                equipped = slot;
+
+        if (equipped != null)
+            DecrementAmmo(equipped, invId, e.MemberId);
+    }
+
+    bool IsMatchingAmmo(ItemSlot slot, AmmunitionType ammoType)
+    {
+        if (slot == null || slot.Item.Type != AssetType.Item || slot.Amount == 0)
+            return false;
+        if ((slot.Flags & ItemSlotFlags.Broken) != 0)
+            return false;
+        var item = _getItem(slot.Item);
+        return item != null && item.TypeId == ItemType.Ammo && item.AmmoType == ammoType;
+    }
+
+    void DecrementAmmo(ItemSlot slot, InventoryId invId, PartyMemberId member)
+    {
+        slot.Amount--;
+        if (slot.Amount == 0)
+            slot.Clear();
+        Info($"[Inv] {member} spends one round of ammo ({slot.Amount} left in slot)");
+        Raise(new InventoryChangedEvent(invId));
     }
 
     void OnBreakSlot(BreakInventorySlotEvent e)
