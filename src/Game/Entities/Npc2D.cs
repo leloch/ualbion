@@ -61,6 +61,14 @@ public class Npc2D : Component
         _onTileEnteredDelegate = (x, y) => Raise(new NpcEnteredTileEvent(_npcNumber, x, y));
 
         On<FastClockEvent>(_ => Update());
+        On<Combat.EndCombatEvent>(e =>
+        {
+            if (!_inContactCombat)
+                return;
+            _inContactCombat = false;
+            if (e.Result == Combat.CombatResult.Victory)
+                Raise(new NpcOffEvent(_npcNumber));
+        });
         OnDirectCall<ShowMapMenuEvent>(OnRightClick);
         OnDirectCall<NpcJumpEvent>(OnJump);
         OnDirectCall<NpcMoveEvent>(OnMove);
@@ -259,6 +267,8 @@ public class Npc2D : Component
         }
     }
 
+    bool _inContactCombat;
+
     void MovementChaseParty()
     {
         // Only retarget on tile arrival — same rationale as MovementRandom: re-aiming on
@@ -268,6 +278,18 @@ public class Npc2D : Component
 
         var party = Resolve<IParty>();
         var pos = party.Leader.GetPosition();
+
+        // Contact: a chasing monster group that catches the party (same or adjacent tile)
+        // starts combat — the original's touch trigger. Victory removes the group from
+        // the map via npc_off; any other outcome resumes the chase.
+        int cdx = System.Math.Abs((int)pos.X - _state.X);
+        int cdy = System.Math.Abs((int)pos.Y - _state.Y);
+        if (!_inContactCombat && System.Math.Max(cdx, cdy) <= 1 && _state.Id.Type == AssetType.MonsterGroup)
+        {
+            _inContactCombat = true;
+            Raise(new EncounterEvent((MonsterGroupId)_state.Id, CombatBackgroundId.None));
+            return;
+        }
 
         // PLACEHOLDER give-up distance — 16 tiles Manhattan radius. The original engine
         // likely had a per-NPC pursue range (MapNpc field), but until that's RE'd this

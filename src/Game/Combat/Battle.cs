@@ -63,16 +63,12 @@ public class Battle : GameComponent, IReadOnlyBattle
         AttachChild(new CombatActionPicker());
         AttachChild(new CombatAudio());
 
-        // AttachChild(new UiFixedPositionElement(backgroundId, UiConstants.UiExtents));
-        AttachChild(new Sprite(
-            backgroundId,
-            DrawLayer.Background,
-            SpriteKeyFlags.NoTransform,
-            SpriteFlags.LeftAligned)
-        {
-            Position = new Vector3(-1.0f, 1.0f, 1.0f),
-            Size = new Vector2(2.0f, -2.0f)
-        });
+        // The painted combat backdrop fills the screen below the combat UI like the
+        // original. It renders through the UI sprite path (Interface layer, NoDepthTest)
+        // — the world keeps drawing in its own passes underneath, and a world-space
+        // Sprite at a high layer corrupts the 3D billboard batches, so the UI element is
+        // the safe mechanism.
+        AttachChild(new UAlbion.Game.Gui.Controls.UiFixedPositionElement(backgroundId, UiConstants.UiExtents));
     }
 
     AlbionTask Observe(ObserveCombatEvent _) =>

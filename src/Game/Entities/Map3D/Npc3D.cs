@@ -27,20 +27,31 @@ public class Npc3D : GameComponent
     readonly TilemapRequest _properties;
     readonly int _mapWidth;
     readonly int _mapHeight;
+    readonly byte _npcNumber;
     readonly List<(MapObject Object, Vector3 Offset)> _parts = [];
     Vector2 _position; // Tile units (continuous)
+    bool _inContactCombat;
 
-    public Npc3D(NpcState state, MapNpc mapData, TilemapRequest properties, int mapWidth, int mapHeight)
+    public Npc3D(NpcState state, MapNpc mapData, TilemapRequest properties, int mapWidth, int mapHeight, byte npcNumber)
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _mapData = mapData ?? throw new ArgumentNullException(nameof(mapData));
         _properties = properties ?? throw new ArgumentNullException(nameof(properties));
         _mapWidth = mapWidth;
         _mapHeight = mapHeight;
+        _npcNumber = npcNumber;
         _position = new Vector2(_state.X, _state.Y);
         _targetX = _state.X;
         _targetY = _state.Y;
         On<FastClockEvent>(_ => Update());
+        On<Combat.EndCombatEvent>(e =>
+        {
+            if (!_inContactCombat)
+                return;
+            _inContactCombat = false;
+            if (e.Result == Combat.CombatResult.Victory)
+                Raise(new UAlbion.Formats.ScriptEvents.NpcOffEvent(_npcNumber));
+        });
     }
 
     int _targetX;
@@ -78,6 +89,40 @@ public class Npc3D : GameComponent
             var (wx, wy) = GetWaypointTarget();
             _targetX = wx;
             _targetY = wy;
+        }
+        else if (_state.MovementType == NpcMovement.ChaseParty && AtTarget)
+        {
+            var party = TryResolve<IParty>();
+            var pos = party?.Leader?.GetPosition();
+            if (pos != null)
+            {
+                // 3D: tile Y comes from world Z (the camera IS the party).
+                int px = (int)MathF.Floor(pos.Value.X);
+                int py = (int)MathF.Floor(pos.Value.Z);
+                int dx = Math.Abs(px - _state.X);
+                int dy = Math.Abs(py - _state.Y);
+
+                // Contact: a chasing monster group that catches the party starts combat
+                // (the original's touch trigger). Victory removes the group via npc_off.
+                if (!_inContactCombat && Math.Max(dx, dy) <= 1 && _state.Id.Type == UAlbion.Config.AssetType.MonsterGroup)
+                {
+                    _inContactCombat = true;
+                    Raise(new UAlbion.Formats.MapEvents.EncounterEvent(
+                        (UAlbion.Formats.Ids.MonsterGroupId)_state.Id,
+                        UAlbion.Formats.Ids.CombatBackgroundId.None));
+                }
+                else if (dx + dy <= 16) // PLACEHOLDER give-up radius, same as Npc2D
+                {
+                    // Step one tile toward the party, axis-major, respecting walls.
+                    int nx = _state.X + Math.Sign(px - _state.X);
+                    int ny = _state.Y + Math.Sign(py - _state.Y);
+                    var detector = TryResolve<ICollisionManager>();
+                    if (nx != _state.X && (detector == null || !detector.IsOccupied(_state.X, _state.Y, nx, _state.Y)))
+                        _targetX = nx;
+                    else if (ny != _state.Y && (detector == null || !detector.IsOccupied(_state.X, _state.Y, _state.X, ny)))
+                        _targetY = ny;
+                }
+            }
         }
         else if (_state.MovementType == NpcMovement.RandomWander && AtTarget)
         {

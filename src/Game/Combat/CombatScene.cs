@@ -2,6 +2,7 @@
 using UAlbion.Core;
 using UAlbion.Core.Visual;
 using UAlbion.Formats.Config;
+using UAlbion.Formats.ScriptEvents;
 using UAlbion.Game.Events;
 using UAlbion.Game.Scenes;
 
@@ -23,7 +24,9 @@ public class CombatScene : Container, IScene
         if (_clockWasRunning)
             Raise(new StopClockEvent());
 
-        // Raise(new ShowMapEvent(false));
+        // Note: the world keeps rendering during combat; the painted backdrop covers it
+        // (a NoDepthTest sprite in Battle, like the combat UI). ShowMapEvent(false/true)
+        // hides the map but does NOT restore it cleanly on re-show, so it stays unused.
         Raise(new PushMouseModeEvent(MouseMode.Normal2D));
         Raise(new PushInputModeEvent(InputMode.Combat));
     }
@@ -32,7 +35,6 @@ public class CombatScene : Container, IScene
     {
         Raise(new PopMouseModeEvent());
         Raise(new PopInputModeEvent());
-        // Raise(new ShowMapEvent());
 
         if (_clockWasRunning)
             Raise(new StartClockEvent());
