@@ -25,6 +25,7 @@ sealed class DumpGraphics : GameComponent, IAssetDumper
     {
         void Export<TEnum>(string name) where TEnum : unmanaged, Enum
         {
+            Console.Out.Flush();
             var directory = Path.Combine(baseDir, "data", "exported", "gfx", name);
             if (!Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
@@ -37,9 +38,28 @@ sealed class DumpGraphics : GameComponent, IAssetDumper
                 if (dumpIds != null && !dumpIds.Contains(assetId))
                     continue;
 
-                ExportImage(assetId, Assets, directory, _formats, (_, palFrame) => palFrame < 10); // Limit to 10, some of the tile sets can get a bit silly.
+                try
+                {
+                    ExportImage(assetId, Assets, directory, _formats, (_, palFrame) => palFrame < 10); // Limit to 10, some of the tile sets can get a bit silly.
+                }
+                catch (Exception ex) // One bad asset shouldn't kill the whole dump
+                {
+                    Console.WriteLine($"  FAILED {assetId}: {ex}");
+                    Console.Out.Flush();
+                }
             }
         }
+
+        types ??= new HashSet<AssetType>
+        {
+            AssetType.AutomapGfx, AssetType.CombatBackground, AssetType.CombatGfx,
+            AssetType.CoreGfx, AssetType.BackgroundGfx, AssetType.Floor,
+            AssetType.Object3D, AssetType.WallOverlay, AssetType.Wall,
+            AssetType.FontGfx, AssetType.PartyInventoryGfx, AssetType.TilesetGfx,
+            AssetType.ItemGfx, AssetType.NpcLargeGfx, AssetType.PartyLargeGfx,
+            AssetType.MonsterGfx, AssetType.Picture, AssetType.NpcSmallGfx,
+            AssetType.PartySmallGfx, AssetType.Portrait, AssetType.TacticalGfx,
+        };
 
         foreach (var type in types)
         {
@@ -55,7 +75,7 @@ sealed class DumpGraphics : GameComponent, IAssetDumper
                 case AssetType.Object3D:          Export<Base.DungeonObject>    ("Objects");              break;
                 case AssetType.WallOverlay:       Export<Base.WallOverlay>      ("Overlays");             break;
                 case AssetType.Wall:              Export<Base.Wall>             ("Walls");                break;
-                case AssetType.FontGfx:           Export<Base.Font>             ("Fonts");                break;
+                case AssetType.FontGfx:           Export<Base.FontGfx>          ("Fonts");                break;
                 case AssetType.PartyInventoryGfx: Export<Base.PartyInventoryGfx>("InventoryBackgrounds"); break;
                 case AssetType.TilesetGfx:        Export<Base.TilesetGfx>       ("Tiles");                break;
                 case AssetType.ItemGfx:           Export<Base.ItemGfx>          ("Item");                 break;
@@ -97,7 +117,10 @@ sealed class DumpGraphics : GameComponent, IAssetDumper
         }
         else palette = assets.LoadPalette(Base.Palette.Inventory);
 
-        var texture = assets.LoadTexture(assetId);
+        // Tileset graphics load as an ITileGraphics wrapper rather than a bare texture.
+        var texture = assetId.Type == AssetType.TilesetGfx
+            ? assets.LoadTileGraphics(new TilesetGfxId(assetId))?.Texture
+            : assets.LoadTexture(assetId);
         if (texture == null)
             return filenames;
 

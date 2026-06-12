@@ -64,14 +64,14 @@ public class DominatorTree
     {
         ArgumentNullException.ThrowIfNull(sb);
         sb.AppendLine("digraph G {");
-        sb.AppendLine($"    graph [ dpi = {dpi} ];");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"    graph [ dpi = {dpi} ];");
         var stack = new Stack<GenericTreeNode<int>>();
         stack.Push(Root);
         while (stack.TryPop(out var node))
         {
             foreach (var child in node.Children)
             {
-                sb.AppendLine($"    {node.Value} -> {child.Value};");
+                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"    {node.Value} -> {child.Value};");
                 stack.Push(child);
             }
         }
