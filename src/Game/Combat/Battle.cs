@@ -32,7 +32,7 @@ public class Battle : GameComponent, IReadOnlyBattle
     // Queued per-character actions (chosen by player via context menu before the round
     // begins). Members not in this map fall through to default Melee — matches Albion's
     // "leave defaults" behaviour when the player doesn't explicitly set actions.
-    readonly Dictionary<SheetId, (CombatAction Action, int TargetTile)> _pendingActions = [];
+    readonly Dictionary<SheetId, QueueCombatActionEvent> _pendingActions = [];
 
     public IReadOnlyList<ICombatParticipant> Mobs { get; }
     public event Action Complete;
@@ -46,6 +46,7 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         _groupId = groupId;
         Mobs = _mobs;
+        AttachChild(new CombatActionPicker());
 
         // AttachChild(new UiFixedPositionElement(backgroundId, UiConstants.UiExtents));
         AttachChild(new Sprite(
@@ -70,23 +71,25 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     void OnQueueAction(QueueCombatActionEvent e)
     {
-        _pendingActions[e.Actor] = (e.Action, e.TargetTile);
+        _pendingActions[e.Actor] = e;
     }
+
+    static readonly QueueCombatActionEvent DefaultAction = new(default, CombatAction.Melee, -1);
 
     /// <summary>
     /// Look up the action queued for this combatant, or the default (Melee, no explicit
     /// target). Clears the entry so each queued choice applies exactly once — matches
     /// Albion's per-round action selection.
     /// </summary>
-    (CombatAction Action, int TargetTile) ConsumePendingAction(ICombatParticipant p)
+    QueueCombatActionEvent ConsumePendingAction(ICombatParticipant p)
     {
-        if (p?.SheetId == null) return (CombatAction.Melee, -1);
+        if (p?.SheetId == null) return DefaultAction;
         if (_pendingActions.TryGetValue(p.SheetId, out var choice))
         {
             _pendingActions.Remove(p.SheetId);
             return choice;
         }
-        return (CombatAction.Melee, -1);
+        return DefaultAction;
     }
 
     AlbionTask BeginRoundAsync(BeginCombatRoundEvent _)
@@ -228,9 +231,9 @@ public class Battle : GameComponent, IReadOnlyBattle
         // Pull the player's queued choice (if any). Defaults to Melee for unset members
         // and for all monsters — matches the original engine's behaviour where unconfigured
         // combatants fall back to attack-nearest.
-        var (chosenAction, chosenTile) = forParty
-            ? ConsumePendingAction(attacker)
-            : (CombatAction.Melee, -1);
+        var pending = forParty ? ConsumePendingAction(attacker) : DefaultAction;
+        var chosenAction = pending.Action;
+        var chosenTile = pending.TargetTile;
 
         // Skip-turn actions (DoNothing / Retreat with the Fleeing status applied) exit early.
         if (chosenAction == CombatAction.None)
@@ -246,6 +249,24 @@ public class Battle : GameComponent, IReadOnlyBattle
                 if (targetId != null)
                     Raise(new ChangeStatusEvent(targetId.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Fleeing, NumericOperation.AddAmount, 1));
             }
+            return;
+        }
+
+        if (chosenAction == CombatAction.Move)
+        {
+            MoveCombatant(attacker, chosenTile);
+            return;
+        }
+
+        if (chosenAction is CombatAction.CastSpell or CombatAction.CastSchool5 or CombatAction.CastSchool6)
+        {
+            CastQueuedSpell(attacker, pending.Spell, chosenTile);
+            return;
+        }
+
+        if (chosenAction == CombatAction.UseItem)
+        {
+            UseQueuedItem(attacker, pending);
             return;
         }
 
@@ -290,6 +311,106 @@ public class Battle : GameComponent, IReadOnlyBattle
             // leaves hpAfter == hpBefore so the loop retries on the next AP point.
             if (hpAfter < hpBefore) return;
         }
+    }
+
+    /// <summary>
+    /// Move a combatant to an empty tile. First pass: teleport-style reposition with no
+    /// path-find or movement-range limit (the original engine path-finds via
+    /// fcn.00051b51 / fcn.00053871 and limits distance by Speed; that grid walk isn't
+    /// fully decoded yet — PLACEHOLDER until it is).
+    /// </summary>
+    void MoveCombatant(ICombatParticipant mover, int targetTile)
+    {
+        if (mover == null || targetTile < 0 || targetTile >= _tiles.Length)
+            return;
+
+        if (_tiles[targetTile] != null && LifePoints(_tiles[targetTile]) > 0)
+        {
+            Info($"[Combat] {mover.SheetId} can't move to occupied tile {targetTile}");
+            return;
+        }
+
+        int oldTile = System.Array.IndexOf(_tiles, mover);
+        if (oldTile >= 0)
+            _tiles[oldTile] = null;
+        _tiles[targetTile] = mover;
+        Info($"[Combat] {mover.SheetId} moves from tile {oldTile} to {targetTile}");
+        TraceLog.Emit("combat_move", ("actor", mover.SheetId), ("from", oldTile), ("to", targetTile));
+    }
+
+    /// <summary>
+    /// Resolve a queued spell cast through the SpellEffectRegistry: consume SP, apply the
+    /// effect to the occupant of the target tile (or the caster for self-target picks).
+    /// </summary>
+    void CastQueuedSpell(ICombatParticipant caster, SpellId spellId, int targetTile)
+    {
+        if (caster == null || spellId.IsNone)
+            return;
+
+        var spell = Assets.LoadSpell(spellId);
+        int cost = spell?.Cost ?? 0;
+        int sp = caster.Effective?.Magic?.SpellPoints?.Current ?? 0;
+        if (cost > 0 && sp < cost)
+        {
+            Info($"[Combat] {caster.SheetId} lacks SP for {spellId} ({sp}/{cost})");
+            return;
+        }
+
+        var target = targetTile >= 0 && targetTile < _tiles.Length ? _tiles[targetTile] : null;
+        target ??= caster;
+
+        var rng = Resolve<IRandom>();
+        var context = new SpellCastContext
+        {
+            Caster = caster,
+            Target = target,
+            CombatTargetPosition = targetTile,
+            SpellStrength = (byte)(caster.Effective?.Level ?? 1),
+            Random = max => rng.Generate(max),
+            RaiseEvent = Raise
+        };
+
+        var outcome = SpellEffectRegistry.Cast(spellId, context);
+        Info($"[Combat] {caster.SheetId} casts {spellId} at tile {targetTile}: {outcome}");
+        TraceLog.Emit("combat_cast", ("actor", caster.SheetId), ("spell", spellId), ("tile", targetTile), ("outcome", outcome));
+
+        // SP is consumed when the cast is attempted, regardless of resist — matches the
+        // original engine's charge/SP handling for unfulfilled casts.
+        if (cost > 0)
+        {
+            var casterTarget = TryToTarget(caster);
+            if (casterTarget != null)
+                Raise(new DataChangeEvent(casterTarget.Value, ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
+        }
+    }
+
+    /// <summary>
+    /// Resolve a queued magic-item use: cast the item's spell with no SP cost.
+    /// PLACEHOLDER: charge consumption needs the inventory slot plumbing
+    /// (InventoryManager.OnActivateItemSpell has it for the out-of-combat path).
+    /// </summary>
+    void UseQueuedItem(ICombatParticipant user, QueueCombatActionEvent pending)
+    {
+        if (user == null || pending.Spell.IsNone)
+            return;
+
+        var target = pending.TargetTile >= 0 && pending.TargetTile < _tiles.Length ? _tiles[pending.TargetTile] : null;
+        target ??= user;
+
+        var rng = Resolve<IRandom>();
+        var context = new SpellCastContext
+        {
+            Caster = user,
+            Target = target,
+            CombatTargetPosition = pending.TargetTile,
+            SpellStrength = 1, // Item casts use the item's fixed strength, not caster level
+            Random = max => rng.Generate(max),
+            RaiseEvent = Raise
+        };
+
+        var outcome = SpellEffectRegistry.Cast(pending.Spell, context);
+        Info($"[Combat] {user.SheetId} uses item {pending.Item} ({pending.Spell}): {outcome}");
+        TraceLog.Emit("combat_use_item", ("actor", user.SheetId), ("item", pending.Item), ("spell", pending.Spell), ("outcome", outcome));
     }
 
     /// <summary>

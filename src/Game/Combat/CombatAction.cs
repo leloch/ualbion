@@ -34,4 +34,16 @@ public enum CombatAction : ushort
     /// <summary>Targeted-tile action (likely throw / ranged-non-magic).
     /// Partial decode at <c>fcn.0004eac1</c>.</summary>
     TargetedTile = 7,
+
+    // --- UAlbion-side extensions (not original action_kind values) -------------------
+    // The original engine folds these into the universal action executor's sub-actions
+    // (movement = path-find sub-action 2 at fcn.00051b51; casting = per-school kinds 2/3).
+    // UAlbion models them as distinct queued actions carrying SpellId/ItemId payload.
+
+    /// <summary>Move to the chosen empty target tile (original: path-find sub-action).</summary>
+    Move = 8,
+
+    /// <summary>Cast the spell in <c>QueueCombatActionEvent.Spell</c> at the target tile.
+    /// (Original used per-school action kinds 2/3; the school is derived from the spell.)</summary>
+    CastSpell = 9,
 }

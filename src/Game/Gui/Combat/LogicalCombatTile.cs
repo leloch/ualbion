@@ -30,9 +30,7 @@ public class LogicalCombatTile : UiElement
         _battle = battle ?? throw new ArgumentNullException(nameof(battle));
 
         AttachChild(new VisualCombatTile(tileIndex, battle))
-            .OnClick(() =>
-            {
-            })
+            .OnClick(() => Raise(new CombatTilePickedEvent(_tileIndex))) // Completes any pending Move/Cast/UseItem target pick
             .OnRightClick(OnRightClick)
             .OnHover(Hover)
             .OnBlur(Blur);
@@ -110,14 +108,14 @@ public class LogicalCombatTile : UiElement
 
             options.Add(new ContextMenuOption(
                 S(Base.SystemText.Combat_Move),
-                new NopEvent(), // PLACEHOLDER: needs target-tile picker; queueing without a tile is a no-op
+                new BeginCombatTargetPickEvent(actor, CombatAction.Move), // Next left-click on a tile completes the move
                 ContextMenuGroup.Actions));
 
             if (sheet.Magic.KnownSpells.Count > 0)
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.Combat_UseMagic),
-                    new NopEvent(), // PLACEHOLDER: needs spell picker dialog
+                    new ShowCombatSpellMenuEvent(actor), // Spell list menu → target tile pick
                     ContextMenuGroup.Actions));
             }
 
@@ -125,7 +123,7 @@ public class LogicalCombatTile : UiElement
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.Combat_UseMagicItem),
-                    new NopEvent(), // PLACEHOLDER: needs item picker dialog
+                    new ShowCombatItemMenuEvent(actor), // Item list menu → target tile pick
                     ContextMenuGroup.Actions));
             }
 
