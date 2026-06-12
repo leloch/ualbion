@@ -51,6 +51,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         _groupId = groupId;
         Mobs = _mobs;
         AttachChild(new CombatActionPicker());
+        AttachChild(new CombatAudio());
 
         // AttachChild(new UiFixedPositionElement(backgroundId, UiConstants.UiExtents));
         AttachChild(new Sprite(
