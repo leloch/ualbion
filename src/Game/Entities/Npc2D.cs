@@ -39,12 +39,13 @@ public class Npc2D : Component
 
     public override string ToString() => $"Npc {_npcNumber} @ ({_state.X},{_state.Y}) {_state.Id} {_sprite.Id}";
 
-    public Npc2D(Container sceneObjects, NpcState state, MapNpc definition, byte npcNumber, bool isLarge, Vector3 tileSize)
+    public Npc2D(Container sceneObjects, NpcState state, MapNpc definition, byte npcNumber, bool isLarge, Vector3 tileSize, Func<int, int, SitMode> getSitMode = null)
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _mapData = definition ?? throw new ArgumentNullException(nameof(definition));
         _npcNumber = npcNumber;
         _isLarge = isLarge;
+        _getSitMode = getSitMode ?? GetSitModeDelegate;
 
         _sprite = new MapSprite(
             _state.SpriteOrGroup,
@@ -139,11 +140,11 @@ public class Npc2D : Component
             pos += LargeTileOffset;
 
         _sprite.TilePosition = new Vector3(pos.X, pos.Y, _moveSettings.GetDepth(pos.Y));
-        _sprite.Frame = _moveSettings.GetSpriteFrame(_state, GetSitModeDelegate);
+        _sprite.Frame = _moveSettings.GetSpriteFrame(_state, _getSitMode);
     }
 
-    static readonly Func<int, int, SitMode> GetSitModeDelegate = GetSitMode;
-    static SitMode GetSitMode(int x, int y) => SitMode.None; // TODO
+    readonly Func<int, int, SitMode> _getSitMode; // Provided by NpcManager2D (map tile sit flags)
+    static readonly Func<int, int, SitMode> GetSitModeDelegate = (_, _) => SitMode.None; // fallback when no map context
     void OnTurn(NpcTurnEvent e)
     {
         _state.NpcMoveState.Direction = e.Direction;

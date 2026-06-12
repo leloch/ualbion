@@ -77,7 +77,8 @@ class NpcManager2D : Component
                 npc,
                 (byte)index,
                 !_logicalMap.UseSmallSprites,
-                new Vector3(_logicalMap.TileSize, 1))
+                new Vector3(_logicalMap.TileSize, 1),
+                GetSitMode)
             {
                 IsActive = !isDisabled
             };
@@ -86,6 +87,18 @@ class NpcManager2D : Component
         }
 
         game.MapIdForNpcs = _logicalMap.Id;
+    }
+
+    /// <summary>
+    /// Sit/sleep pose for a tile: the overlay's sit flags win, then the underlay's —
+    /// NPCs whose waypoint parks them on a chair/bed tile use the matching pose.
+    /// </summary>
+    SitMode GetSitMode(int x, int y)
+    {
+        var overlay = _logicalMap.GetOverlay(x, y);
+        if (overlay != null && overlay.SitMode != SitMode.None)
+            return overlay.SitMode;
+        return _logicalMap.GetUnderlay(x, y)?.SitMode ?? SitMode.None;
     }
 
     internal static void InitialiseState(MapNpc npc, NpcState state, bool active, IEventSet mapEvents, Vector2 tileSize)
