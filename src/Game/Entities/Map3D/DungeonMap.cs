@@ -205,7 +205,7 @@ public class DungeonMap : GameComponent, IMap
         if (initialiseState)
             NpcManager2D.InitialiseState(npc, state, true, _logicalMap.Events, Vector2.One);
 
-        var npc3d = new Npc3D(state, npc, properties);
+        var npc3d = new Npc3D(state, npc, properties, _logicalMap.Width, _logicalMap.Height);
         var objectData = _labyrinthData.ObjectGroups[npc.SpriteOrGroup.Id - 1];
         foreach (var subObject in objectData.SubObjects)
         {

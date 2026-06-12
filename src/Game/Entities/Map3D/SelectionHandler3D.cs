@@ -7,7 +7,10 @@ using UAlbion.Core.Events;
 using UAlbion.Core.Visual;
 using UAlbion.Formats;
 using UAlbion.Formats.Assets.Maps;
+using UAlbion.Formats.Assets.Save;
 using UAlbion.Formats.Config;
+using UAlbion.Formats.MapEvents;
+using UAlbion.Game.State;
 using UAlbion.Formats.Ids;
 using UAlbion.Game.Entities.Map2D;
 using UAlbion.Game.Events;
@@ -81,6 +84,10 @@ public sealed class SelectionHandler3D : GameComponent
         float tMaxX = dx != 0 ? ((stepX > 0 ? tileX + 1 : tileX) - px) / dx : float.PositiveInfinity;
         float tMaxY = dy != 0 ? ((stepY > 0 ? tileY + 1 : tileY) - py) / dy : float.PositiveInfinity;
 
+        // NPC-occupied tiles also stop the ray (NPCs are entities, not map contents).
+        var state = TryResolve<IGameState>();
+        var npcs = state?.Loaded == true ? state.Npcs : null;
+
         float t = 0;
         bool hit = false;
         for (int i = 0; i < MaxTilesTravelled; i++)
@@ -92,7 +99,20 @@ public sealed class SelectionHandler3D : GameComponent
             {
                 var (wallIndex, _) = _map.GetWall(tileX, tileY);
                 var objectGroup = _map.GetObject(tileX, tileY);
-                if (wallIndex != 0 || objectGroup != null)
+                bool npcHere = false;
+                if (npcs != null)
+                {
+                    foreach (var npc in npcs)
+                    {
+                        if (npc != null && !npc.Id.IsNone && npc.X == tileX && npc.Y == tileY)
+                        {
+                            npcHere = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (wallIndex != 0 || objectGroup != null || npcHere)
                 {
                     hit = true;
                     break;
@@ -194,6 +214,29 @@ public sealed class SelectionHandler3D : GameComponent
             }
         }
 
+        // NPC on the selected tile → talk option (the 3D counterpart of Npc2D.OnRightClick).
+        var state = TryResolve<IGameState>();
+        if (state?.Loaded == true)
+        {
+            foreach (var npc in state.Npcs)
+            {
+                if (npc == null || npc.Id.IsNone)
+                    continue;
+                if (npc.X != _lastTileX || npc.Y != _lastTileY)
+                    continue;
+
+                var talkEvent = BuildNpcInteraction(npc);
+                if (talkEvent != null)
+                {
+                    options.Add(new ContextMenuOption(
+                        S(Base.SystemText.MapPopup_TalkTo),
+                        talkEvent,
+                        ContextMenuGroup.Actions));
+                }
+                break;
+            }
+        }
+
         options.Add(new ContextMenuOption(
             S(Base.SystemText.MapPopup_Map),
             new ShowAutomapEvent(),
@@ -205,5 +248,21 @@ public sealed class SelectionHandler3D : GameComponent
             ContextMenuGroup.System));
 
         Raise(new ContextMenuEvent(uiPosition, heading, options));
+    }
+
+    /// <summary>Mirror of Npc2D.BuildInteractionEvent for 3D-map NPC states.</summary>
+    static IEvent BuildNpcInteraction(NpcState npc)
+    {
+        IEvent result = null;
+        if (npc.EventIndex != EventNode.UnusedEventId && npc.EventSet != null)
+            result = new TriggerChainEvent(
+                npc.EventSet,
+                npc.EventIndex,
+                new EventSource(npc.Id, TriggerType.TalkTo));
+        else if (npc.Id.Type == UAlbion.Config.AssetType.NpcSheet)
+            result = new StartDialogueEvent(npc.Id);
+        else if (npc.Id.Type == UAlbion.Config.AssetType.MapTextIndex)
+            result = new TextEvent((ushort)npc.Id.Id, TextLocation.NoPortrait, SheetId.None);
+        return result;
     }
 }

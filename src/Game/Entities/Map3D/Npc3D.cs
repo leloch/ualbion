@@ -25,14 +25,18 @@ public class Npc3D : GameComponent
     readonly NpcState _state;
     readonly MapNpc _mapData;
     readonly TilemapRequest _properties;
+    readonly int _mapWidth;
+    readonly int _mapHeight;
     readonly List<(MapObject Object, Vector3 Offset)> _parts = [];
     Vector2 _position; // Tile units (continuous)
 
-    public Npc3D(NpcState state, MapNpc mapData, TilemapRequest properties)
+    public Npc3D(NpcState state, MapNpc mapData, TilemapRequest properties, int mapWidth, int mapHeight)
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _mapData = mapData ?? throw new ArgumentNullException(nameof(mapData));
         _properties = properties ?? throw new ArgumentNullException(nameof(properties));
+        _mapWidth = mapWidth;
+        _mapHeight = mapHeight;
         _position = new Vector2(_state.X, _state.Y);
         _targetX = _state.X;
         _targetY = _state.Y;
@@ -80,12 +84,25 @@ public class Npc3D : GameComponent
             var rng = Resolve<IRandom>();
             if (rng.Generate(8) == 0) // Only occasionally start a new step
             {
+                int nx = _state.X, ny = _state.Y;
                 switch (rng.Generate(4))
                 {
-                    case 0: _targetX = _state.X - 1; break;
-                    case 1: _targetX = _state.X + 1; break;
-                    case 2: _targetY = _state.Y - 1; break;
-                    default: _targetY = _state.Y + 1; break;
+                    case 0: nx = _state.X - 1; break;
+                    case 1: nx = _state.X + 1; break;
+                    case 2: ny = _state.Y - 1; break;
+                    default: ny = _state.Y + 1; break;
+                }
+
+                // Stay on the map (state coords are ushort — walking past 0 wraps to 65535)
+                // and respect walls/props via the 3D collider.
+                if (nx >= 0 && ny >= 0 && nx < _mapWidth && ny < _mapHeight)
+                {
+                    var detector = TryResolve<ICollisionManager>();
+                    if (detector == null || !detector.IsOccupied(_state.X, _state.Y, nx, ny))
+                    {
+                        _targetX = nx;
+                        _targetY = ny;
+                    }
                 }
             }
         }
