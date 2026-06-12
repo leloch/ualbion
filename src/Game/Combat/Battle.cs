@@ -459,10 +459,10 @@ public class Battle : GameComponent, IReadOnlyBattle
             {
                 MonsterAi.AvailableActions.Magic => TryMonsterCast(attacker),
                 MonsterAi.AvailableActions.Melee => true, // resolved by the AP loop below
-                // PLACEHOLDER: ranged commits need the equipped-weapon ItemType 6 check
-                // (the original auto-equips the best backpack weapon mid-fight); refusing
-                // the commit makes the AI fall through to melee/magic like a weaponless mob.
-                MonsterAi.AvailableActions.Ranged => false,
+                // Ranged commits when the mob actually holds a long-range weapon — the
+                // strike pipeline then rolls LongRangeCombat for it. PLACEHOLDER:
+                // ammunition rules + the original's mid-fight auto-equip pending RE 5A.
+                MonsterAi.AvailableActions.Ranged => HasRangedWeapon(attacker),
                 _ => false,
             });
 
@@ -910,6 +910,15 @@ public class Battle : GameComponent, IReadOnlyBattle
         return DamageCalculator.EffectiveSkill(skill, isWeaponSkill, blind);
     }
 
+    /// <summary>True when the combatant's weapon hand holds a LongRangeWeapon (ItemType 6).</summary>
+    bool HasRangedWeapon(ICombatParticipant p)
+    {
+        var slot = p?.Effective?.Inventory?.RightHand;
+        if (slot == null || slot.Item.Type != AssetType.Item)
+            return false;
+        return Assets.LoadItem(slot.Item)?.TypeId == UAlbion.Formats.Assets.Inv.ItemType.LongRangeWeapon;
+    }
+
     void ApplyMeleeAttack(ICombatParticipant attacker, ICombatParticipant defender)
     {
         var a = attacker?.Effective?.Combat;
@@ -923,10 +932,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         // strike through the RANGED callback semantics (fcn.0004f057) — the to-hit roll
         // uses LongRangeCombat instead of CloseRangeCombat. PLACEHOLDER: ammunition
         // (AmmoType matching + consumption per shot) pending RE.
-        bool ranged = false;
-        var weaponSlot = attacker.Effective?.Inventory?.RightHand;
-        if (weaponSlot != null && weaponSlot.Item.Type == AssetType.Item)
-            ranged = Assets.LoadItem(weaponSlot.Item)?.TypeId == UAlbion.Formats.Assets.Inv.ItemType.LongRangeWeapon;
+        bool ranged = HasRangedWeapon(attacker);
 
         // 1. TO-HIT: the attacker's weapon skill vs 100 (RE'd from the attack completion
         // callbacks fcn.0004eac1/fcn.0004f057 — RollSkill fcn.00035bdc). There is NO
@@ -1034,8 +1040,9 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// on success the slot is flagged broken (item id unchanged) and the message shown.
     /// The original then moves the broken item to the post-combat LOOT LIST
     /// (fcn.000665ce = AppendSlotToLootList) and empties the slot; we keep it equipped
-    /// with the Broken flag instead — PLACEHOLDER until the battle-loot window exists.
-    /// Party members only: monster kit isn't persistent.
+    /// with the Broken flag instead — a DELIBERATE equivalent-outcome deviation (the
+    /// player keeps the item either way; RepairItem clears the flag). Monster drops DO
+    /// go through the loot window. Party members only: monster kit isn't persistent.
     /// </summary>
     void RollEquipmentBreak(ICombatParticipant p, UAlbion.Formats.Assets.Inv.ItemSlotId slotId, IRandom rng)
     {

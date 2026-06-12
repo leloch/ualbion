@@ -24,6 +24,8 @@ public class DungeonMap : GameComponent, IMap
     LabyrinthData _labyrinthData;
     LogicalMap3D _logicalMap;
     AutomapDialog _automap;
+    TilemapRequest _tilemapProperties;
+    readonly System.Collections.Generic.Dictionary<int, Npc3D> _npc3ds = [];
     float _backgroundRed;
     float _backgroundGreen;
     float _backgroundBlue;
@@ -42,6 +44,8 @@ public class DungeonMap : GameComponent, IMap
         On<HourElapsedEvent>(_ => FireEventChains(TriggerType.EveryHour, false));
         On<DayElapsedEvent>(_ => FireEventChains(TriggerType.EveryDay, false));
         On<PlayerEnteredTileEvent>(OnPlayerEnteredTile);
+        On<ChangeNpcMovementEvent>(OnChangeNpcMovement);
+        On<ChangeNpcSpriteEvent>(OnChangeNpcSprite);
         // On<UnloadMapEvent>(_ => Unload());
     }
 
@@ -148,9 +152,36 @@ public class DungeonMap : GameComponent, IMap
         // Raise(new LogEvent(LogEvent.Level.Info, $"WallHeight: {_labyrinthData.WallHeight} MaxObj: {maxObjectHeightRaw} EffWallWidth: {_labyrinthData.EffectiveWallWidth}"));
 
         var game = Resolve<IGameState>();
+        _tilemapProperties = properties;
         bool initialiseNpcState = game.MapIdForNpcs != MapId;
+        if (initialiseNpcState)
+        {
+            for (int i = 0; i < _logicalMap.Npcs.Count; i++)
+            {
+                var npc = _logicalMap.Npcs[i];
+                var npcState = game.Npcs[i];
+                if (npcState == null)
+                {
+                    npcState = new UAlbion.Formats.Assets.Save.NpcState();
+                    game.Npcs[i] = npcState;
+                }
+                NpcManager2D.InitialiseState(npc, npcState, true, _logicalMap.Events, Vector2.One);
+            }
+
+            // Re-apply persisted NPC morphs (change_npc_* map events) before building.
+            foreach (var (npcNum, type, value) in _logicalMap.NpcChanges)
+            {
+                if (npcNum >= game.Npcs.Count || game.Npcs[npcNum] == null)
+                    continue;
+                if (type == IconChangeType.NpcMovement)
+                    game.Npcs[npcNum].MovementType = (NpcMovement)value;
+                else if (type == IconChangeType.NpcSprite)
+                    game.Npcs[npcNum].SpriteOrGroup = new AssetId(AssetType.ObjectGroup, value);
+            }
+        }
+
         for (int i = 0; i < _logicalMap.Npcs.Count; i++)
-            BuildNpc(_logicalMap.Npcs[i], i, properties, game, initialiseNpcState);
+            BuildNpc(_logicalMap.Npcs[i], i, properties, game);
         game.MapIdForNpcs = MapId;
 
         // Build props
@@ -194,25 +225,8 @@ public class DungeonMap : GameComponent, IMap
         base.Unsubscribed();
     }
 
-    void BuildNpc(MapNpc npc, int index, TilemapRequest properties, IGameState game, bool initialiseState)
+    void BuildNpc(MapNpc npc, int index, TilemapRequest properties, IGameState game)
     {
-        if (npc.SpriteOrGroup.IsNone)
-            return;
-
-        if (npc.SpriteOrGroup.Type != AssetType.ObjectGroup)
-        {
-            Warn($"[3DMap] Tried to load npc with object group of incorrect type: {npc.SpriteOrGroup}");
-            return;
-        }
-
-        // ObjectGroup references are 1-based on disk (0 = "no NPC"; 1..N selects ObjectGroups[0..N-1]).
-        // LogicalMap3D.GetObject uses the same convention for tile contents.
-        if (npc.SpriteOrGroup.Id <= 0 || npc.SpriteOrGroup.Id > _labyrinthData.ObjectGroups.Count)
-        {
-            Warn($"[3DMap] Tried to load object group {npc.SpriteOrGroup.Id}, valid range 1..{_labyrinthData.ObjectGroups.Count}.");
-            return;
-        }
-
         var state = game.Npcs[index];
         if (state == null)
         {
@@ -220,18 +234,82 @@ public class DungeonMap : GameComponent, IMap
             game.Npcs[index] = state;
         }
 
-        if (initialiseState)
-            NpcManager2D.InitialiseState(npc, state, true, _logicalMap.Events, Vector2.One);
+        // The GROUP comes from the live NpcState (so change_npc_sprite morphs apply);
+        // freshly initialised states carry the MapNpc's group.
+        var group = state.SpriteOrGroup.IsNone ? npc.SpriteOrGroup : state.SpriteOrGroup;
+        if (group.IsNone)
+            return;
+
+        if (group.Type != AssetType.ObjectGroup)
+        {
+            Warn($"[3DMap] Tried to load npc with object group of incorrect type: {group}");
+            return;
+        }
+
+        // ObjectGroup references are 1-based on disk (0 = "no NPC"; 1..N selects ObjectGroups[0..N-1]).
+        // LogicalMap3D.GetObject uses the same convention for tile contents.
+        if (group.Id <= 0 || group.Id > _labyrinthData.ObjectGroups.Count)
+        {
+            Warn($"[3DMap] Tried to load object group {group.Id}, valid range 1..{_labyrinthData.ObjectGroups.Count}.");
+            return;
+        }
 
         var npc3d = new Npc3D(state, npc, properties, _logicalMap.Width, _logicalMap.Height, (byte)index);
-        var objectData = _labyrinthData.ObjectGroups[npc.SpriteOrGroup.Id - 1];
+        var objectData = _labyrinthData.ObjectGroups[group.Id - 1];
         foreach (var subObject in objectData.SubObjects)
         {
             var obj = MapObject.Build(state.X, state.Y, _labyrinthData, subObject, properties);
             npc3d.AddPart(obj, state.X, state.Y);
         }
 
+        _npc3ds[index] = npc3d;
         _sceneObjects.Add(npc3d);
+    }
+
+    /// <summary>
+    /// Live NPC morphs on 3D maps (the 2D counterpart lives in NpcManager2D/Npc2D):
+    /// movement changes apply via NpcState (Npc3D reads MovementType per update);
+    /// sprite (object-group) changes rebuild the NPC's parts. Both are recorded in the
+    /// map-change collection so they replay on map re-entry.
+    /// </summary>
+    void OnChangeNpcMovement(ChangeNpcMovementEvent e)
+    {
+        var game = Resolve<IGameState>();
+        if (e.NpcNum >= game.Npcs.Count || game.Npcs[e.NpcNum] == null)
+            return;
+        game.Npcs[e.NpcNum].MovementType = e.Mode;
+        RecordNpcChange(e.NpcNum, IconChangeType.NpcMovement, (ushort)e.Mode, e.Scope);
+    }
+
+    void OnChangeNpcSprite(ChangeNpcSpriteEvent e)
+    {
+        var game = Resolve<IGameState>();
+        if (e.NpcNum >= game.Npcs.Count || game.Npcs[e.NpcNum] == null)
+            return;
+        if (e.SpriteOrGroup.Type != AssetType.ObjectGroup)
+        {
+            Warn($"[3DMap] change_npc_sprite with non-ObjectGroup id {e.SpriteOrGroup} on a 3D map");
+            return;
+        }
+
+        game.Npcs[e.NpcNum].SpriteOrGroup = e.SpriteOrGroup;
+        RecordNpcChange(e.NpcNum, IconChangeType.NpcSprite, (ushort)e.SpriteOrGroup.Id, e.Scope);
+
+        // Rebuild the NPC's visual parts from the new group.
+        if (_npc3ds.TryGetValue(e.NpcNum, out var old) && old != null)
+        {
+            _sceneObjects.Remove(old);
+            _npc3ds.Remove(e.NpcNum);
+        }
+
+        if (_tilemapProperties != null && e.NpcNum < _logicalMap.Npcs.Count)
+            BuildNpc(_logicalMap.Npcs[e.NpcNum], e.NpcNum, _tilemapProperties, game);
+    }
+
+    void RecordNpcChange(byte npcNum, IconChangeType type, ushort value, EventScope scope)
+    {
+        bool temp = scope is EventScope.AbsTemp or EventScope.RelTemp;
+        _logicalMap.Modify(npcNum, 0, type, temp, ChangeIconLayers.None, value);
     }
 
     void TileTriggered(TriggerMapTileEvent e)

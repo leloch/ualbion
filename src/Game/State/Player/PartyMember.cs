@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Numerics;
 using UAlbion.Api.Settings;
 using UAlbion.Core.Events;
@@ -60,8 +60,6 @@ public class PartyMember : GameComponent, IPlayer
 
     public PartyMemberId Id { get; }
     public SheetId SheetId => Id.ToSheet();
-    public SpriteId TacticalSpriteId => SpriteId.None; // TODO
-    public SpriteId CombatSpriteId => SpriteId.None;
     public int CombatPosition => Resolve<IGameState>().GetCombatPositionForPlayer(Id) ?? -1;
     public IEffectiveCharacterSheet Effective { get; private set; }
     public IEffectiveCharacterSheet Apparent { get; }

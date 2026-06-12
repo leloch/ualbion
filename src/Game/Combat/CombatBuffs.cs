@@ -8,10 +8,11 @@ namespace UAlbion.Game.Combat;
 /// starts and ticks durations down at the end of each round.
 /// </summary>
 /// <remarks>
-/// Berserk maps to the original engine's "powered" flag at Combatant+0x04 bit 0, which
-/// doubles the AP attempt count (decoded from MAIN.EXE fcn.0004ef8b — see _RE_COMBAT.md).
-/// The stat-bonus magnitudes and durations of the other buffs are PLACEHOLDERs pending RE
-/// of the per-spell handlers.
+/// All RE'd: the Berserk KIND maps to the original's "powered" flag at Combatant+0x04
+/// bit 0 (doubles the AP attempt count, fcn.0004ef8b — Hurry sets it); durations come
+/// from fcn.0004b8a1 (max(1, margin·base/100)+1 rounds); the Berserk SPELL's stat
+/// bonuses are +half the current values (the original's ×1.5, see BerserkSpellEffect);
+/// the shields use the percentage entry (ShieldPct) only.
 /// </remarks>
 public static class CombatBuffs
 {
