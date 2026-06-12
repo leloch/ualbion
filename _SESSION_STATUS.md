@@ -41,13 +41,42 @@ Commits b4af91d1..bc21f8b1. All green throughout: 503 tests, smoke 13/13.
 6. **T3.9 partial** — CombatAudio plays hit/miss/kill/heal samples (PLACEHOLDER named
    samples; real combat SFX are per-monster WAVELIB entries via AIL, not yet RE'd).
 
+### Fourth pass (same day) — RPG service layer + playthrough verification
+
+Commits 767c05f9..d3e272ed. Explore gauntlet 65/65 (first-ever full pass), tests 503/503.
+
+7. **Gauntlet crash fixes** — level-up NRE (null SpellPoints), round playback re-entrancy
+   (battle detached mid-await), Raise()-skips-sender combat-end leak (natural victories
+   never ran Battle's own cleanup), PartyMember→SheetId cast crash on leader death.
+   AlbionTaskBuilder.SetException now preserves stack traces.
+8. **Faithful combat SFX** — melee is SILENT in the original; death = sample 268 pitch-
+   varied per side; per-spell hardcoded sample sequences wired (CombatAudio.CastSamples).
+9. **Conversation item-query** (was a literal TODO): ConversationItemWindow picker +
+   AskAboutItem chains (block = item class / 255 wildcard). Verified: Garris responds to
+   the Tharnoss permit with his real sea-voyage quest line.
+10. **Out-of-combat casting**: PartyMagicMenu (portrait → Use magic was a null stub) —
+   environment-filtered spell list, member targeting, mastery-scaled resolution, SP cost,
+   cast SFX. Events magic_menu / cast_spell.
+11. **NPC services** (PlaceActionEvent had NO handler — trainers/healers/taverns were
+   silent no-ops): Heal (gold/LP), Cure, SleepInRoom (RestEvent 8h), OrderFood,
+   LearnCloseCombat trainer (1 TP + gold/point). Real prices from event-set data
+   (Rejira 2 g/LP, Zirr room 12/food 5, Ferina 40 g/point). dump_eventset diagnostic.
+12. **Contact dialogue**: human ChaseParty NPCs start their conversation on touch
+   (Anne Dorbeck fetch beat in the intro); monster give-up radius no longer applies to
+   scripted human chasers. New game verified through the cabin monologue + Anne contact.
+
 ### Open items
-- T3.8 HD mod: skeleton + README exist (mods/HD); dir-container override loading doesn't
-  resolve yet (agent debugging; known issue in mods/HD/README.md).
-- T3.9: wavelib monster SFX mapping RE; ambient/song coverage audit.
-- T3.11: full playthrough verification pass.
+- Toronto intro playthrough beyond Anne contact (shuttle launch → crash → Nakiridaani):
+  agent driving it, report lands in _PLAYTHROUGH.md.
+- PlaceAction types LearnSpells / RepairItem / RestoreItemEnergy / RemoveCurse /
+  ScrollMerchant / AskOpinion are logged placeholders.
+- Combat battle-view animations (Mob3D state machine not rendered) — biggest remaining
+  "feels like Albion" gap.
+- World-interaction verbs (examine/use/take on map objects), readable items, ammo,
+  torch lighting, ActiveSpells durations, world-map pathfinding.
 - Automap RENDERING still uses fixed glyphs (original: connection-mask wall glyphs at
   0x230+mask, floor-texture minis, gated markers — documented in _RE_NOTES.md).
+- DumpJson.cs:46 NREs when dumping event sets via --dump.
 
 ---
 
