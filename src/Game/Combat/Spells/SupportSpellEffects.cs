@@ -37,15 +37,19 @@ public sealed class BuffSpellEffect : ISpellEffect
             ? int.MaxValue / 2 // battle-scoped (CombatBuffs clears when a fight starts)
             : Math.Max(1, context.MasteryMultiplier * _baseDuration / 100) + 1;
 
-        CombatBuffs.Add(target.SheetId, _kind, _amount, rounds);
-
-        // The shields also write the active-spell TYPE-2 entry: percent = max(prev, M),
-        // which boosts the bearer's MagicResistance in the spell success gate
-        // (fcn.000607da writing 0x153b3e; read back by fcn.000601a6).
-        if (_persistent)
+        if (!_persistent)
         {
-            int prev = CombatBuffs.Bonus(target.SheetId, CombatBuffs.BuffKind.ShieldResistPct);
-            CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.ShieldResistPct,
+            // Round-timed buffs (Hurry's AP flag, Berserk components, Freeze, ...).
+            CombatBuffs.Add(target.SheetId, _kind, _amount, rounds);
+        }
+        else
+        {
+            // The persistent shields' ONLY effect is the active-spell PERCENTAGE entry:
+            // pct = max(prev, M) (fcn.000607da writing 0x153b3e). It multiplies physical
+            // defense (rawDef += rawDef·pct/100) and boosts MagicResistance in the spell
+            // gate — there is no flat defense bonus in the original.
+            int prev = CombatBuffs.Bonus(target.SheetId, CombatBuffs.BuffKind.ShieldPct);
+            CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.ShieldPct,
                 Math.Max(prev, context.MasteryMultiplier), rounds);
         }
 
@@ -88,9 +92,9 @@ public sealed class StealLifeEffect : ISpellEffect
 
 /// <summary>
 /// Drains SP from the target into the caster (Steal Magic). RE'd magnitude: drains
-/// max(1, M*30/100) percent of the TARGET's max SP. Routed through Mana
-/// DataChangeEvents so only party members persist the change — monsters don't track SP
-/// in the battle shadow yet (PLACEHOLDER).
+/// max(1, M*30/100) percent of the TARGET's max SP. Routed through the battle's
+/// ModifySp hook (Mana events for party members, the SP shadow for monsters); falls
+/// back to direct Mana events when cast outside combat.
 /// </summary>
 public sealed class StealMagicEffect : ISpellEffect
 {
@@ -105,12 +109,22 @@ public sealed class StealMagicEffect : ISpellEffect
 
     public SpellCastOutcome Apply(SpellCastContext context)
     {
-        if (context?.Caster == null || context.RaiseEvent == null)
+        if (context?.Caster == null)
             return SpellCastOutcome.Failed;
 
         int maxSp = context.Target?.Effective?.Magic?.SpellPoints?.Max ?? 0;
         int pct = Math.Max(1, context.MasteryMultiplier * _k / 100);
         int amount = Math.Max(1, maxSp * pct / 100);
+
+        if (context.ModifySp != null)
+        {
+            context.ModifySp(context.Target, -amount);
+            context.ModifySp(context.Caster, amount);
+            return SpellCastOutcome.Hit;
+        }
+
+        if (context.RaiseEvent == null)
+            return SpellCastOutcome.Failed;
 
         if (context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {

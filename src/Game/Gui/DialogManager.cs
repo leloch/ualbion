@@ -35,6 +35,7 @@ public class DialogManager  : ServiceComponent<IDialogManager>, IDialogManager
         On<LoadMapPromptEvent>(OnMapNumberPrompt);
         On<ShowCombatPositionsDialogEvent>(_ => AttachChild(new CombatPositionDialog(MaxLayer + 1)));
         On<CombatDialogEvent>(e => AttachChild(new CombatDialog(MaxLayer + 1, e.Battle)));
+        On<ShowBattleLootEvent>(e => AttachChild(new BattleLootDialog(MaxLayer + 1, e.Items, e.Gold, e.Rations)).Show());
     }
 
     AlbionTask<bool> OnYesNoPrompt(YesNoPromptEvent e)

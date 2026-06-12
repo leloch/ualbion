@@ -44,11 +44,11 @@ public static class SpellSuccessGate
 
         int resist = target.Effective.Attributes?.MagicResistance?.Current ?? 0;
 
-        // Party targets get the MagicShield/PersonalProtection type-2 boost:
+        // Party targets get the MagicShield/PersonalProtection boost:
         // resist += resist·pct/100, pct = max over casts of M (table 0x153b3e).
         if (target.SheetId.Type == AssetType.PartySheet)
         {
-            int shieldPct = CombatBuffs.Bonus(target.SheetId, CombatBuffs.BuffKind.ShieldResistPct);
+            int shieldPct = CombatBuffs.Bonus(target.SheetId, CombatBuffs.BuffKind.ShieldPct);
             resist += resist * shieldPct / 100;
         }
 

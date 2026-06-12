@@ -93,8 +93,14 @@ public abstract class LogicalMap : Component
             case IconChangeType.Wall: break; // N/A for 2D map
             case IconChangeType.Floor: break; // N/A for 2D map
             case IconChangeType.Ceiling: break; // N/A for 2D map
-            case IconChangeType.NpcMovement: break;
-            case IconChangeType.NpcSprite: break;
+            case IconChangeType.NpcMovement:
+            case IconChangeType.NpcSprite:
+                // NPC changes use X as the NPC INDEX (Y unused). They can't be applied
+                // here: the NPC manager re-initialises NpcState from map data AFTER this
+                // replay runs, so it pulls the accumulated changes from NpcChanges once
+                // its init pass is done (NpcManager2D.Subscribed).
+                _npcChanges.Add((x, changeType, value));
+                break;
             case IconChangeType.Chain: _mapData.SetZoneChain(x, y, value); break;
             case IconChangeType.BlockHard: PlaceBlock(x, y, true, layers, value); break;
             case IconChangeType.BlockSoft: PlaceBlock(x, y, false, layers, value); break;
@@ -103,15 +109,17 @@ public abstract class LogicalMap : Component
         }
     }
 
+    readonly List<(byte NpcNum, IconChangeType Type, ushort Value)> _npcChanges = [];
+
+    /// <summary>Replayed NPC sprite/movement changes for the NPC manager to apply after state init.</summary>
+    public IReadOnlyList<(byte NpcNum, IconChangeType Type, ushort Value)> NpcChanges => _npcChanges;
+
     protected virtual void ChangeUnderlay(byte x, byte y, ushort value) { } // 2D only
     protected virtual void ChangeOverlay(byte x, byte y, ushort value) { } // 2D only
     protected virtual void PlaceBlock(byte x, byte y, bool overwrite, ChangeIconLayers layers, ushort blockId) { } // 2D only
     protected virtual void ChangeWall(byte x, byte y, ushort value) { } // 3D only
     protected virtual void ChangeFloor(byte x, byte y, ushort value) { } // 3D only
     protected virtual void ChangeCeiling(byte x, byte y, ushort value) { } // 3D only
-
-    protected virtual void ChangeNpcMovement(byte x, byte y, ushort value) { } // TODO
-    protected virtual void ChangeNpcSprite(byte x, byte y, ushort value) { } // TODO
 
     readonly DirtyTileEventArgs _args = new();
     protected void OnDirty(int x, int y, IconChangeType type)

@@ -17,9 +17,9 @@ namespace UAlbion.Game.Combat.Spells;
 /// <remarks>
 /// Returns <see cref="SpellCastOutcome.Failed"/> when the target doesn't have the condition
 /// (mirrors the original engine's "don't consume the cast if it's a no-op" behaviour — the
-/// AP-loop in <c>fcn.0004ef8b</c> retries on Failed). When the condition is present we mark
-/// it as Hit; the actual mutation needs to go through <c>ChangeStatusEvent</c> which
-/// requires a sheet-id and event dispatcher (still TODO — see comment in <see cref="Apply"/>).
+/// AP-loop in <c>fcn.0004ef8b</c> retries on Failed). The cure routes through
+/// <c>ChangeStatusEvent</c> → SheetApplier for party targets; monster conditions live on
+/// their transient clone sheets and clear with the battle.
 /// </remarks>
 public sealed class HealStatusEffect : ISpellEffect
 {
