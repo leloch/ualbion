@@ -18,35 +18,39 @@ public static class DjiKasSpells
     /// </summary>
     public static void RegisterAll()
     {
-        // --- Heal school (status clears + HP heal) — magnitudes RE'd at placeholder level ---
-        SpellEffectRegistry.Register(new HealStatusEffect(Base.Spell.HealParalysis,    PlayerCondition.Paralysed));
+        // --- Heal school (status clears + HP heal) ---
+        // HealParalysis (spell 16) has a NULL handler in the original engine — casting it
+        // does nothing (engine quirk, CONFIRMED by RE). Kept 1:1: SP is consumed, no effect.
+        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.HealParalysis,
+            "nothing — the original engine's function pointer for this spell is NULL"));
         SpellEffectRegistry.Register(new HealStatusEffect(Base.Spell.HealIntoxication, PlayerCondition.Intoxicated));
         SpellEffectRegistry.Register(new HealStatusEffect(Base.Spell.HealBlindness,    PlayerCondition.Blind));
         SpellEffectRegistry.Register(new HealStatusEffect(Base.Spell.HealPoisoning,    PlayerCondition.Poisoned));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.LightHealing, baseAmount: 5, strengthScale: 1));
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.LightHealing, k: 25)); // 25 % of max LP at full mastery (RE'd K)
 
-        // --- Frost damage line (single-target, ascending magnitude) ---
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostSplinter,  baseDamage: 4,  strengthScale: 1));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostCrystal,   baseDamage: 8,  strengthScale: 1));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostAvalanche, baseDamage: 16, strengthScale: 2));
+        // --- Frost damage line — K constants CONFIRMED from the per-spell handlers ---
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostSplinter,  k: 27)); // + freeze 2-4 rounds in the original (not yet wired)
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostCrystal,   k: 18));
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostAvalanche, k: 27));
 
-        // --- Blinding line (light damage + Blind status) — register both effects on the
-        // same spell-id collapses to the last one; we keep them as pure damage spells for now,
-        // and rely on a separate StatusInflictEffect-on-cast path once that's wired.
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BlindingSpark,  baseDamage: 3,  strengthScale: 1));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BlindingRay,    baseDamage: 6,  strengthScale: 1));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BlindingStorm,  baseDamage: 12, strengthScale: 2));
+        // --- Blinding line: CONFIRMED Blind-only, NO damage component in the original ---
+        SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.BlindingSpark, PlayerCondition.Blind));
+        SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.BlindingRay,   PlayerCondition.Blind));
+        SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.BlindingStorm, PlayerCondition.Blind));
 
-        // --- Status-inflict ---
+        // --- Status-inflict (mappings CONFIRMED) ---
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.SleepSpores,  PlayerCondition.Asleep));
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ThornSnare,   PlayerCondition.Paralysed));
 
-        // --- Buffs / traps / utility (PLACEHOLDER magnitudes pending RE) ---
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Hurry, CombatBuffs.BuffKind.Speed, amount: 10, rounds: 3));
-        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.ThornTrap, damage: 8));
+        // --- Buffs / traps / utility ---
+        // Hurry doubles AP (the original "powered" flag) — RE'd via timed-effect builder
+        // fcn.0004b8a1. Duration PLACEHOLDER: the per-spell base for max(1,M*base/100)+1
+        // isn't extracted yet.
+        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Hurry, CombatBuffs.BuffKind.Berserk, amount: 0, rounds: 3));
+        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.ThornTrap, k: 24)); // CONFIRMED K
         SpellEffectRegistry.Register(new RemoveTrapEffect(Base.Spell.RemoveTrapDK));
-        // Fungification: the wiki gives no mechanic; treated as damage + poison pending RE.
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Fungification, baseDamage: 6, strengthScale: 1));
+        // Fungification: K not extracted yet — PLACEHOLDER magnitude.
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Fungification, k: 20));
         // Light raises the dungeon ambient level (ETM uAmbient → fragment shader multiply).
         // PLACEHOLDER: +50 percent-points and no duration decay (the original tracks Light
         // as an active spell percentage in SavedGame.ActiveSpells[0..1]).

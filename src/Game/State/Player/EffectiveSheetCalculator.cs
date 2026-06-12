@@ -32,6 +32,7 @@ public static class EffectiveSheetCalculator
             PlayerClass = sheet.PlayerClass,
             Age = sheet.Age,
             Level = sheet.Level,
+            ExperienceReward = sheet.ExperienceReward,
 
             // Display and behaviour
             Languages = sheet.Languages,

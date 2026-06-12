@@ -11,27 +11,30 @@ public static class DruidSpells
 {
     public static void RegisterAll()
     {
-        // Fire/lightning damage
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.SmallFireball, baseDamage: 5,  strengthScale: 1));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Shock,         baseDamage: 8,  strengthScale: 1));
+        // Fire damage — K CONFIRMED from the per-spell handler
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.SmallFireball, k: 16));
 
-        // Heal
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.HealingD, baseAmount: 8, strengthScale: 1));
+        // Shock inflicts Panicking — CONFIRMED (no damage component)
+        SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Shock, PlayerCondition.Panicking));
 
-        // Status — Panic clearly maps to Panicking
+        // Heal — 40 % of max LP at full mastery (CONFIRMED K)
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.HealingD, k: 40));
+
+        // Status — Panic maps to Panicking (CONFIRMED)
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Panic, PlayerCondition.Panicking));
 
-        // Buffs. Berserk is grounded in RE: the "powered" flag at Combatant+0x04 bit 0
-        // doubles the AP attempt count (MAIN.EXE fcn.0004ef8b). Boasting / MagicShield
-        // magnitudes are PLACEHOLDERs.
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Berserk,     CombatBuffs.BuffKind.Berserk, amount: 0,  rounds: 3));
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Boasting,    CombatBuffs.BuffKind.Attack,  amount: 6,  rounds: 3));
+        // Buffs. RE corrected the mechanics (fcn.0004b8a1): HURRY is the AP×2 "powered"
+        // flag; BERSERK costs 25 % of LP and multiplies STR/CloseCombat by 1.5; Boasting
+        // inflicts Panicking on the target (CONFIRMED). The additive buff system can't
+        // express Berserk's ×1.5 yet — PLACEHOLDER additive bonus until it can.
+        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Berserk,     CombatBuffs.BuffKind.Attack,  amount: 10, rounds: 3));
+        SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Boasting, PlayerCondition.Panicking));
         SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.MagicShield, CombatBuffs.BuffKind.Defense, amount: 8,  rounds: 4));
 
-        // Anti-demon line — plain damage with ascending magnitude; the "only affects
-        // demons" gate needs monster-class data (PLACEHOLDER: hits anything).
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BanishDemon,  baseDamage: 15, strengthScale: 2));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BanishDemons, baseDamage: 20, strengthScale: 2));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.DemonExodus,  baseDamage: 30, strengthScale: 3));
+        // Anti-demon line — K not extracted yet (PLACEHOLDER magnitudes); the "only
+        // affects demons" gate needs monster-class data (PLACEHOLDER: hits anything).
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BanishDemon,  k: 30));
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BanishDemons, k: 40));
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.DemonExodus,  k: 60));
     }
 }

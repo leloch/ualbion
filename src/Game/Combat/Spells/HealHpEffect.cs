@@ -1,33 +1,27 @@
 using System;
 using UAlbion.Config;
-using UAlbion.Formats.Assets.Sheets;
 using UAlbion.Formats.Ids;
 using UAlbion.Formats.MapEvents;
 
 namespace UAlbion.Game.Combat.Spells;
 
 /// <summary>
-/// Heals HP on the target by a flat amount + spell-strength bonus. Used today by Dji-Kas
-/// spell 9 (LightHealing); higher-tier heal spells (HealingDC, Recuperation, etc.) will
-/// reuse this with larger base amounts once their formulas are decoded.
+/// HP heal. RE'd formula (_RE_COMBAT.md "Punch-list RE" item 1): the heal is a percentage
+/// of the target's MAX life points — pct = max(1, M*K/100) where K is the percentage at
+/// 100 % mastery (LightHealing 25, HealingDC/HealingD 40) and M the caster's mastery
+/// multiplier.
 /// </summary>
-/// <remarks>
-/// Placeholder formula until the real one is reverse-engineered: <c>baseAmount +
-/// spellStrength * scale</c>. SpellStrength is the caster's school-strength byte 0..15
-/// (see CharacterSheet.SpellStrengths). The original engine almost certainly adds a
-/// random roll on top — that variance gets added later.
-/// </remarks>
 public sealed class HealHpEffect : ISpellEffect
 {
     public SpellId SpellId { get; }
-    public int BaseAmount { get; }
-    public int StrengthScale { get; }
 
-    public HealHpEffect(SpellId spellId, int baseAmount, int strengthScale = 1)
+    /// <summary>Percent of target max LP healed at 100 % mastery.</summary>
+    public int K { get; }
+
+    public HealHpEffect(SpellId spellId, int k)
     {
         SpellId = spellId;
-        BaseAmount = baseAmount;
-        StrengthScale = strengthScale;
+        K = k;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
@@ -41,8 +35,8 @@ public sealed class HealHpEffect : ISpellEffect
         if (combat.LifePoints.Current >= combat.LifePoints.Max)
             return SpellCastOutcome.Failed;
 
-        int healed = BaseAmount + context.SpellStrength * StrengthScale;
-        if (healed <= 0) return SpellCastOutcome.Failed;
+        int pct = Math.Max(1, context.MasteryMultiplier * K / 100);
+        int healed = Math.Max(1, combat.LifePoints.Max * pct / 100);
         var amount = (ushort)Math.Min(ushort.MaxValue, healed);
 
         if (context.ApplyHeal != null)

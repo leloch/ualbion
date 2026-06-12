@@ -12,8 +12,8 @@ public static class ZombieMagicSpells
 {
     public static void RegisterAll()
     {
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.ZombiePoisonBreeze, baseDamage: 6,  strengthScale: 1));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.ZombiePlagueBreeze, baseDamage: 10, strengthScale: 1));
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.ZombiePoisonBreeze, k: 20)); // PLACEHOLDER K
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.ZombiePlagueBreeze, k: 30)); // PLACEHOLDER K
 
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ZombiePanic,      PlayerCondition.Panicking));
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ZombieIrritation, PlayerCondition.Irritated));

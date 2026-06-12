@@ -1204,3 +1204,276 @@ echo 'axt @ fcn.XXXXXXXX' | radare2 -q -p albion_aaa MAIN.EXE
 # find what a function calls
 echo 'axff @ fcn.XXXXXXXX' | radare2 -q -p albion_aaa MAIN.EXE
 ```
+
+
+## Punch-list RE (2026-06-12)
+
+> Items: spell magnitudes, combat Move rules, XP award, monster action masks, 3D collision
+> radius, 3D Y-Z load transform. All radare2 against `albion_aaa`. CONFIRMED = read from
+> disassembly with consistent cross-references; INFERRED = strong pattern, one detail unverified.
+
+### MAJOR CORRECTION - action kinds 2/3 are WEAPON attacks, not spell schools (CONFIRMED)
+
+`fcn.00049cc1` ("HasSpellInSchool") is actually **`FindEquippedItemOfType(sheet, itemType)`**:
+it scans the 9 equipment slots at `sheet+0x2E6` and returns the slot index whose
+`item[+1] (typeid)` matches the argument, else 0xFFFF. The "schools" 5/6 are
+`ItemType.CloseRangeWeapon` (5) and `ItemType.LongRangeWeapon` (6).
+
+Consequently in vtable_1 (base `0x13e196`, 6-byte entries = u32 fn + u16 meta; ends 0x13e1c0):
+
+| kind | fn | Real meaning |
+|---|---|---|
+| 0 | NULL | no action |
+| 1 | `0x0004e6d1` | **Move** (grid reposition; the "MeleeResolve" label was wrong) |
+| 2 | `0x0004e9f5` | **Close-range (melee) weapon attack** - ctx template `0x13e1be`, completion cb `fcn.0004eac1` |
+| 3 | `0x0004ef8b` | **Long-range weapon attack** - ctx template `0x13e1d6`, completion cb `fcn.0004f057`, consumes ammo via `fcn.0004f3e2` |
+| 4 | `0x0004f5d3` | Flee/Retreat (back row only) |
+| 5 | `0x0004f6a2` | Summon |
+| 6 | `0x0004f829` | Use item |
+
+The punch-list "per-school caster-info blocks at 0x13e1a4/0x13e1be/0x13e1d6" are actually:
+0x13e1a4 = middle of vtable_1; 0x13e1be / 0x13e1d6 = the 24-byte **deferred-action context
+templates** for melee/ranged attack resolution (`+2` team, `+4` combatant index 1-based,
+`+0xC` completion callback, `+0x14` script IP - overwritten by `fcn.0002fce1` with one of the
+generic scripts 0x13d70c/0x13d73c/0x13d768). Both attack callbacks re-derive the combatant,
+read the weapon (slot 4 = right hand), play sound 446 (or 455 bare-handed), and resolve damage
+via `fcn.0004ee3b` (the already-decoded RollDamageVsDefense) then `fcn.0004dec9` (ApplyDamage).
+Misses play sound 451. Target sheet flag `+0x0E & 0x80` = "immune to normal weapons"
+(needs magic weapon, checked via `fcn.00035bdc(sheet,2)`).
+
+### Item 1 - Magic system: full cast pipeline (CONFIRMED)
+
+Real combat/menu magic does NOT go through vtable_1 - it has its own dispatcher:
+
+```
+fcn.0005ecda  SpellDispatch(ctx):
+    school = ctx[+6].hi16, number = ctx[+8].hi16     (1-based within school)
+    table  = dword[0x13e930 + school*4]              // per-school fn-pointer tables
+    fn     = dword[table + number*4 - 4]             // NULL => spell does nothing (no SP cost!)
+    mult   = fcn.0005fdf7()                          // cast core, see below
+    if (mult != 0) fn(ax = mult)
+```
+
+**Cast core `fcn.0005fdf7`** (globals: `0x1775a0` school, `0x1775a2` number,
+`0x1775aa` caster sheet handle, `0x1775ae` caster combatant ptr):
+
+1. LP surcharge: `fcn.0006042c` - if SP cost > current SP, the shortfall is paid in
+   **Life Points** (scaled by Stamina, stat 4); applied via `fcn.00036799` SetLifePoints.
+2. SP deduction: `SP = max(0, SP - cost)`; cost = `fcn.00060a1e(school, number)` =
+   byte at `spelldat[ (school*30 + number - 1)*5 + 1 ]` - SPELLDAT.DAT buffer handle is at
+   `0x177594`, 5-byte records (matches UAlbion SpellData). SP cur/max at sheet+0xD0/+0xD2
+   (getter `fcn.00036a2a`, setter `fcn.00036a77`, max `fcn.00036b17`).
+3. Returns **multiplier M = max(1, (mastery+50)/100)** where mastery =
+   `u16 at sheet + 0x140 + school*60 + (number-1)*2` (`fcn.000372f4`), range 0..10000
+   (i.e. M ~ mastery% 1..100; magic-cheat global 0x147130 forces 10000).
+4. Post-cast `fcn.000603ae`: **mastery += MagicTalent (stat 7)** - spells improve with use.
+
+**Effect magnitude formula (all damage/heal spells): `value = max(1, M * K / 100)`** -
+K is the per-spell constant = value at 100% mastery.
+
+Targeting: `fcn.0005fb21` iterates the 30-tile grid against bitmask `0x1775b4`
+(mode word `0x1775b8` 1..4: variants for occupied/enemy-only/all), calling the per-spell
+continuation `(tilePtr, col=dx, row=bx, M=cx)`; party-slot-target spells use `fcn.0005f9a3`.
+If no target was affected: sound 698 (fizzle) and the action is NOT consumed (`+0x4E` stays).
+
+**Timed combat effects `fcn.0004b8a1(target, kind, M, base)`** - duration =
+`max(1, M*base/100) + 1` rounds, stored in 4 slots of 8 bytes at combatant `+0x22`
+(re-applying while active is rejected):
+
+| kind | Effect |
+|---|---|
+| 0 | sets combatant flag `+4 |= 1` => **AP doubled** (this is Hurry; matches the AP<<=1 check in the attack handlers) |
+| 1 | SetCondition(4 = Paralysed) - used by the Frost line ("frozen") |
+| 2 | SetCondition(7 = Blind) - Blinding line |
+| 3 | Berserk: target loses 25% current LP, Strength x1.5, CloseCombat skill x1.5 |
+
+**Per-school function tables** (`0x13e930[]`: S0=0x13e83c Dji-Kas, S1=0x13e890 Dji-Kantos /
+Enlightened, S2=0x13e8bc Druid, S3=0x13e8e4 Oqulo-Kamulos, S4=NULL, S5=0x13e920 Zombie, S6=NULL):
+
+| Spell (global id) | fn | Decoded effect (M = mastery multiplier 1..100) |
+|---|---|---|
+| 1 ThornSnare | 0x9b95e | inflict Paralysed(4); chance scaled M*100/100 (INFERRED roll) |
+| 4 Hurry | 0x9bd5f | timed kind 0 (AP x2), duration max(1,M*10/100)+1 rounds |
+| 5 ViewOfLife | 0x9bddf | UI: shows target LP (no combat math) |
+| 6 FrostSplinter | 0x9c109 | dmg max(1,**M*27**/100) + freeze (kind 1, base 3 => 2..4 rounds) |
+| 7 FrostCrystal | 0x9c7ba | dmg max(1,**M*18**/100) + freeze (kind 1) - area per SPELLDAT targets |
+| 8 FrostAvalanche | 0x9cf43 | dmg max(1,**M*27**/100) + freeze (kind 1) |
+| 9 LightHealing | 0x640c5 | heal max(1, MaxLP*25*M/10000) => **25% of MaxLP** at 100% |
+| 10/11/12 BlindingSpark/Ray/Storm | 0x9d6ca/0x9dab3/0x9e292 | timed Blind (kind 2, base 10 => up to 11 rounds); no direct damage |
+| 13 SleepSpores | 0x9ea71 | SetCondition(9 = Asleep) |
+| 14 ThornTrap | 0x9f123 | places trap; trigger dmg max(1,**M*24**/100) |
+| 15 RemoveTrapDK | 0x9fa2d | removes trap |
+| **16 HealParalysis** | **NULL** | **no implementation in MAIN.EXE** - casting does nothing (and costs nothing: dispatcher bails before SP deduction) |
+| 17 HealIntoxication | 0x641af | ClearCondition(6) on chosen party member |
+| 18 HealBlindness | 0x6423d | ClearCondition(7) |
+| 19 HealPoisoning | 0x642cb | ClearCondition(1) |
+| 20 Fungification | 0x9fd5c | LP-based: ~half of target's current LP as damage, magic-resist gated (INFERRED - x100/x120 factors + sar 1 on GetLifePoints) |
+| 21 Light | 0x64359 | ambient light active-spell via fcn.0006085d |
+| 31 Regeneration / 33 Lifebringer | 0x643aa / 0x645d1 | shared cont 0x643fa: clears 9 conditions + heal (MaxLP-based) |
+| 32 MapView | 0x64571 | utility |
+| 34 Teleporter | 0xa068b | map transfer |
+| 35 HealingDC | 0x64621 | heal max(1, MaxLP*40*M/10000) => **40% MaxLP** |
+| 36 QuickWithdrawal | 0xa1021 | SetCondition(5 = Fleeing) on caster |
+| 39 GoddessWrath | 0xa1134 | damage via queued anim callback 0x99778 - **magnitude NOT yet extracted (open)** |
+| 40 Irritation | 0xa1799 | SetCondition(11 = Irritated) |
+| 41 Recuperation | 0x6470b | full restore via fcn.00068d2f(sheet, 100) |
+| 61 Berserk | 0xa1a69 | timed kind 3 (see above), base 10 |
+| 62/63/64 BanishDemon(s)/DemonExodus | 0xa1aec (shared cont 0xa1b20) | demon-kill, chance from demon LP (x1000/x250 factors; INFERRED) - area grows per spell |
+| 65 SmallFireball | 0xa2055 | dmg max(1,**M*16**/100) (shl 4) |
+| 66 MagicShield | 0xa2510 | active-spell type 1, strength max(1,M*10/100) via fcn.000607da |
+| 67 HealingD | 0x647bd | heal 40% MaxLP * M/100 (same as 35) |
+| 68/69/70 Boasting/Shock/Panic | 0xa2612 (shared cont 0xa2646) | SetCondition(8 = Panicking), chance M*80/100 (INFERRED); area differs per SPELLDAT |
+| 91 Fireball | 0xa2f17 | dmg max(1,**M*22**/100) |
+| 92 LightningStrike | 0xa33d2 | dmg max(1,**M*33**/100) |
+| 93 FireRain | 0xa43c6 | dmg max(1,**M*22**/100) |
+| 94 Thunderbolt | 0xa477a | dmg max(1,**M*36**/100) |
+| 95 FireHail | 0xa50ef | dmg max(1,**M*20**/100) |
+| 96 Thunderstorm | 0xa5aad | dmg max(1,**M*40**/100) |
+| 97/98 LightningTrap/Big | 0xa6567 (shared cont 0xa659b) | trap dmg max(1,**M*30**/100) |
+| 99/100 LightningMine/Big | 0xa7004 (shared cont 0xa7038) | mine dmg max(1,**M*42**/100) |
+| 101 StealLife | 0xa77b3 | dmg max(1, targetMaxLP*30*M/10000) (=30% MaxLP), caster heals same amount |
+| 102 StealMagic | 0xa80e3 | drains 30%*M/100 of target Max SP to caster |
+| 103 PersonalProtection | 0xa8a3f | active-spell type 2, strength max(1,M*10/100) |
+| 104 KamulosGaze | 0xa8b12 | instant-kill via fcn.0004e247 (SetCondition + LP wipe + awards XP) |
+| 105 RemoveTrapKK | 0xa92ae | removes trap |
+| 151..154 (Zombie magic) | 0xa95a4/0xa96fc/0xa9854/0xa99ac | SetCondition: 151->Panicking(8), 152->Poisoned(1), 153->Irritated(11), 154->Ill(2) |
+| 37 Levitation | NULL | no spell-effect fn (handled by 3D engine elsewhere) |
+
+Remake divergence: `src/Game/Combat/Spells/*.cs` placeholders use flat `baseDamage +
+strengthScale` - the original is **purely mastery-scaled**: `max(1, K * masteryPct / 100)`,
+no caster-attribute scaling at cast time (attributes matter indirectly: MagicTalent drives
+mastery growth). The Frost line also paralyses; the Blinding line does NO damage.
+
+### Item 2 - Combat Move rules (CONFIRMED)
+
+`fcn.0004d85b` = `GetValidMoveMask(self)` (774 B; used by both AI and player UI callers
+0x508d0/0x50b6f/0x50c6f/0x56c49):
+
+- **Range** = `fcn.0004d773` = `clamp(Speed / 30, 1, 3)` tiles (Speed = effective stat 3).
+- **Metric**: 8-directional flood relaxation (direction table `0x134bf4`, (dx,dy) pairs incl.
+  diagonals) => **Chebyshev distance**, diagonals cost 1.
+- **Team area masks**: party may only stand on rows 3-4 (`0x3FFC0000` over bits row*6+col);
+  monsters on rows 0-3 (`0x00FFFFFF`). Monsters may advance into row 3; party never leaves
+  its two rows.
+- **Blocking**: propagation ignores occupancy (you may path *through* occupied tiles);
+  only the **destination** must be empty (`grid[0x176d74 + r*84 + c*14] == NULL`).
+  Traps do NOT block movement (they trigger on entry).
+- **Tie-breaking / reservation**: `fcn.0004db61` returns the OR of the *last queued move
+  destination* of every same-team combatant with a queued Move (`+0x4E == 1`,
+  destination = `u16 at c+0x52+2*c[+0x52]`, i.e. last entry of the position list at +0x54
+  with count at +0x52). Candidates = `validMask & ~claimedMask` => **first combatant to queue
+  a move claims the tile**; later combatants cannot pick it.
+- AI move chooser `fcn.0004c256`: picks a uniformly random bit of the candidate mask
+  (`fcn.000512e7`), sets action 1 / count 1 / dest.
+
+NOTE: `fcn.00051b51` (punch-list pointer) is only the **move animation** (40-byte anim slot,
+frame ticker fcn.00075e71) - no rules in it. Remake divergence: `Battle.MoveCombatant` is a
+teleport with no range/area/reservation checks.
+
+### Item 3 - XP award (CONFIRMED)
+
+- Each monster sheet carries a **u16 XP reward at sheet+0x20** (UAlbion `CharacterSheet.Unknown20`!).
+- On kill, the death paths (`0x4e2a6` inside fcn.0004e247, and `0x4f671`) do
+  `dword[0x15f104] += u16 monsterSheet[+0x20]` (battle total; zeroed at combat init 0x4abda).
+- On victory `fcn.000648a7` -> `fcn.00064f8a(total)`:
+  `share = max(1, total / livingPartyMembers)`; each **living** member gets
+  `SetExperience(sheet, GetExperience + share)` (`fcn.00036d54`), which immediately runs
+  `LevelUpCheck (fcn.00037aaa)`. UI message id 200 announces the per-member share.
+- No class/level factor on the award itself - flat per-monster field, split evenly.
+
+### Item 4 - Monster action availability mask (CONFIRMED)
+
+The mask is **combatant field +0x06** (NOT a monster-sheet byte):
+
+- Set in combat setup `fcn.0004c937`: every monster gets `mask |= 6`
+  (bit1 = melee attempt allowed, bit2 = ranged attempt allowed), and `mask |= 1`
+  (bit0 = magic) iff `sheet[+4] != 0` (the spell-class byte, `fcn.000359c2`).
+- Per-turn AI `fcn.0004fc99`:
+  ```
+  while (mask && action not chosen):
+      pick = u16[0x4facb + (rand() & 15)*2]      // table: 1,1,1,1,1,1,2,2,4,4,4,4,4,4,2,2
+      if (pick not in mask) continue             // => weights: magic 6/16, melee 4/16, ranged 6/16
+      mask &= ~pick                              // a failed attempt removes the option
+      pick==1 -> fcn.0004fd56 (magic AI; perma-clears bit 0 when SP==0 or conds & 0xF31)
+      pick==2 -> fcn.00050651 (melee-preferring: close-range weapon OR natural base damage
+                fcn.00037455 != 0; else re-equip from backpack via fcn.00050f52)
+      pick==4 -> fcn.00050488 (ranged-preferring: long-range weapon + usability check
+                fcn.000513bf (ammo/line); falls back to backpack re-equip)
+  ```
+- `fcn.00050f52`: monsters **auto-equip the best weapon from their backpack** (24 slots at
+  sheet+0x31C) into the right hand (slot 4 / sheet+0x2F8) and return its item type (5/6).
+- Conditions `0x331` (Unconscious|Paralysed|Fleeing|Panicking|Asleep) block the normal AI;
+  Panicking -> flee handler fcn.0004bff7 (action 4 if in back row, else move away);
+  Insane -> fcn.0004c1e4 (50/50 random Move-vs-Attack - previously documented).
+- **Flee is not part of the mask** - it only arises from the Panicking condition / Retreat.
+
+### Item 5 - 3D collision radius (CONFIRMED)
+
+3D movement: `fcn.0001e52d` (TryMove) -> `fcn.0001e650` (full move, then X-only, then Z-only
+axis slide) -> `fcn.0001e832` (CanMove test):
+
+- Tile size `T` = `word[0x14a4a0]`, set per labyrinth at 3D-engine init (clamped 128..1024
+  at 0x943cb; standard maps use 512).
+- **Wall margin (collision radius) = `min(T/4, 50)` world units** (`fcn.0001ede1`):
+  the sub-tile position `(worldX & (T-1), worldZ & (T-1))` is classified into a 9-zone grid
+  (near-edge if within `margin` of a tile edge). A move is rejected when the new sub-tile
+  zone touches a blocked neighbour tile (8-direction blocked-mask via table `0x1d640`,
+  occupancy test `fcn.0001eeb8` - the `<100 object / >=100 wall` map-contents check).
+  Escape clause: if you are *already* in that zone of the same tile, movement is allowed
+  (can't get stuck).
+- For T=512 => radius = **50/512 ~ 0.098 tile**. Remake divergence:
+  `Movement3D.CollisionRadiusTiles = 0.25f` is ~2.5x too large; should be
+  `min(tileSize/4, 50)/tileSize` => 0.0977 for standard 512-unit labyrinths.
+
+### Item 6 - 3D tile <-> world transform (CONFIRMED)
+
+Party map position globals: map id `0x153b32`, tile X `0x153b34`, tile Y `0x153b36`,
+direction `0x153b38` (0..3). Map width `0x14799a`, height `0x147994` (tiles).
+
+`fcn.0001f1ce` TileToWorld (used by camera init `fcn.0001d670`):
+```
+worldX = T*(tileX - 1) + T/2
+worldZ = T*(mapHeight - tileY) + T/2          // Z axis FLIPPED vs tile Y
+```
+Inverse `fcn.0001f238`: `tileX = worldX/T + 1; tileY = mapHeight - worldZ/T`.
+
+So the load transform is: **X is 1-based (minus one then center), Z = (height - Y) tiles,
+both centered with +T/2**. Camera yaw init: `((-dir*4096) & 0x3FFF) << 16` - 4096 units per
+90 degrees, 16384 = full turn, stored 16.16 at `0x14a48c`; camera X/Z are 16.16 at
+`0x14a480/0x14a482` and `0x14a486/0x14a488` (fraction word zeroed on load).
+
+### New key globals / functions (this session)
+
+| Addr | Meaning |
+|---|---|
+| `0x13e930` | per-school spell-fn table pointers (7 dwords) |
+| `0x177594` | SPELLDAT.DAT buffer handle |
+| `0x1775a0/a2/aa/ae` | cast: school / number / caster sheet / caster combatant |
+| `0x1775b4/b8` | cast: target tile bitmask / target mode |
+| `0x15f104` | battle XP accumulator (u32) |
+| `0x14a4a0` | 3D tile size T (u16) |
+| `0x147994/0x14799a` | 3D map height / width in tiles |
+| `0x153b32..38` | map id / tile X / tile Y / facing |
+| `fcn.0005fdf7` | cast core (SP/LP cost + mastery multiplier) |
+| `fcn.000372f4/00037396` | get/set spell mastery (sheet+0x140+school*60+(n-1)*2) |
+| `fcn.00060a1e` | SP cost lookup (SPELLDAT rec +1) |
+| `fcn.000603ae` | post-cast mastery += MagicTalent |
+| `fcn.0005fb21/0005f9a3` | for-each-target-tile / party-slot target wrappers |
+| `fcn.0004b8a1` | timed combat effect applier (AP x2 / Paralyse / Blind / Berserk) |
+| `fcn.0004d85b/0004d773/0004db61` | move mask / move range / claimed-destination mask |
+| `fcn.00036d54/00064f8a/000648a7` | SetExperience / award-XP-split / victory handler |
+| `fcn.0004fc99/00050488/00050651/0004fd56` | monster AI: dispatcher / ranged / melee / magic |
+| `fcn.00050f52` | monster auto-equip best backpack weapon |
+| `fcn.0001e832/0001ede1/0001eeb8` | 3D CanMove / sub-tile 9-zone classify / tile-contents test |
+| `fcn.0001f1ce/0001f238` | tile to world / world to tile |
+| `fcn.00036a2a/00036a77/00036b17` | SP get/set/max (sheet+0xD0/+0xD2) |
+
+### Open items
+
+- GoddessWrath (39) damage constant - applied inside queued animation callback `0x99778`
+  chain; not yet extracted.
+- Exact success-roll for condition spells (ThornSnare / Boasting family): chance value
+  `M*100/100` resp. `M*80/100` is computed, the comparing rand-roll site not yet pinned.
+- Banish-demon family (62-64) chance math (x1000 / x250 factors against demon LP).
+- Initial mastery value when a spell is first learned (suspected = LevelRequirement-based
+  or fixed; growth per cast = MagicTalent is confirmed).

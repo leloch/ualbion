@@ -12,14 +12,15 @@ public static class DjiKantosSpells
 {
     public static void RegisterAll()
     {
-        // Healing line (ascending magnitude)
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.HealingDC,     baseAmount: 10, strengthScale: 1));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Recuperation,  baseAmount: 18, strengthScale: 2));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Regeneration,  baseAmount: 3,  strengthScale: 0)); // weak per-tick heal
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Lifebringer,   baseAmount: 40, strengthScale: 3)); // full-heal-ish
+        // Healing line. HealingDC = 40 % of max LP at full mastery (CONFIRMED K);
+        // the others' K constants weren't extracted yet (PLACEHOLDER percentages).
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.HealingDC,     k: 40));
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Recuperation,  k: 60));
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Regeneration,  k: 10)); // weak per-tick heal
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Lifebringer,   k: 100)); // full heal
 
-        // Single damage spell in this school
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.GoddessWrath, baseDamage: 12, strengthScale: 2));
+        // Single damage spell in this school — K not extracted (open item, PLACEHOLDER)
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.GoddessWrath, k: 35));
 
         // Status — Irritation maps cleanly to the Irritated condition
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Irritation, PlayerCondition.Irritated));

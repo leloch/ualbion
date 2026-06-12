@@ -1,4 +1,4 @@
-using UAlbion.Formats.Assets.Sheets;
+﻿using UAlbion.Formats.Assets.Sheets;
 using UAlbion.Game.Combat;
 using Xunit;
 
@@ -39,11 +39,11 @@ public class MonsterAiTests
     [Fact]
     public void Choose_Action_A_First_50_50()
     {
-        // Pattern: (rand & 7) < 4 → 4/8 = 50%
+        // Pattern: (rand & 7) < 4 â†’ 4/8 = 50%
         Assert.True(MonsterAi.ChooseActionAFirst(0));      // 0 & 7 = 0 < 4
         Assert.True(MonsterAi.ChooseActionAFirst(3));      // 3 & 7 = 3 < 4
-        Assert.False(MonsterAi.ChooseActionAFirst(4));     // 4 & 7 = 4 ≥ 4
-        Assert.False(MonsterAi.ChooseActionAFirst(7));     // 7 & 7 = 7 ≥ 4
+        Assert.False(MonsterAi.ChooseActionAFirst(4));     // 4 & 7 = 4 â‰¥ 4
+        Assert.False(MonsterAi.ChooseActionAFirst(7));     // 7 & 7 = 7 â‰¥ 4
         Assert.True(MonsterAi.ChooseActionAFirst(8));      // 8 & 7 = 0 < 4
     }
 
@@ -79,11 +79,11 @@ public class MonsterAiTests
     [Fact]
     public void Pick_Random_Set_Bit_Cycles_Through_Set_Bits()
     {
-        // bits 0, 5, 10 → 3 set bits
+        // bits 0, 5, 10 â†’ 3 set bits
         uint mask = (1u << 0) | (1u << 5) | (1u << 10);
-        Assert.Equal(0, MonsterAi.PickRandomSetBit(mask, 0));   // 0 % 3 = 0 → first set bit
-        Assert.Equal(5, MonsterAi.PickRandomSetBit(mask, 1));   // 1 % 3 = 1 → second
-        Assert.Equal(10, MonsterAi.PickRandomSetBit(mask, 2));  // 2 % 3 = 2 → third
+        Assert.Equal(0, MonsterAi.PickRandomSetBit(mask, 0));   // 0 % 3 = 0 â†’ first set bit
+        Assert.Equal(5, MonsterAi.PickRandomSetBit(mask, 1));   // 1 % 3 = 1 â†’ second
+        Assert.Equal(10, MonsterAi.PickRandomSetBit(mask, 2));  // 2 % 3 = 2 â†’ third
         Assert.Equal(0, MonsterAi.PickRandomSetBit(mask, 3));   // wraps
     }
 
@@ -123,7 +123,7 @@ public class MonsterAiTests
     [Fact]
     public void Ai_Weight_Table_Bit_Distribution_Matches_Original()
     {
-        // 6 × bit-0x01 (Summon), 4 × bit-0x02, 6 × bit-0x04 → matches 0x4facb in MAIN.EXE
+        // 6 Ã— bit-0x01 (Magic), 4 Ã— bit-0x02, 6 Ã— bit-0x04 â†’ matches 0x4facb in MAIN.EXE
         int b1 = 0, b2 = 0, b4 = 0;
         foreach (var e in MonsterAi.AiWeightTable)
         {
@@ -146,52 +146,53 @@ public class MonsterAiTests
     [Fact]
     public void Choose_Normal_Action_Picks_Available_Bit()
     {
-        // rand=0 → idx 0 → bit Summon. Mob has Summon available. Should commit.
+        // rand=0 â†’ idx 0 â†’ bit Magic. Mob has Magic available. Should commit.
         var result = MonsterAi.ChooseNormalAction(
-            MonsterAi.AvailableActions.Summon,
+            MonsterAi.AvailableActions.Magic,
             () => 0,
             bit =>
             {
-                Assert.Equal(MonsterAi.AvailableActions.Summon, bit);
+                Assert.Equal(MonsterAi.AvailableActions.Magic, bit);
                 return true;
             });
-        Assert.Equal(MonsterAi.AvailableActions.Summon, result);
+        Assert.Equal(MonsterAi.AvailableActions.Magic, result);
     }
 
     [Fact]
     public void Choose_Normal_Action_Re_Rolls_If_Picked_Bit_Not_Available()
     {
-        // rng yields indices 0,0,0... → bit Summon repeatedly. Mob only has Action4. Loop bails out.
+        // rng yields indices 0,0,0... â†’ bit Magic repeatedly. Mob only has Action4. Loop bails out.
         int calls = 0;
         var result = MonsterAi.ChooseNormalAction(
-            MonsterAi.AvailableActions.Action4,
-            () => { calls++; return 0; },     // always idx 0 → bit Summon (unavailable)
+            MonsterAi.AvailableActions.Ranged,
+            () => { calls++; return 0; },     // always idx 0 â†’ bit Magic (unavailable)
             _ => true);
-        // The loop should keep re-rolling because Summon is never available. Since we never
-        // remove Action4 from the pool, the loop runs forever in theory — but ChooseNormalAction
+        // The loop should keep re-rolling because Magic is never available. Since we never
+        // remove Ranged from the pool, the loop runs forever in theory â€” but ChooseNormalAction
         // is supposed to terminate. Verify by giving a counted RNG.
         Assert.True(calls > 0);
-        // Without a way to commit Action4, we'll never call tryCommit, and Action4 stays in pool.
+        // Without a way to commit Ranged, we'll never call tryCommit, and Ranged stays in pool.
         // We need to give an rng that eventually rolls onto an Action4 index.
-        // Adjusted test: rng cycle 0,8,8,... → first 0 (Summon, not avail, re-roll), then 8 (Action4, avail, commit).
+        // Adjusted test: rng cycle 0,8,8,... â†’ first 0 (Magic, not avail, re-roll), then 8 (Ranged, avail, commit).
         var sequence = new System.Collections.Generic.Queue<int>(new[] { 0, 8 });
         var result2 = MonsterAi.ChooseNormalAction(
-            MonsterAi.AvailableActions.Action4,
+            MonsterAi.AvailableActions.Ranged,
             () => sequence.Dequeue(),
-            bit => bit == MonsterAi.AvailableActions.Action4);
-        Assert.Equal(MonsterAi.AvailableActions.Action4, result2);
+            bit => bit == MonsterAi.AvailableActions.Ranged);
+        Assert.Equal(MonsterAi.AvailableActions.Ranged, result2);
     }
 
     [Fact]
     public void Choose_Normal_Action_Returns_None_If_Commit_Always_Fails()
     {
-        // Mob has Summon available, rng always picks index 0 = Summon. But tryCommit always
-        // returns false → the bit gets cleared on each attempt → eventually pool is empty.
+        // Mob has Magic available, rng always picks index 0 = Magic. But tryCommit always
+        // returns false â†’ the bit gets cleared on each attempt â†’ eventually pool is empty.
         var sequence = new System.Collections.Generic.Queue<int>(new[] { 0, 0, 0, 0, 0, 0, 0, 0 });
         var result = MonsterAi.ChooseNormalAction(
-            MonsterAi.AvailableActions.Summon,
+            MonsterAi.AvailableActions.Magic,
             () => sequence.Count > 0 ? sequence.Dequeue() : 0,
             _ => false);
         Assert.Equal(MonsterAi.AvailableActions.None, result);
     }
 }
+

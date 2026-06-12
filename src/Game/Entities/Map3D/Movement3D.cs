@@ -98,12 +98,10 @@ public class Movement3D : Component
         Raise(new CameraMove3DWorldEvent(world.X, world.Z));
     }
 
-    // PLACEHOLDER: collision radius around the party in tile units. The original engine's
-    // exact wall margin hasn't been recovered from MAIN.EXE (the 3D-engine module retains
-    // no debug strings); 0.25 matches its feel — you can approach a wall to about a quarter
-    // tile and slide along it. Confirm by measuring the original under DOSBox if precision
-    // matters later.
-    const float CollisionRadiusTiles = 0.25f;
+    // RE'd from MAIN.EXE fcn.0001ede1 (9-zone sub-tile collision test): the wall margin is
+    // min(tileSize/4, 50) world units. Standard labyrinths use 512-unit tiles, so the
+    // margin is 50/512 ≈ 0.0977 of a tile — see _RE_COMBAT.md "Punch-list RE" item 5.
+    const float CollisionRadiusTiles = 50f / 512f;
 
     /// <summary>
     /// Axis-separated sub-tile collision: each world axis of the velocity is tested

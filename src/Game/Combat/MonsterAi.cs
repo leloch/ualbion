@@ -122,20 +122,22 @@ public static class MonsterAi
     }
 
     /// <summary>
-    /// Normal-monster action-availability bit. The original engine stores a bitmask
-    /// at Combatant offset +0x06 listing which actions this mob can do (a wolf can't
-    /// cast, a spectre can't melee, etc).
+    /// Normal-monster action-availability bitmask at Combatant offset +0x06 — semantics
+    /// CONFIRMED by RE (_RE_COMBAT.md "Punch-list RE" item 4): combat setup gives every
+    /// monster Melee|Ranged (0x06) and adds Magic (0x01) iff the sheet's spell-class
+    /// byte (+4) is non-zero. Magic is permanently disabled once SP hits 0; failed
+    /// attempts clear their bit for the rest of the turn.
     /// </summary>
     [System.Flags]
     public enum AvailableActions : ushort
     {
         None = 0,
-        /// <summary>Bit 0x01 — corresponds to the original engine's "summon/spawn" action (vtable_1[5]).</summary>
-        Summon = 0x01,
-        /// <summary>Bit 0x02 — action type 2 (handler `fcn.00050651`); semantics not yet decoded.</summary>
-        Action2 = 0x02,
-        /// <summary>Bit 0x04 — action type 4 (handler `fcn.00050488`); semantics not yet decoded.</summary>
-        Action4 = 0x04,
+        /// <summary>Bit 0x01 — cast a spell.</summary>
+        Magic = 0x01,
+        /// <summary>Bit 0x02 — close-range (melee) weapon attack.</summary>
+        Melee = 0x02,
+        /// <summary>Bit 0x04 — long-range weapon attack.</summary>
+        Ranged = 0x04,
     }
 
     /// <summary>
@@ -143,16 +145,17 @@ public static class MonsterAi
     /// original engine's MAIN.EXE address `0x4facb`. The original picks an index 0..15 via
     /// <c>rand() &amp; 0xf</c>, looks up the bit-flag at this index, and if the mob has that
     /// action available, dispatches to the type-specific handler.
+    /// Weights: Magic 6/16, Melee 4/16, Ranged 6/16.
     /// </summary>
     public static readonly ushort[] AiWeightTable =
     {
-        // Indices 0..5: bit 0x01 (Summon / spawn) — 6/16 = 37.5 %
+        // Indices 0..5: bit 0x01 (Magic) — 6/16 = 37.5 %
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        // Indices 6..7: bit 0x02 — 2/16 = 12.5 %
+        // Indices 6..7: bit 0x02 (Melee) — 2/16
         0x02, 0x02,
-        // Indices 8..13: bit 0x04 — 6/16 = 37.5 %
+        // Indices 8..13: bit 0x04 (Ranged) — 6/16 = 37.5 %
         0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
-        // Indices 14..15: bit 0x02 — 2/16 = 12.5 % (total bit-2: 25 %)
+        // Indices 14..15: bit 0x02 (Melee) — 2/16 (total Melee: 4/16 = 25 %)
         0x02, 0x02,
     };
 
