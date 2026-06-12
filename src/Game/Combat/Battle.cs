@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -707,22 +707,6 @@ public class Battle : GameComponent, IReadOnlyBattle
             return;
         }
 
-        var target = targetTile >= 0 && targetTile < _tiles.Length ? _tiles[targetTile] : null;
-        if (target == null || LifePoints(target) <= 0)
-        {
-            // Empty / dead tile picked: fall back by the spell's declared target side.
-            // Monster-targeting spells retarget the nearest live enemy (like melee);
-            // party-targeting ones apply to the caster. Without this an offensive spell
-            // at an empty tile would hit the caster.
-            var targets = spell?.Targets ?? default;
-            bool offensive = (targets & (UAlbion.Formats.Assets.SpellTargets.OneMonster
-                                        | UAlbion.Formats.Assets.SpellTargets.RowOfMonsters
-                                        | UAlbion.Formats.Assets.SpellTargets.AllMonsters)) != 0;
-            target = offensive
-                ? LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault() ?? caster
-                : caster;
-        }
-
         // RE'd mastery multiplier M = max(1, (mastery+50)/100); mastery is the per-spell
         // 0..10000 value grown by MagicTalent on each cast (_RE_COMBAT.md "Punch-list RE").
         ushort mastery = 0;
@@ -730,7 +714,63 @@ public class Battle : GameComponent, IReadOnlyBattle
         int m = Math.Max(1, (mastery + 50) / 100);
 
         var rng = Resolve<IRandom>();
-        var context = new SpellCastContext
+
+        // Target-AREA enumeration (RE 5B fcn.0005ef24/fcn.0005fb21): RowOfMonsters hits
+        // every enemy in the picked tile's 6-tile grid row; AllMonsters hits every
+        // living enemy; DeadParty (0x04) is actually the WHOLE LIVING PARTY; the rest
+        // are single-target. Each recipient runs the effect (and its own gate)
+        // separately. GoddessWrath manages its own victims (the random picker).
+        var targets = spell?.Targets ?? default;
+        bool selfManagedArea = SpellEffectRegistry.TryGet(spellId, out var registered)
+                               && registered is Spells.GoddessWrathEffect;
+
+        var recipients = new List<ICombatParticipant>();
+        if (!selfManagedArea && (targets & UAlbion.Formats.Assets.SpellTargets.AllMonsters) != 0)
+        {
+            recipients.AddRange(EnumerateTilesRowMajor(enemyOf: caster));
+        }
+        else if (!selfManagedArea && (targets & UAlbion.Formats.Assets.SpellTargets.RowOfMonsters) != 0)
+        {
+            int row = targetTile >= 0
+                ? targetTile / SavedGame.CombatColumns
+                : TileOf(LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault());
+            if (row >= 0)
+                foreach (var p in EnumerateTilesRowMajor(enemyOf: caster))
+                    if (TileOf(p) / SavedGame.CombatColumns == row)
+                        recipients.Add(p);
+        }
+        else if (!selfManagedArea && (targets & UAlbion.Formats.Assets.SpellTargets.DeadParty) != 0)
+        {
+            // 0x04 = whole living party (the "DeadParty" name predates the RE).
+            recipients.AddRange(LiveParticipants(forParty: IsParty(caster)));
+        }
+        else
+        {
+            var single = targetTile >= 0 && targetTile < _tiles.Length ? _tiles[targetTile] : null;
+            if (single == null || LifePoints(single) <= 0)
+            {
+                // Empty / dead tile picked: monster-targeting spells retarget the
+                // nearest live enemy (like melee); party-targeting ones self-cast.
+                bool offensive = (targets & (UAlbion.Formats.Assets.SpellTargets.OneMonster
+                                            | UAlbion.Formats.Assets.SpellTargets.RowOfMonsters
+                                            | UAlbion.Formats.Assets.SpellTargets.AllMonsters)) != 0;
+                single = offensive
+                    ? LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault() ?? caster
+                    : caster;
+            }
+            recipients.Add(single);
+        }
+
+        if (recipients.Count == 0 && !selfManagedArea)
+        {
+            // Nothing in the area: fizzle (sound 698) and the action is not consumed —
+            // RE 5B: zero continuations leave the combatant's action slot intact.
+            Raise(new SoundEffectEvent(new SampleId(698), 100, 0, 0, 0, SoundMode.GlobalOneShot));
+            Info($"[Combat] {caster.SheetId} casts {spellId} but nothing is in the area (fizzle)");
+            return;
+        }
+
+        SpellCastContext BuildContext(ICombatParticipant target) => new()
         {
             Caster = caster,
             Target = target,
@@ -743,18 +783,35 @@ public class Battle : GameComponent, IReadOnlyBattle
             ApplyHeal = ApplyDirectHeal,
             PlaceTrap = (tile, damage) => _traps[tile] = damage,
             RemoveTrap = tile => _traps.Remove(tile),
-            GetLiveEnemies = () => LiveParticipants(forParty: !IsParty(caster)).ToList(),
+            GetLiveEnemies = () => EnumerateTilesRowMajor(enemyOf: caster).ToList(),
             GetAllies = () => LiveParticipants(forParty: IsParty(caster)).ToList(),
             HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
             ModifySp = ModifySpellPoints,
+            GetActiveSpellPct = LookupActiveSpellPct,
             // Instant kill = LP wipe through the normal damage path so death / corpse /
             // XP-pool handling resolve identically (the original's fcn.0004e247).
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
         };
 
-        var outcome = SpellEffectRegistry.Cast(spellId, context);
-        Info($"[Combat] {caster.SheetId} casts {spellId} at tile {targetTile}: {outcome}");
-        TraceLog.Emit("combat_cast", ("actor", caster.SheetId), ("spell", spellId), ("tile", targetTile), ("outcome", outcome));
+        var outcome = SpellCastOutcome.Resisted;
+        if (selfManagedArea || recipients.Count == 0)
+        {
+            outcome = SpellEffectRegistry.Cast(spellId, BuildContext(recipients.FirstOrDefault() ?? caster));
+        }
+        else
+        {
+            foreach (var recipient in recipients)
+            {
+                var result = SpellEffectRegistry.Cast(spellId, BuildContext(recipient));
+                if (result == SpellCastOutcome.Hit || (result == SpellCastOutcome.Failed && outcome != SpellCastOutcome.Hit))
+                    outcome = result;
+                if (Exchange == null || _combatEnded)
+                    return; // an area kill may have ended the battle mid-loop
+            }
+        }
+
+        Info($"[Combat] {caster.SheetId} casts {spellId} at tile {targetTile} ({recipients.Count} target(s)): {outcome}");
+        TraceLog.Emit("combat_cast", ("actor", caster.SheetId), ("spell", spellId), ("tile", targetTile), ("targets", recipients.Count), ("outcome", outcome));
 
         if (outcome != SpellCastOutcome.Failed)
             Raise(new CombatCastEvent(spellId)); // cast SFX (CombatAudio)
@@ -790,9 +847,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             Target = target,
             CombatTargetPosition = pending.TargetTile,
             SpellStrength = 1,
-            // PLACEHOLDER: item casts run at full strength until the per-item cast-strength
-            // field is decoded (the original reads it off the ITEMLIST record).
-            MasteryMultiplier = 100,
+            // Item casts run at the FLAT multiplier 50 (RE 5B: cast core fcn.0005fdf7
+            // @0x5fe34 returns 0x32 for any item slot) — no SP cost, no mastery growth.
+            MasteryMultiplier = 50,
             Random = max => rng.Generate(max),
             RaiseEvent = Raise,
             ApplyDamage = ApplyDirectDamage,
@@ -803,6 +860,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             GetAllies = () => LiveParticipants(forParty: IsParty(user)).ToList(),
             HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
             ModifySp = ModifySpellPoints,
+            GetActiveSpellPct = LookupActiveSpellPct,
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
         };
 
@@ -910,6 +968,30 @@ public class Battle : GameComponent, IReadOnlyBattle
         return DamageCalculator.EffectiveSkill(skill, isWeaponSkill, blind);
     }
 
+    /// <summary>
+    /// Live enemies of the given combatant in GRID ORDER (row-major over the tile array)
+    /// — the original's ForEachTargetTile iteration order (RE 5B fcn.0005fb21).
+    /// </summary>
+    IEnumerable<ICombatParticipant> EnumerateTilesRowMajor(ICombatParticipant enemyOf)
+    {
+        bool casterIsParty = IsParty(enemyOf);
+        for (int i = 0; i < _tiles.Length; i++)
+        {
+            var p = _tiles[i];
+            if (p == null || LifePoints(p) <= 0)
+                continue;
+            if (IsParty(p) == casterIsParty)
+                continue;
+            yield return p;
+        }
+    }
+
+    /// <summary>Active-spell percent for party combatants (0 for monsters — the table is party-only).</summary>
+    int LookupActiveSpellPct(ICombatParticipant p, int type)
+        => p?.SheetId.Type == AssetType.PartySheet
+            ? TryResolve<IGameState>()?.GetActiveSpellPct(new PartyMemberId(AssetType.PartyMember, p.SheetId.Id), type) ?? 0
+            : 0;
+
     /// <summary>True when the combatant's weapon hand holds a LongRangeWeapon (ItemType 6).</summary>
     bool HasRangedWeapon(ICombatParticipant p)
     {
@@ -983,9 +1065,15 @@ public class Battle : GameComponent, IReadOnlyBattle
                          + CombatBuffs.Bonus(attacker.SheetId, CombatBuffs.BuffKind.Attack);
             int rawDef = DamageCalculator.TotalDefense(d)
                          + CombatBuffs.Bonus(defender.SheetId, CombatBuffs.BuffKind.Defense);
-            // MagicShield/PersonalProtection: the active-spell percentage MULTIPLIES
-            // defense (fcn.0004ee3b: rawDef += rawDef·pct/100) — not a flat bonus.
-            rawDef += rawDef * CombatBuffs.Bonus(defender.SheetId, CombatBuffs.BuffKind.ShieldPct) / 100;
+            // MagicShield/PersonalProtection: the active-spell type-1 percentage
+            // MULTIPLIES defense (fcn.0004ee3b: rawDef += rawDef·pct/100). The table is
+            // party-only and persists across battles, decaying hourly (RE 5B).
+            if (defender.SheetId.Type == AssetType.PartySheet)
+            {
+                int shieldPct = TryResolve<IGameState>()?.GetActiveSpellPct(
+                    new PartyMemberId(AssetType.PartyMember, defender.SheetId.Id), 1) ?? 0;
+                rawDef += rawDef * shieldPct / 100;
+            }
             int variedAtk = DamageCalculator.VaryDamage(rawAtk, atkRoll);
             int variedDef = DamageCalculator.VaryDamage(rawDef, defRoll);
             adjusted = Math.Max(0, variedAtk - variedDef);

@@ -199,6 +199,9 @@ public class PartyMagicMenu : GameComponent
             ApplyHeal = (p, amount) => ChangeHealth(p, amount, NumericOperation.AddAmount),
             GetAllies = () => party.StatusBarOrder.Cast<ICombatParticipant>().ToList(),
             HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
+            GetActiveSpellPct = (p, type) => p?.SheetId.Type == AssetType.PartySheet
+                ? TryResolve<IGameState>()?.GetActiveSpellPct(new PartyMemberId(AssetType.PartyMember, p.SheetId.Id), type) ?? 0
+                : 0,
         };
 
         var outcome = SpellEffectRegistry.Cast(e.SpellId, context);

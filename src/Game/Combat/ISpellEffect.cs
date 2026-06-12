@@ -101,6 +101,13 @@ public sealed class SpellCastContext
     /// combat (party-only effects fall back to RaiseEvent). Used by Steal Magic.
     /// </summary>
     public System.Action<ICombatParticipant, int> ModifySp { get; init; }
+
+    /// <summary>
+    /// Active-spell percent lookup (participant, type) — type 2 feeds the success gate's
+    /// MagicResistance boost for party targets (the original's 0x153b3e table). Null when
+    /// no game state is available (tests).
+    /// </summary>
+    public System.Func<ICombatParticipant, int, int> GetActiveSpellPct { get; init; }
 }
 
 public enum SpellCastOutcome

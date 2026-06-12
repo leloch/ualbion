@@ -14,19 +14,20 @@ public static class OquloKamulosSpells
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FireRain, k: 22));
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FireHail, k: 20));
 
-        // Lightning line — K constants CONFIRMED
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.LightningStrike, k: 33));
+        // Lightning line — K constants CONFIRMED. LightningStrike is the ONLY damage
+        // spell that skips the success gate (RE 5B: raw M·33/100, no MagicResist check).
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.LightningStrike, k: 33, gated: false));
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Thunderbolt,     k: 36));
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Thunderstorm,    k: 40));
 
-        // Traps and mines — placed on a target tile, trigger when stepped on.
-        // All four K constants CONFIRMED: the Big variants share the small versions'
-        // damage (trap 30, mine 42) and differ only in placement AREA (not modelled yet
-        // — PLACEHOLDER). (Trap = visible to enemies, mine = hidden; not distinguished.)
+        // Traps and mines — placed on target tile(s), trigger when stepped on.
+        // All four K constants CONFIRMED; the Big variants place on the ENTIRE 6-tile
+        // row of the picked tile (RE 5B area fn 0x5f60b) with the same K.
+        // (Trap = visible to enemies, mine = hidden; not visually distinguished yet.)
         SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.LightningTrap,    k: 30));
-        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.BigLightningTrap, k: 30));
+        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.BigLightningTrap, k: 30, wholeRow: true));
         SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.LightningMine,    k: 42));
-        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.BigLightningMine, k: 42));
+        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.BigLightningMine, k: 42, wholeRow: true));
         SpellEffectRegistry.Register(new RemoveTrapEffect(Base.Spell.RemoveTrapKK));
 
         // Drains (30 % of target max — CONFIRMED) + defense + gaze

@@ -41,18 +41,23 @@ public sealed class BuffSpellEffect : ISpellEffect
         {
             // Round-timed buffs (Hurry's AP flag, Berserk components, Freeze, ...).
             CombatBuffs.Add(target.SheetId, _kind, _amount, rounds);
-        }
-        else
-        {
-            // The persistent shields' ONLY effect is the active-spell PERCENTAGE entry:
-            // pct = max(prev, M) (fcn.000607da writing 0x153b3e). It multiplies physical
-            // defense (rawDef += rawDef·pct/100) and boosts MagicResistance in the spell
-            // gate — there is no flat defense bonus in the original.
-            int prev = CombatBuffs.Bonus(target.SheetId, CombatBuffs.BuffKind.ShieldPct);
-            CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.ShieldPct,
-                Math.Max(prev, context.MasteryMultiplier), rounds);
+            return SpellCastOutcome.Hit;
         }
 
+        // The shields (MagicShield / PersonalProtection) write the ACTIVE-SPELL table
+        // (RE 5B fcn.000607da): types 1 (physical defense) and 2 (magic resistance)
+        // with duration = max(1, M·10/100) GAME HOURS and pct = M. The entries persist
+        // across battles (combat freezes the clock), decay on the hour tick, and an
+        // active entry is NOT refreshed by re-casting. Party members only — the
+        // original's table has no monster rows.
+        if (context.RaiseEvent == null || target.SheetId.Type != UAlbion.Config.AssetType.PartySheet)
+            return SpellCastOutcome.Failed;
+
+        var member = new PartyMemberId(UAlbion.Config.AssetType.PartyMember, target.SheetId.Id);
+        ushort hours = (ushort)Math.Max(1, context.MasteryMultiplier * 10 / 100);
+        ushort pct = (ushort)context.MasteryMultiplier;
+        context.RaiseEvent(new UAlbion.Game.Events.AddActiveSpellEvent(member, 1, hours, pct));
+        context.RaiseEvent(new UAlbion.Game.Events.AddActiveSpellEvent(member, 2, hours, pct));
         return SpellCastOutcome.Hit;
     }
 }
@@ -163,24 +168,42 @@ public sealed class WithdrawEffect : ISpellEffect
 
 /// <summary>
 /// Places a damage trap on the chosen combat tile (trap/mine spells). Trap damage uses
-/// the RE'd magnitude formula max(1, M*K/100) with the per-spell K constant.
+/// the RE'd magnitude formula max(1, M*K/100) with the per-spell K constant. The "Big"
+/// variants place on the ENTIRE 6-tile grid row of the picked tile (RE 5B: area fn
+/// 0x5f60b, mode 4 — occupied or not), sharing the small variants' K.
 /// </summary>
 public sealed class TrapSpellEffect : ISpellEffect
 {
+    const int GridColumns = 6;
+
     public SpellId SpellId { get; }
     readonly int _k;
+    readonly bool _wholeRow;
 
-    public TrapSpellEffect(SpellId spellId, int k)
+    public TrapSpellEffect(SpellId spellId, int k, bool wholeRow = false)
     {
         SpellId = spellId;
         _k = k;
+        _wholeRow = wholeRow;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
     {
         if (context?.PlaceTrap == null || context.CombatTargetPosition < 0)
             return SpellCastOutcome.Failed;
-        context.PlaceTrap(context.CombatTargetPosition, Math.Max(1, context.MasteryMultiplier * _k / 100));
+
+        int damage = Math.Max(1, context.MasteryMultiplier * _k / 100);
+        if (_wholeRow)
+        {
+            int rowStart = context.CombatTargetPosition - context.CombatTargetPosition % GridColumns;
+            for (int i = 0; i < GridColumns; i++)
+                context.PlaceTrap(rowStart + i, damage);
+        }
+        else
+        {
+            context.PlaceTrap(context.CombatTargetPosition, damage);
+        }
+
         return SpellCastOutcome.Hit;
     }
 }

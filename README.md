@@ -18,34 +18,37 @@ Prerequisites:
 
 ## Current Status
 
-Things that are at least somewhat implemented:
-- Rendering of 2D and 3D environments
-- Player movement and collision detection in 2D environments
-- Interaction with the environment, e.g. examining objects, accessing chests and opening doors
+Implemented (most mechanics reverse-engineered from MAIN.EXE for 1:1 behaviour — see
+`_RE_COMBAT.md` / `_RE_NOTES.md` for the decoded formulas):
+- Rendering of 2D and 3D environments (Veldrid: D3D11 / Vulkan / OpenGL)
+- Player movement and collision in 2D and 3D (sub-tile margins, wall sliding)
+- Environment interaction: examine / manipulate / take / talk, chests, doors, locks
 - GUI system for menus, dialogs, inventory etc
-- Inventory management
-- Conversations
-- Sound effects and music
-- Loading/saving saved games
-- Video playback
-- Exporting assets
-- Day/night cycle
-- NPC movement
+- Inventory management, merchants, item use, charges, broken/cursed gear
+- Conversations (topics, word/item queries, party joins/leaves)
+- Combat: the original's strike pipeline (to-hit, instant-kill crits, equipment wear),
+  byte-exact damage math, monster AI, animated battle view, post-combat loot
+- Magic: all four playable spell schools with RE'd magnitudes/durations, out-of-combat
+  casting, spell learning, active-spell shields
+- NPC services: healers, taverns, trainers, spell teachers, repair/identify/recharge
+- Resting/camping with the original's gating, rations and fatigue/exhaustion systems
+- The 3D automap (facing-cone discovery, connection-mask wall glyphs, floor minis,
+  goto-point markers) and the Map View / Teleporter spells
+- Sound effects (RE'd combat SFX tables) and music; day/night cycle
+- Loading/saving original-format saved games (byte-exact round trip)
+- Video playback, NPC movement/schedules, map event scripting
+- Exporting assets; mod layer system (e.g. an HD asset override mod)
 
-Currently unimplemented:
-- Lighting model for 3D levels
-- Event handling and collision detection in 3D environments
-- Automap for 3D environments
-- Combat system
-- Magic system
+Remaining gaps are tracked in **`_TODO_1TO1.md`** (the work ledger): combat move
+path-finding animation, spell target areas, a few undecoded constants, and polish items.
 
 Planned improvements / changes from the original gameplay:
-- Add hotkeys to streamline the interface, reduce the amount of right clicking required etc
+- Add hotkeys to streamline the interface, reduce the amount of right clicking required etc (partially done: quicksave/quickload, window scaling)
 - Add some pathfinding logic to make mouse-based movement easier
 - Add a take-all button when looting chests / fallen foes (done)
 - Graphical improvements in 3D environments
 - Fix bugs in original game (with option to toggle when there is a gameplay impact)
-- Modding support
+- Modding support (asset override layers work; see `mods/`)
 - A built-in editor for modifying and adding assets
 
 ## Getting started

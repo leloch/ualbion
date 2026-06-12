@@ -662,37 +662,47 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
 
     void OnConsumeCharge(ConsumeItemChargeEvent e)
     {
-        // Combat magic-item use: charged items (wands etc) lose one charge; uncharged
-        // consumables (potions) lose one from the stack instead.
+        // Magic-item use, RE'd from MAIN.EXE fcn.00060013: items with the single-use
+        // flag (ITEMLIST +0x1B bit 0x04 — UAlbion's Stackable: potions, scrolls etc)
+        // lose one from the stack; otherwise a charge is decremented, and when charges
+        // reach 0 an item with the vanish flag (bit 0x10) is destroyed.
         var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
         var inv = _getInventory(invId);
         if (inv == null)
             return;
 
-        ItemSlot uncharged = null;
         foreach (var slot in inv.EnumerateAll())
         {
             if (slot.Item != e.ItemId)
                 continue;
 
-            if (slot.Charges > 0)
+            var item = _getItem(slot.Item);
+            if (item != null && (item.Flags & ItemFlags.Stackable) != 0)
             {
-                slot.Charges--;
-                Info($"[Inv] {e.MemberId} used a charge of {e.ItemId} ({slot.Charges} left)");
+                slot.Amount--;
+                if (slot.Amount == 0)
+                    slot.Clear();
+                Info($"[Inv] {e.MemberId} consumed one {e.ItemId} ({slot.Amount} left)");
                 Raise(new InventoryChangedEvent(invId));
                 return;
             }
 
-            uncharged ??= slot;
-        }
-
-        if (uncharged != null)
-        {
-            uncharged.Amount--;
-            if (uncharged.Amount == 0)
-                uncharged.Clear();
-            Info($"[Inv] {e.MemberId} consumed one {e.ItemId} ({uncharged.Amount} left)");
-            Raise(new InventoryChangedEvent(invId));
+            if (slot.Charges > 0)
+            {
+                slot.Charges--;
+                if (slot.Charges == 0 && item != null && (item.Flags & ItemFlags.Unk4) != 0)
+                {
+                    // Vanishes when discharged (thrown weapons, some wands).
+                    slot.Clear();
+                    Info($"[Inv] {e.MemberId}'s {e.ItemId} was used up");
+                }
+                else
+                {
+                    Info($"[Inv] {e.MemberId} used a charge of {e.ItemId} ({slot.Charges} left)");
+                }
+                Raise(new InventoryChangedEvent(invId));
+                return;
+            }
         }
     }
 

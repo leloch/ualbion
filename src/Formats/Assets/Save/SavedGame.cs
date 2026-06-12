@@ -73,6 +73,56 @@ public class SavedGame
         if (markerId >= 0 && markerId < AutomapMarkerCount)
             _automapMarkersFound.SetFlag(markerId, value);
     }
+
+    // --- Active spells (the original's table at 0x153b3a/0x153b3e, RE batch 5B) ---
+    // ActiveSpells layout as ushorts: [0..1] = the ambient/light entry {hours, pct};
+    // then per party slot s (0..5) and type t (0..2): [2 + s*6 + t*2] = remaining
+    // duration in GAME HOURS, [3 + s*6 + t*2] = percent. Type 0 = physical attack
+    // (no writer in the original — vestigial), type 1 = physical defense, type 2 =
+    // magic resistance. MagicShield/PersonalProtection write types 1+2 with
+    // hours = max(1, M·10/100), pct = M — write-once while empty (no refresh).
+    const int ActiveSpellTypes = 3;
+    const int ActiveSpellSlots = 6;
+
+    static int ActiveSpellIndex(int slot, int type) => 2 + slot * ActiveSpellTypes * 2 + type * 2;
+
+    /// <summary>Percent of an active-spell entry, gated on remaining hours (fcn.000606b5).</summary>
+    public int GetActiveSpellPct(int slot, int type)
+    {
+        if (slot is < 0 or >= ActiveSpellSlots || type is < 0 or >= ActiveSpellTypes)
+            return 0;
+        int i = ActiveSpellIndex(slot, type);
+        return ActiveSpells[i] != 0 ? ActiveSpells[i + 1] : 0;
+    }
+
+    /// <summary>Add an entry — only when EMPTY (fcn.000607da: active entries are not refreshed).</summary>
+    public bool TryAddActiveSpell(int slot, int type, ushort hours, ushort pct)
+    {
+        if (slot is < 0 or >= ActiveSpellSlots || type is < 0 or >= ActiveSpellTypes || hours == 0)
+            return false;
+        int i = ActiveSpellIndex(slot, type);
+        if (ActiveSpells[i] != 0)
+            return false;
+        ActiveSpells[i] = hours;
+        ActiveSpells[i + 1] = pct;
+        return true;
+    }
+
+    /// <summary>
+    /// Hourly decay (fcn.000605ed → fcn.00060670, run from the game-hour tick): every
+    /// entry's hour count decrements; the percent zeroes at expiry. Covers the ambient
+    /// (light) entry at [0..1] and all 18 member entries.
+    /// </summary>
+    public void TickActiveSpells()
+    {
+        for (int i = 0; i + 1 < 2 + ActiveSpellSlots * ActiveSpellTypes * 2; i += 2)
+        {
+            if (ActiveSpells[i] == 0)
+                continue;
+            if (--ActiveSpells[i] == 0)
+                ActiveSpells[i + 1] = 0;
+        }
+    }
     public bool IsNpcDisabled(MapId mapId, int npcNumber)
     {
         if (mapId.IsNone)
