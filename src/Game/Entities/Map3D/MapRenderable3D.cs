@@ -25,7 +25,29 @@ public class MapRenderable3D : GameComponent
     // bool _isSorting;
     bool _fullUpdate = true;
     int _frameCount;
-    int _spellLightRemaining;
+    /// <summary>
+    /// Recompute the effective dungeon light (RE 5C): mode = mapFlags &amp; 3; mode 1 →
+    /// min(100, max(Light-spell pct, party light-item total)) + Iskai-leader bonus;
+    /// other modes are fully lit. Mapped onto uAmbient as
+    /// max(LABDATA base, light·255/100) — the 0..255 additive ambient (INFERRED mapping;
+    /// the original applies light through palette fades).
+    /// </summary>
+    void RecomputeLight()
+    {
+        if (_tilemap == null)
+            return;
+        var state = TryResolve<IGameState>();
+        var party = TryResolve<IParty>();
+        var assets = TryResolve<UAlbion.Formats.IAssetManager>();
+        var mapData = _logicalMap.Events as UAlbion.Formats.Assets.IMapData;
+        int light = UAlbion.Game.Magic.DungeonLighting.EffectiveLight(state, party, mapData, assets);
+        uint level = (uint)Math.Clamp(Math.Max(_labyrinthData.Lighting, light * 255 / 100), 0, 255);
+        if (level != _tilemap.AmbientLightLevel)
+        {
+            _tilemap.AmbientLightLevel = level;
+            Info($"[Light] dungeon ambient recomputed: light {light}% → level {level}");
+        }
+    }
 
     public MapRenderable3D(LogicalMap3D logicalMap, LabyrinthData labyrinthData, TilemapRequest properties)
     {
@@ -33,26 +55,18 @@ public class MapRenderable3D : GameComponent
         ArgumentNullException.ThrowIfNull(labyrinthData);
 
         On<PrepareFrameEvent>(_ => Update());
+        // The real dungeon light model (RE 5C fcn.0001473c): recompute whenever the
+        // Light spell state changes, hourly (decay), and when inventories change
+        // (light items = torches etc contribute their Activate byte).
+        On<UAlbion.Game.Events.DungeonLightChangedEvent>(_ => RecomputeLight());
+        On<HourElapsedEvent>(_ => RecomputeLight());
+        On<UAlbion.Game.Events.Inventory.InventoryChangedEvent>(_ => RecomputeLight());
         On<AmbientLightEvent>(e =>
         {
+            // Debug/script override: direct delta on top of the computed level.
             if (_tilemap == null) return;
             int level = (int)_tilemap.AmbientLightLevel + e.Delta;
             _tilemap.AmbientLightLevel = (uint)Math.Clamp(level, 0, 255);
-            if (e.Delta > 0)
-                _spellLightRemaining += e.Delta; // track the Light spell's contribution so it can wear off
-            Info($"[Light] dungeon ambient light now {_tilemap.AmbientLightLevel}");
-        });
-        On<HourElapsedEvent>(_ =>
-        {
-            // Light-spell decay: the original tracks Light as an active-spell percentage
-            // (SavedGame.ActiveSpells[0..1]) that wears off over time. PLACEHOLDER rate:
-            // the spell-added ambient fades by 10 per game hour back to the LABDATA base.
-            if (_tilemap == null || _spellLightRemaining <= 0) return;
-            int decay = Math.Min(10, _spellLightRemaining);
-            _spellLightRemaining -= decay;
-            int level = (int)_tilemap.AmbientLightLevel - decay;
-            _tilemap.AmbientLightLevel = (uint)Math.Clamp(level, 0, 255);
-            Info($"[Light] spell light fading: ambient now {_tilemap.AmbientLightLevel} ({_spellLightRemaining} spell-light left)");
         });
         // On<SortMapTilesEvent>(e => _isSorting = e.IsSorting);
         _logicalMap = logicalMap;
