@@ -1,6 +1,71 @@
 ﻿# UAlbion — Iteration Session Status
 
-> Rolling status. Updated 2026-06-12 (third pass) after the **presentation + RE-fidelity session**.
+> Rolling status. Updated 2026-06-12 (fifth pass) after the **battle-view + formula-fidelity session**.
+
+## 2026-06-12 fifth pass — battle view shipped, the real combat formulas, fatigue system
+
+Commits `ff4ad33c..fc85bdf3`. All green throughout: 499 tests (203 Game.Tests), smoke 13/13.
+
+1. **Battle view FINISHED and enabled by default** (`ed2abccd`, background agent) — the
+   animated combat scene now renders correctly everywhere; the `UALBION_BATTLEVIEW` env
+   gate is gone. Three root causes fixed:
+   - *White monsters*: monster gfx are painted for the COMBAT palettes; the palette comes
+     from the combat background index (the original fatally asserts without one —
+     combat.c:419). CombatManager now falls back to `CombatBackground.Dungeon`.
+   - *"Garbled texture"*: draw-order, not UVs — the backdrop (Interface 0x301) covered
+     the monsters (0x300). Combat presentation now owns the 0x2F0–0x2FE band: backdrop
+     0x2F0 (ZeroOpaque, the original's unmasked 360×192 blit), shadows 0x2F1, monster
+     rows 0x2F2–0x2F5, effects 0x2FE — structurally under all UI.
+   - *Frozen animations*: `MonsterData.CopyFrom` only copied CombatGfx, so Effective
+     clones lost Animations/scaling/hover — every monster sat on idle. Deep-copy fixed;
+     Melee/Hit/Die play at 6.67 fps, corpses freeze on the last Die frame, ground
+     shadows from the odd physical frames, hit splashes (comgfx 46/47), Warniaks hover
+     (slot.y = −Unk152).
+2. **The real strike pipeline** (`2f3f3741`) — corrects two long-standing wrong claims:
+   there IS a to-hit roll (attacker weapon skill vs 100, PercentRoll `rand()%100 <= v`,
+   halved when Blind, NO defender dodge — that branch is dead code in the binary), and
+   CriticalHit skill is NOT UI-only: it's rolled per strike for an INSTANT KILL
+   (damage = target's current LP), blocked by crit-immunity flag sheet+0x0E & 0x80
+   (UnknownE bit 7 — Ai's bodies, named bosses, Kamulos). Equipment wear: every
+   connecting swing rolls item breakRate vs 1000 on attacker weapon + defender
+   chest/head (break_item_slot → Broken slot flag + msg 736). Combat end batch-clears
+   Irritated/Asleep/Panicking/Fleeing/Paralysed (fcn.000650ad).
+3. **CRITICAL BUG FIX** found doing #2: `SheetApplier.ApplyStatus` silently ignored
+   Add/SubtractAmount — every condition CURE in the game (healer services, heal-status
+   spells, sleep decay) and several inflictions were no-ops until today. Amount ops on a
+   flag now collapse to set/clear.
+4. **Instant-kill spells** (`2f3f3741`): GoddessWrath kills max(1, living·M/100) random
+   monsters; the Banish family instant-kills demon-class targets (UnknownE & 0x44);
+   both use the deterministic success gate fcn.000601a6 (lands iff M > MagicResist — NO
+   random roll), which now also gates all condition-inflict spells. Berserk's real
+   effect: −25 % current LP, then STR/skills/base damage ×1.5 via new buff kinds that
+   feed the to-hit/crit/damage rolls.
+5. **Progression/rest formulas** (`ff4ad33c`): XP curve = max(1, ⌊1.25N²⌋+N−14) ×
+   classMul {25,35,30,25,25,20,40,—,25,35}, cap 50; rest = ONE-SHOT 50 % restore
+   (+Stamina/15, +MagicTalent/15), 2 rations/member, 3-hour gate; healing above 0 LP
+   wakes the unconscious; NO timed condition decay exists (poison drains 1–5 LP/h;
+   that's it).
+6. **Rest gating + fatigue + restoration spells** (`fc85bdf3`): map RestMode
+   ((flags&0xC)>>2) gates the menu — dungeons rest 8 h, wilderness rests till dawn
+   (07:00), cities get the original's WAIT hour-prompt, interiors get nothing; hostile
+   monsters block both ("too dangerous"). Exhaustion (>48 h awake) now applies the real
+   penalties — STR×¾, other attributes/skills ×½, backed up in the previously-unused
+   CharacterAttribute.Backup word and restored exactly on cure; >24 h shows the tired
+   message; Exhausted members drain 10 % LP per 2 h. Regeneration/Lifebringer = real
+   9-condition cleanse + mastery heal; Recuperation = magical full rest (gated >8 h
+   awake, resets fatigue).
+
+### Open items
+- Trap/mine area placement ("Big" variants differ only by SPELLDAT area), Banish area
+  targeting (row/all), monster SP shadow, broken-item morph table, the MagicShield
+  type-2 resist boost for party targets.
+- PlaceAction types LearnSpells / RepairItem / RestoreItemEnergy / RemoveCurse /
+  ScrollMerchant / AskOpinion are logged placeholders.
+- World-map mouse pathfinding, key-rebind UI (maintainer wishlist).
+- Automap RENDERING still uses fixed glyphs (original: connection-mask wall glyphs).
+- DumpJson.cs:46 NREs when dumping event sets via --dump.
+
+---
 
 ## 2026-06-12 third pass — combat presentation, RE-confirmed formulas, QoL
 

@@ -424,3 +424,78 @@ The single biggest open question is the 2D-black-screen regression on save 5. **
 Either way, the harness is in place to verify the fix once found. After fixing 2D, the offscreen mirror should be rebuilt with `WindowResizedEvent`-aware sizing so `/screenshot` returns properly again.
 
 Good luck, future-you.
+
+---
+
+## 14. 2026-06-12 session — battle view shipped + the formula-fidelity overhaul
+
+(Commits `3c710e84..fc85bdf3`; the day's earlier passes are in `_SESSION_STATUS.md`.)
+
+### 14.1 The battle view is done and on by default
+
+The animated tactical combat scene (`BattleView.cs`) went from env-gated experiment to
+shipped feature. The three discoveries that cracked it:
+
+- **The combat palette comes from the combat BACKGROUND.** Monster combat gfx are
+  painted for the combat palettes (default `pal.24` DungeonCombat); the original looks
+  the palette up from the background index and **fatally asserts** if no background
+  loads (combat.c:419 in `fcn.0004ac00`) — every original fight has one. Maps without a
+  `CombatBackgroundId` rendered monsters white until `CombatManager` got a
+  `CombatBackground.Dungeon` fallback.
+- **The "garbled texture" was draw order, not UVs.** The backdrop at
+  `DrawLayer.Interface` (0x301) drew over the monsters at 0x300; only palette-index-0
+  holes let speckles through. The combat presentation now owns the unused
+  **0x2F0–0x2FE band**: backdrop 0x2F0 (`ZeroOpaque` — the original's blit is
+  unmasked — at the original's 360×192 rect, horizon at y=96), shadows 0x2F1, monster
+  rows 0x2F2–0x2F5 in painter's order, hit effects 0x2FE. World < backdrop < shadows <
+  monsters < effects < UI is now structural.
+- **`MonsterData.CopyFrom` only copied `CombatGfx`** — every Effective monster clone
+  lost its `Animations` dictionary (plus scaling/hover fields), so all monsters were
+  frozen on idle frame 0. One deep-copy later, Melee/Hit/Die animations play at the
+  engine's 6.67 fps, corpses freeze on the last Die frame, ground shadows come from the
+  odd physical frames, and flyers hover at `−Unk152` (Warniaks −80, byte-faithful).
+
+### 14.2 The strike pipeline — two long-standing claims retracted
+
+Sections of this log (and CLAUDE.md) used to assert "no separate hit-roll; crit/close
+combat skills are UI-only". **Both were wrong** — the earlier offset-scan missed the
+reads because combat goes through the indexed skill getter `fcn.00035fd5`, not direct
+`+0x8A` accesses. The real pipeline (melee `fcn.0004eac1` / ranged `fcn.0004f057`):
+
+1. **To-hit**: PercentRoll(attacker's weapon skill, 100) — `rand()%100 <= skill`,
+   halved when Blind. The defender check is **dead code** (`conds & 0`): no dodge, no
+   Dexterity read. The flat 8 % parry placeholder is gone.
+2. **Equipment wear**: every connecting swing rolls item breakRate vs 1000 for the
+   attacker's weapon and the defender's chest + head pieces.
+3. **Crit**: PercentRoll(CriticalHit skill, 100) → **instant kill** (damage = target's
+   current LP), blocked by crit-immunity flag sheet+0x0E & 0x80 (`UnknownE` bit 7 —
+   Ai's bodies, the named bosses, Kamulos). Not a damage multiplier.
+4. Damage roll as before (vary 50–100 % both sides, subtract); delta 0 = "absorbed",
+   a distinct cue from the to-hit miss.
+
+Also: spell "chance" effects use the **deterministic** gate `fcn.000601a6` — a spell
+lands iff mastery% > target MagicResist, no roll. GoddessWrath/Banish are instant-kill
+spells (never damage); Berserk costs 25 % current LP and multiplies STR/skills/base
+damage ×1.5; `UnknownE`'s low bits are the creature-class mask (demons = 0x44).
+
+### 14.3 The ApplyStatus silent no-op (historically important bug)
+
+`SheetApplier.ApplyStatus` only handled `SetToMaximum/SetToMinimum/Toggle`;
+`AddAmount`/`SubtractAmount` fell through to a **silent no-op**. Callers throughout the
+codebase used the amount ops — meaning **every condition cure in the game did nothing**
+until 2026-06-12: heal-status spells, the NPC healer Cure service, combat sleep decay,
+and several inflictions (zombie breezes, Fungification). Amount ops on a flag now
+collapse to set/clear. Lesson: when a switch on an enum has a pass-through default arm,
+audit every caller's choice of operation.
+
+### 14.4 Rest, fatigue and exhaustion are now the original's systems
+
+Rest is a one-shot restore (50 % max +stat/15, 2 rations/member, 3-hour gate) with map
+RestMode gating ((flags&0xC)>>2): dungeons 8 h, wilderness till dawn (07:00), cities get
+the original's Wait hour-prompt instead, interiors nothing; active hostile monsters
+block both. Exhaustion (>48 h awake) applies STR×¾ / others ×½ penalties using the
+previously-unused `CharacterAttribute.Backup` word (the stat record's +6 field), restored
+exactly on cure; Exhausted members drain 10 % LP per 2 h. There is **no timed condition
+decay** in the original — the invented hour-timers were removed; poison (1–5 LP/h) and
+the fatigue thresholds are the only clock effects. Regeneration/Lifebringer cleanse 9
+conditions + heal; Recuperation is a magical full rest gated on >8 h awake.
