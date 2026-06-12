@@ -9,6 +9,7 @@ using UAlbion.Formats.Assets.Labyrinth;
 using UAlbion.Formats.MapEvents;
 using UAlbion.Formats.ScriptEvents;
 using UAlbion.Game.Entities.Map2D;
+using UAlbion.Game.Events;
 using UAlbion.Game.State;
 
 namespace UAlbion.Game.Entities.Map3D;
@@ -31,6 +32,13 @@ public class MapRenderable3D : GameComponent
         ArgumentNullException.ThrowIfNull(labyrinthData);
 
         On<PrepareFrameEvent>(_ => Update());
+        On<AmbientLightEvent>(e =>
+        {
+            if (_tilemap == null) return;
+            int level = (int)_tilemap.AmbientLightLevel + e.Delta;
+            _tilemap.AmbientLightLevel = (uint)Math.Clamp(level, 0, 255);
+            Info($"[Light] dungeon ambient light now {_tilemap.AmbientLightLevel}");
+        });
         // On<SortMapTilesEvent>(e => _isSorting = e.IsSorting);
         _logicalMap = logicalMap;
         _labyrinthData = labyrinthData;

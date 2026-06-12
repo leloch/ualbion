@@ -155,11 +155,33 @@ public sealed class RemoveTrapEffect : ISpellEffect
     }
 }
 
+/// <summary>Casts that resolve to raising one or more game events (Light, Map View).</summary>
+public sealed class EventSpellEffect : ISpellEffect
+{
+    public SpellId SpellId { get; }
+    readonly Func<UAlbion.Api.Eventing.IEvent>[] _events;
+
+    public EventSpellEffect(SpellId spellId, params Func<UAlbion.Api.Eventing.IEvent>[] events)
+    {
+        SpellId = spellId;
+        _events = events ?? [];
+    }
+
+    public SpellCastOutcome Apply(SpellCastContext context)
+    {
+        if (context?.RaiseEvent == null)
+            return SpellCastOutcome.Failed;
+        foreach (var build in _events)
+            context.RaiseEvent(build());
+        return SpellCastOutcome.Hit;
+    }
+}
+
 /// <summary>
-/// Utility spells whose systemic effect isn't wired yet (Light, View of Life, Map View,
-/// Levitation, Teleporter, Fungification). They cast successfully (consuming SP/charges)
-/// and log what WOULD happen — explicit PLACEHOLDERs so nothing silently fails, each
-/// naming the subsystem that needs to exist before they can be completed 1:1.
+/// Utility spells whose systemic effect isn't wired yet (View of Life, Levitation,
+/// Teleporter). They cast successfully (consuming SP/charges) and log what WOULD happen —
+/// explicit PLACEHOLDERs so nothing silently fails, each naming the subsystem that needs
+/// to exist before they can be completed 1:1.
 /// </summary>
 public sealed class UtilitySpellEffect : ISpellEffect
 {

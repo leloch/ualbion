@@ -63,6 +63,13 @@ void main()
 		color += texture(sampler2D(uDayPalette, uPaletteSampler), vec2(0.5))
 		       + texture(sampler2D(uNightPalette, uPaletteSampler), vec2(0.5));
 
+	// Dungeon ambient lighting: LABDATA Lighting is percent-scale (the original multiplies
+	// it with a constant and divides by 100 — freealbion wiki). 0 means "no lighting data"
+	// (render at full brightness); otherwise clamp so dungeons never go fully black. The
+	// Light spell raises uAmbient at runtime.
+	float ambient = uAmbient == 0u ? 1.0f : clamp(float(uAmbient) / 100.0f, 0.15f, 1.0f);
+	color = vec4(color.rgb * ambient, color.a);
+
 	float depth = (color.w == 0.0f) ?  1.0f : gl_FragCoord.z;
 
 	if ((iFlags & TF_HIGHLIGHT)  != 0) color = color * 1.2; // Highlight

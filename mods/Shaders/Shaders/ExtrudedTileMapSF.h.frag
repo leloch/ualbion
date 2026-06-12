@@ -48,6 +48,17 @@ layout(set = 1, binding = 0) uniform _Camera {
     vec2 uResolution;
 };
 
+layout(set = 2, binding = 0) uniform Properties {
+    vec4 uScale;
+    vec4 uRotation;
+    vec4 uOrigin;
+    vec4 uHorizontalSpacing;
+    vec4 uVerticalSpacing;
+    uint uWidth;
+    uint uAmbient;
+    uint uFogColor;
+    float uYScale;
+};
 layout(set = 2, binding = 1) uniform texture2DArray DayFloors; //!
 layout(set = 2, binding = 2) uniform texture2DArray DayWalls; //!
 layout(set = 2, binding = 3) uniform texture2DArray NightFloors; //!
