@@ -39,17 +39,9 @@ public class InventoryRightPane : UiElement
         HorizontalStacker moneyAndFoodStacker;
         if (showTotalPartyGold)
         {
-            var tf = Resolve<ITextFormatter>();
-            int total = Resolve<IParty>().StatusBarOrder.Sum(x => x.Apparent.Inventory.Gold.Amount);
-            var money = new Button(
-                    new VerticalStacker(
-                        new Spacing(64, 0),
-                        new UiSpriteElement(Base.CoreGfx.UiGold) { Flags = SpriteFlags.Highlight },
-                        new UiText(tf.Format(Base.SystemText.Shop_GoldAll)),
-                        new SimpleText($"{total / 10}.{total % 10}")
-                    ) { Greedy = false})
-                { IsPressed = true };
-            moneyAndFoodStacker = new HorizontalStacker(money);
+            // Built lazily: services can't be resolved from a constructor (not attached
+            // yet) — this crashed every merchant screen with an NRE.
+            moneyAndFoodStacker = new HorizontalStacker(new PartyGoldSummary());
         }
         else
         {
@@ -72,4 +64,26 @@ public class InventoryRightPane : UiElement
         AttachChild(stack);
     }
 #pragma warning restore CA1506 // '.ctor' is coupled with '41' different types from '15' different namespaces. Rewrite or refactor the code to decrease its class coupling below '41'.
+
+    /// <summary>Total-party-gold display for merchant screens. Builds its content on
+    /// subscription because it needs ITextFormatter / IParty from the exchange.</summary>
+    sealed class PartyGoldSummary : UiElement
+    {
+        protected override void Subscribed()
+        {
+            if (Children.Count > 0)
+                return;
+
+            var tf = Resolve<ITextFormatter>();
+            int total = Resolve<IParty>().StatusBarOrder.Sum(x => x.Apparent.Inventory.Gold.Amount);
+            AttachChild(new Button(
+                    new VerticalStacker(
+                        new Spacing(64, 0),
+                        new UiSpriteElement(Base.CoreGfx.UiGold) { Flags = SpriteFlags.Highlight },
+                        new UiText(tf.Format(Base.SystemText.Shop_GoldAll)),
+                        new SimpleText($"{total / 10}.{total % 10}")
+                    ) { Greedy = false })
+                { IsPressed = true });
+        }
+    }
 }

@@ -237,6 +237,12 @@ public sealed class SelectionHandler3D : GameComponent
             }
         }
 
+        // PLACEHOLDER: Rest gating by map flags pending RE (see SelectionHandler2D).
+        options.Add(new ContextMenuOption(
+            S(Base.SystemText.MapPopup_Rest),
+            new UAlbion.Game.Events.RestEvent(),
+            ContextMenuGroup.Actions2));
+
         options.Add(new ContextMenuOption(
             S(Base.SystemText.MapPopup_Map),
             new ShowAutomapEvent(),
