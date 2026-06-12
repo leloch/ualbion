@@ -97,7 +97,18 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<NpcOnEvent>(e => _game.SetNpcDisabled(MapId.None, e.NpcNum, false));
         On<SetChestOpenEvent>(e => _game.SetChestOpen(e.Chest, SetFlag(e.Operation, _game.IsChestOpen(e.Chest))));
         On<SetDoorOpenEvent>(e => _game.SetDoorOpen(e.Door, SetFlag(e.Operation, _game.IsDoorOpen(e.Door))));
+        // The data-change family is a set of sibling classes (one per ChangeProperty kind),
+        // not subclasses of DataChangeEvent — each needs its own subscription or script
+        // events like change_status / change_attribute silently do nothing.
         On<DataChangeEvent>(OnDataChange);
+        On<ChangeStatusEvent>(OnDataChange);
+        On<ChangeItemEvent>(OnDataChange);
+        On<ChangeAttributeEvent>(OnDataChange);
+        On<ChangeSkillEvent>(OnDataChange);
+        On<ChangeLanguageEvent>(OnDataChange);
+        On<ChangeEventSetEvent>(OnDataChange);
+        On<ChangeWordSetEvent>(OnDataChange);
+        On<ChangeSpellsEvent>(OnDataChange);
         On<SetContextEvent>(OnSetContext);
 
         AttachChild(new InventoryManager(GetWriteableInventory, GetItem));
@@ -253,7 +264,12 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     {
         switch (id.Type)
         {
-            case AssetType.PartyMember or AssetType.NpcSheet:
+            // PartyMember ids must be remapped to PartySheet — Sheets is keyed by SheetId
+            // and constructing a SheetId from a PartyMember-typed AssetId throws.
+            case AssetType.PartyMember:
+                return _game.Sheets.TryGetValue(new PartyMemberId(id.Id).ToSheet(), out var member) ? member : null;
+
+            case AssetType.NpcSheet:
                 return _game.Sheets.TryGetValue((AssetId)id, out var target) ? target : null;
 
             case AssetType.Target:

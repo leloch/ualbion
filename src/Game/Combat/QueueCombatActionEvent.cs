@@ -14,8 +14,12 @@ namespace UAlbion.Game.Combat;
 /// <param name="Action">Which action kind to perform (Melee/Cast/Move/Retreat/etc.).</param>
 /// <param name="TargetTile">Target tile index 0..29 in the 5×6 combat grid, or
 /// <c>-1</c> for actions that don't require an explicit target (Retreat, Defend).</param>
+/// <param name="Spell">The spell to cast for <see cref="CombatAction.CastSpell"/>.</param>
+/// <param name="Item">The magic item to use for <see cref="CombatAction.UseItem"/>.</param>
 [Event("queue_combat_action")]
 public record QueueCombatActionEvent(
     [property: EventPart("actor")] SheetId Actor,
     [property: EventPart("action")] CombatAction Action,
-    [property: EventPart("target", true, -1)] int TargetTile) : EventRecord;
+    [property: EventPart("target", true, -1)] int TargetTile,
+    [property: EventPart("spell", true)] SpellId Spell = default,
+    [property: EventPart("item", true)] ItemId Item = default) : EventRecord;
