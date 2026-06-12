@@ -264,6 +264,27 @@ public sealed class ViewOfLifeEffect : ISpellEffect
 }
 
 /// <summary>
+/// Light (Dji-Kas spell 21, RE 5C handler 0x64359): merges {hours = M, pct = M} into
+/// the ambient active-spell entry (the SavedGame.ActiveSpells[0..1] pair) — re-casts
+/// accumulate duration; the percentage feeds the dungeon light formula and decays
+/// hourly with the rest of the table.
+/// </summary>
+public sealed class LightSpellEffect : ISpellEffect
+{
+    public SpellId SpellId { get; }
+    public LightSpellEffect(SpellId spellId) => SpellId = spellId;
+
+    public SpellCastOutcome Apply(SpellCastContext context)
+    {
+        if (context?.RaiseEvent == null)
+            return SpellCastOutcome.Failed;
+        ushort m = (ushort)Math.Max(1, context.MasteryMultiplier);
+        context.RaiseEvent(new UAlbion.Game.Events.AddAmbientLightSpellEvent(m, m));
+        return SpellCastOutcome.Hit;
+    }
+}
+
+/// <summary>
 /// Levitation (Dji-Kantos): lets the party float over pit (no-floor) tiles in 3D maps;
 /// Collider3D exempts them while ActivePartySpells.Levitating is set (cleared on map
 /// change — PLACEHOLDER for the original's active-spell percentage decay).

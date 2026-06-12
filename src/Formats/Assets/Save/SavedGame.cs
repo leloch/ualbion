@@ -108,6 +108,30 @@ public class SavedGame
         return true;
     }
 
+    /// <summary>The Light spell's ambient entry percent (ActiveSpells[0..1]), gated on remaining hours.</summary>
+    public int GetAmbientLightPct() => ActiveSpells[0] != 0 ? ActiveSpells[1] : 0;
+
+    /// <summary>
+    /// Merge a Light cast into the ambient entry (RE 5C fcn.0006085d → fcn.00060898):
+    /// empty → {hours, pct}; active → hours += h, pct = max(pct, p) — unlike member
+    /// entries, the ambient entry ACCUMULATES duration on re-cast.
+    /// </summary>
+    public void AddAmbientLight(ushort hours, ushort pct)
+    {
+        if (hours == 0)
+            return;
+        if (ActiveSpells[0] == 0)
+        {
+            ActiveSpells[0] = hours;
+            ActiveSpells[1] = pct;
+        }
+        else
+        {
+            ActiveSpells[0] = (ushort)Math.Min(ushort.MaxValue, ActiveSpells[0] + hours);
+            ActiveSpells[1] = Math.Max(ActiveSpells[1], pct);
+        }
+    }
+
     /// <summary>
     /// Hourly decay (fcn.000605ed → fcn.00060670, run from the game-hour tick): every
     /// entry's hour count decrements; the percent zeroes at expiry. Covers the ambient

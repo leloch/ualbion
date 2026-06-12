@@ -84,6 +84,8 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
 
     public int GetActiveSpellPct(PartyMemberId member, int type)
         => _game?.GetActiveSpellPct(PartySlotOf(member), type) ?? 0;
+
+    public int AmbientLightSpellPct => _game?.GetAmbientLightPct() ?? 0;
     public bool IsEventUsed(AssetId eventSetId, ActionEvent action) => _game.IsEventUsed(eventSetId, action);
 
     public MapId MapId => _game.MapId;
@@ -121,6 +123,12 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         {
             // Write-once while empty (fcn.000607da) — re-casts on an active entry do nothing.
             _game?.TryAddActiveSpell(PartySlotOf(e.MemberId), e.EntryType, e.Hours, e.Percent);
+        });
+        On<AddAmbientLightSpellEvent>(e =>
+        {
+            // The Light spell's ambient entry ACCUMULATES (fcn.0006085d).
+            _game?.AddAmbientLight(e.Hours, e.Percent);
+            Raise(new DungeonLightChangedEvent());
         });
         On<SetSpecialItemActiveEvent>(ActivateItem);
         On<EventChainOffEvent>(e => _game.SetChainDisabled(e.Map, e.ChainNumber, SetFlag(e.Operation, _game.IsChainDisabled(e.Map, e.ChainNumber))));
@@ -510,11 +518,10 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             }
         }
 
+        // Recovery is applied BEFORE the clock advance (RE 5C: the executor heals first,
+        // then fcn.000439b3 ticks the hours — poison etc drain from the healed totals).
         // NOTE: handler methods are called directly rather than Raise() — the exchange
         // skips a sender's own subscriptions, and GameState owns all of them.
-        OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)hours));
-        _game.HoursSinceResting = 0;
-
         foreach (var member in _party.StatusBarOrder)
         {
             if (member == null) continue;
@@ -542,6 +549,9 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             if (spGain > 0)
                 OnDataChange(new DataChangeEvent(target, ChangeProperty.Mana, NumericOperation.AddAmount, (ushort)Math.Min(ushort.MaxValue, spGain)));
         }
+
+        OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)hours));
+        _game.HoursSinceResting = 0;
 
         Info($"The party rests for {hours} hours.");
     }

@@ -54,11 +54,11 @@ public static class DjiKasSpells
         // a hit that meets/exceeds current LP kills (the mushroom transform — the kill
         // falls out of the damage path naturally; transform visual not modelled).
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Fungification, k: 120));
-        // Light raises the dungeon ambient level (ETM uAmbient → fragment shader multiply).
-        // PLACEHOLDER: +50 percent-points and no duration decay (the original tracks Light
-        // as an active spell percentage in SavedGame.ActiveSpells[0..1]).
-        SpellEffectRegistry.Register(new EventSpellEffect(Base.Spell.Light,
-            () => new UAlbion.Game.Events.AmbientLightEvent(50)));
+        // Light (RE 5C, handler 0x64359): merges {hours = M, pct = M} into the ambient
+        // active-spell entry — re-casts ACCUMULATE duration and take the max percent;
+        // the entry decays hourly and the dungeon light formula reads it
+        // (min(100, max(spellPct, lightItems)) + Iskai bonus).
+        SpellEffectRegistry.Register(new LightSpellEffect(Base.Spell.Light));
         SpellEffectRegistry.Register(new ViewOfLifeEffect(Base.Spell.ViewOfLife)); // monster LP shown on the combat grid for the battle
     }
 }

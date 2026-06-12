@@ -95,14 +95,19 @@ public class InventoryLockPane : UiElement
 
     bool CanPick(IPlayer player)
     {
-        var skill = player.Effective.Skills.LockPicking;
-        if (skill.Current == 0)
+        // RE 5C (door.c, button cb 0x5ab33): effective Lockpicking >= difficulty →
+        // automatic success; else PercentRoll(skill·(100−difficulty)/100, 100) — i.e.
+        // rand()%100 <= chance. Difficulty >= 100 is rejected before this. Untrapped
+        // locks allow unlimited free retries (msg 538); a trapped lock rolls the
+        // leader's Dexterity to evade on failure (handled by the chest's trap chain).
+        int skill = player.Effective.Skills.LockPicking.Current;
+        if (skill <= 0)
             return false;
+        if (skill >= _lockEvent.PickDifficulty)
+            return true;
 
-        // TODO: Determine the actual probabilities the game uses.
-        var baseChance = (100.0f - _lockEvent.PickDifficulty) / 100.0f;
-        var adjusted = baseChance * skill.Current;
-        return RaiseQuery(new QueryRandomChanceEvent((ushort)adjusted, QueryOperation.GreaterThan, 0));
+        int chance = skill * (100 - _lockEvent.PickDifficulty) / 100;
+        return RaiseQuery(new QueryRandomChanceEvent((ushort)(chance + 1), QueryOperation.GreaterThan, 0));
     }
 
     void PickLock()

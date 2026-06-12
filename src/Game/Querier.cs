@@ -83,11 +83,60 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
         OnQuery<QueryNpcXEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().Npcs[q.Immediate].X, q.Argument));
         OnQuery<QueryNpcYEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().Npcs[q.Immediate].Y, q.Argument));
 
-        // TODO
-        OnQuery<QueryUnkCEvent, bool>(_ => false);
-        OnQuery<QueryUnk19Event, bool>(_ => false);
-        OnQuery<QueryUnk1EEvent, bool>(_ => false);
-        OnQuery<QueryUnk21Event, bool>(_ => false);
+        // The four formerly-unknown opcodes, RE batch 5C (dispatcher table 0x3ca53):
+
+        // 0x0C = FACING: imm 0xFF → the party's facing quadrant (camera yaw, 0..3);
+        // else NPC #imm's facing. Compared with the usual comparator.
+        OnQuery<QueryUnkCEvent, bool>(q =>
+        {
+            var state = Resolve<IGameState>();
+            int facing;
+            if (q.Immediate == 0xFF)
+            {
+                facing = PartyFacingQuadrant();
+            }
+            else
+            {
+                var npc = q.Immediate < state.Npcs.Count ? state.Npcs[q.Immediate] : null;
+                if (npc == null)
+                    return false;
+                facing = npc.Angle / 64 & 3; // 256-step angle → quadrant (INFERRED mapping)
+            }
+            return FormatUtil.Compare(q.Operation, facing, q.Argument);
+        });
+
+        // 0x19 = LEADER SPEAKS LANGUAGE: leaderSheet[+8] & (1 << arg); op/imm ignored.
+        OnQuery<QueryUnk19Event, bool>(q =>
+        {
+            var langs = Resolve<IGameState>().Leader?.Languages ?? 0;
+            return ((int)langs & (1 << q.Argument)) != 0;
+        });
+
+        // 0x1E = TIME-OF-DAY SCHEDULE TICK: Compare(tickOfDay % 1152, op, arg) — the
+        // same 48-per-hour M-tick the NPC waypoint tables use.
+        OnQuery<QueryUnk1EEvent, bool>(q =>
+            FormatUtil.Compare(q.Operation, Resolve<IGameState>().MTicksToday, q.Argument));
+
+        // 0x21 = "IS IT LIGHT ENOUGH": true unless the map uses dungeon lighting (map
+        // flags & 3 == 1) and the effective light (max(Light-spell pct, party light-item
+        // total), cap 100) is below 25. Operands ignored by the original.
+        OnQuery<QueryUnk21Event, bool>(_ => Magic.DungeonLighting.IsLightEnough(
+            Resolve<IGameState>(),
+            Resolve<IParty>(),
+            TryResolve<IMapManager>()?.Current?.MapData,
+            Resolve<IAssetManager>()));
+    }
+
+    /// <summary>Camera yaw → facing quadrant 0..3 (the original's 0x153b38 word).</summary>
+    int PartyFacingQuadrant()
+    {
+        var camera = TryResolve<UAlbion.Core.Visual.ICameraProvider>()?.Camera;
+        if (camera == null)
+            return 0;
+        var look = camera.LookDirection;
+        double angle = System.Math.Atan2(look.X, -look.Z);
+        int quadrant = (int)System.Math.Round(angle / (System.Math.PI / 2), System.MidpointRounding.AwayFromZero);
+        return (quadrant % 4 + 4) % 4;
     }
 #pragma warning restore CA1506 // '.ctor' is coupled with '66' different types from '15' different namespaces. Rewrite or refactor the code to decrease its class coupling below '41'.
 
