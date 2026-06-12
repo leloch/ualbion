@@ -31,6 +31,7 @@ public class Conversation : GameComponent
     ConversationTextWindow _textWindow;
     ConversationTopicWindow _topicsWindow;
     ConversationOptionsWindow _optionsWindow;
+    ConversationItemWindow _itemWindow;
     bool _done;
 
     public Conversation(PartyMemberId partyMemberId, ICharacterSheet npc)
@@ -60,6 +61,7 @@ public class Conversation : GameComponent
         _textWindow = dialogs.AddDialog(depth => new ConversationTextWindow(depth));
         _optionsWindow = dialogs.AddDialog(depth => new ConversationOptionsWindow(depth) { IsActive = false });
         _topicsWindow = dialogs.AddDialog(depth => new ConversationTopicWindow(depth) { IsActive = false });
+        _itemWindow = dialogs.AddDialog(depth => new ConversationItemWindow(depth) { IsActive = false });
     }
 
     (IText, BlockId?, BlockId)[] BuildStandardOptions() =>
@@ -130,9 +132,46 @@ public class Conversation : GameComponent
                 }
 
             case BlockId.QueryItem:
-                _textWindow.Show(new LiteralText("TODO"), null);
-                await _textWindow.Closed();
-                break;
+                {
+                    // "What do you know about this item?" — pick an item from the talking
+                    // member's inventory, then fire the NPC's AskAboutItem action chain.
+                    // Without a matching chain the NPC gives the standard brush-off.
+                    var game = TryResolve<IGameState>();
+                    var sheet = game?.GetSheet(_partyMemberId.ToSheet()) ?? Assets.LoadSheet(_partyMemberId.ToSheet());
+
+                    var seen = new HashSet<ItemId>();
+                    var items = new List<(ItemId, IText)>();
+                    foreach (var slot in sheet.Inventory.EnumerateAll())
+                    {
+                        if (slot.Item.IsNone || slot.Item.Type != AssetType.Item || !seen.Add(slot.Item))
+                            continue;
+                        var item = Assets.LoadItem(slot.Item);
+                        if (item == null)
+                            continue;
+                        items.Add((slot.Item, _tf.NoWrap().Format(item.Name)));
+                    }
+
+                    _itemWindow.IsActive = true;
+                    var itemId = await _itemWindow.GetItem(items);
+                    if (itemId.IsNone)
+                        break;
+
+                    // AskAboutItem chains key on (block = item class, 255 = any class) +
+                    // the item id — try the item's own class first, then the wildcard.
+                    var pickedItem = Assets.LoadItem(itemId);
+                    byte itemClass = (byte)(pickedItem?.TypeId ?? 0);
+                    bool handled = await TriggerAction(ActionType.AskAboutItem, itemClass, itemId)
+                                || await TriggerAction(ActionType.AskAboutItem, 255, itemId)
+                                || await TriggerAction(ActionType.AskAboutItem, 0, itemId);
+
+                    if (!handled)
+                    {
+                        var text = _tf.Ink(Base.Ink.Yellow).Format(Base.SystemText.Dialog_ImNotInterestedInThisItem);
+                        _textWindow.Show(text, BlockId.MainText);
+                        await _textWindow.Closed();
+                    }
+                    break;
+                }
 
             case BlockId.Farewell:
                 {
