@@ -311,17 +311,23 @@ public class Npc2D : Component
         if (_state.X != _targetX || _state.Y != _targetY)
             return;
 
-        // PLACEHOLDER give-up distance for MONSTERS — 16 tiles Manhattan radius, so
-        // wandering encounters don't follow the party across an entire 100×100 map.
-        // Scripted human chasers (intro fetch sequences etc) pursue without limit.
-        const int GiveUpRadius = 16;
-        int dx = System.Math.Abs((int)pos.X - _state.X);
-        int dy = System.Math.Abs((int)pos.Y - _state.Y);
-        if (_state.Id.Type == AssetType.MonsterGroup && dx + dy > GiveUpRadius)
+        // Detection range, RE 5D (fcn.00041fbb): on 2D dungeon/wilderness maps a chaser
+        // loses the party beyond round(sqrt(dx²+dy²)) > 10 tiles — 10 EUCLIDEAN; on
+        // city/interior maps (RestMode 0/3) detection is unlimited. Scripted human
+        // chasers (intro fetch sequences etc) always pursue.
+        int dx = (int)pos.X - _state.X;
+        int dy = (int)pos.Y - _state.Y;
+        if (_state.Id.Type == AssetType.MonsterGroup)
         {
-            // Out of range — stop where we are rather than oscillating toward the party.
-            SetTarget(_state.X, _state.Y);
-            return;
+            var restMode = TryResolve<IMapManager>()?.Current?.MapData?.RestMode;
+            bool limited = restMode is UAlbion.Formats.Assets.Maps.RestMode.RestEightHours
+                                    or UAlbion.Formats.Assets.Maps.RestMode.RestUntilDawn;
+            if (limited && Math.Round(Math.Sqrt(dx * dx + dy * dy)) > 10)
+            {
+                // Lost the party — stop where we are (the original drops to wander).
+                SetTarget(_state.X, _state.Y);
+                return;
+            }
         }
 
         SetTarget((int)pos.X, (int)pos.Y);

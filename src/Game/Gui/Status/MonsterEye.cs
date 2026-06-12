@@ -9,7 +9,11 @@ namespace UAlbion.Game.Gui.Status;
 
 public class MonsterEye : Dialog
 {
-    const float ProximityThresholdTilesSquared = 16 * 16; // TODO: Find out what this is in the original
+    // RE 5D: the eye is BINARY — open iff any ChaseParty monster NPC currently DETECTS
+    // the party (the same predicate as the chase logic: 10-tile Euclidean on 2D
+    // dungeon/wilderness maps, line-of-sight on 3D — approximated here by the 10-tile
+    // radius; the global is the original's 0x15cc5a, which also gates Rest).
+    const float DetectRadiusSquared = 10 * 10;
     static readonly (int, int) Position = (5, 40);
     static readonly (int, int) Size = (32, 27);
     readonly UiSpriteElement _sprite;
@@ -32,20 +36,25 @@ public class MonsterEye : Dialog
 
         var state = Resolve<IGameState>();
         var pos = state.Party.Leader.GetPosition();
-        bool proximity = false;
-        foreach(var npc in state.Npcs)
+        bool detected = false;
+        for (int i = 0; i < state.Npcs.Count; i++)
         {
-            if (npc == null)
+            var npc = state.Npcs[i];
+            if (npc == null || npc.Id.Type != AssetType.MonsterGroup)
+                continue;
+            if (npc.MovementType != UAlbion.Formats.Assets.Maps.NpcMovement.ChaseParty)
+                continue;
+            if (state.IsNpcDisabled(UAlbion.Formats.Ids.MapId.None, (byte)i))
                 continue;
 
             var dist = (new Vector2(pos.X, pos.Y) - new Vector2(npc.X, npc.Y)).LengthSquared();
-            if (dist < ProximityThresholdTilesSquared)
+            if (dist <= DetectRadiusSquared)
             {
-                proximity = true;
+                detected = true;
                 break;
             }
         }
 
-        _sprite.Id = proximity ? Base.CoreGfx.MonsterEyeOn : Base.CoreGfx.MonsterEyeOff;
+        _sprite.Id = detected ? Base.CoreGfx.MonsterEyeOn : Base.CoreGfx.MonsterEyeOff;
     }
 }

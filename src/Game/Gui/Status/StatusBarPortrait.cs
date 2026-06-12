@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -86,7 +86,7 @@ public class StatusBarPortrait : UiElement
         {
             options.Add(new ContextMenuOption(
                 S(Base.SystemText.PartyPopup_MakeLeader),
-                new SetPartyLeaderEvent(member.Id, 3, 0), // TODO: what do unk2/3 do?
+                new SetPartyLeaderEvent(member.Id, 3, 0), // unk2/3 are engine-ignored (RE 5D: handler reads only the member id)
                 ContextMenuGroup.Actions));
         }
 
@@ -195,7 +195,7 @@ public class StatusBarPortrait : UiElement
 
         var memberId = PartyMember?.Id;
         if (memberId.HasValue)
-            Raise(new SetPartyLeaderEvent(memberId.Value, 3, 0)); // TODO: Proper values for unk2/3
+            Raise(new SetPartyLeaderEvent(memberId.Value, 3, 0)); // unk2/3 are engine-ignored (RE 5D)
     }
 
     void Hover(HoverEvent e)

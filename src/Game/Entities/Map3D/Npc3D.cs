@@ -18,9 +18,11 @@ namespace UAlbion.Game.Entities.Map3D;
 /// </summary>
 public class Npc3D : GameComponent
 {
-    // PLACEHOLDER: walk speed in tiles per FastClock tick. The original engine's 3D NPC
-    // step rate isn't RE'd yet; 0.06 ≈ a bit slower than the party so towns feel calm.
-    const float TilesPerTick = 0.06f;
+    // 3D NPC walk speed, RE 5D (fcn.0004166c): step = Speed(30) × Δt ÷ 5 world units
+    // per logic frame ≈ 360 units/s at the original's 20 Hz logic rate — about 0.7
+    // tiles/s on the standard 512-unit tiles (the party moves ~5.6× faster). At the
+    // remake's ~8 FastClock ticks/s that is ≈ 0.0875 tiles per tick.
+    const float TilesPerTick = 0.0875f;
 
     readonly NpcState _state;
     readonly MapNpc _mapData;
@@ -111,7 +113,7 @@ public class Npc3D : GameComponent
                         (UAlbion.Formats.Ids.MonsterGroupId)_state.Id,
                         UAlbion.Formats.Ids.CombatBackgroundId.None));
                 }
-                else if (dx + dy <= 16) // PLACEHOLDER give-up radius, same as Npc2D
+                else if (HasLineOfSight(px, py)) // 3D detection = Bresenham LOS, no distance cap (RE 5D fcn.00041c3c)
                 {
                     // Step one tile toward the party, axis-major, respecting walls.
                     int nx = _state.X + Math.Sign(px - _state.X);
@@ -176,6 +178,36 @@ public class Npc3D : GameComponent
     }
 
     bool AtTarget => (new Vector2(_targetX, _targetY) - _position).Length() <= 0.01f;
+
+    /// <summary>
+    /// 3D chase detection (RE 5D, fcn.00041c3c): a Bresenham line from the NPC to the
+    /// party with NO distance cap; any sight-blocking wall (the automap's BlocksSight
+    /// flag — wall Properties bit 0x04, queried via the collision manager as a proxy)
+    /// breaks detection. On loss the original drops to wandering.
+    /// </summary>
+    bool HasLineOfSight(int px, int py)
+    {
+        var detector = TryResolve<ICollisionManager>();
+        if (detector == null)
+            return true;
+
+        int x0 = _state.X, y0 = _state.Y, x1 = px, y1 = py;
+        int dx = Math.Abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+        int dy = -Math.Abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        int guard = 0;
+        while ((x0 != x1 || y0 != y1) && guard++ < 256)
+        {
+            int e2 = 2 * err;
+            int nx = x0, ny = y0;
+            if (e2 >= dy) { err += dy; nx += sx; }
+            if (e2 <= dx) { err += dx; ny += sy; }
+            if ((nx != x1 || ny != y1) && detector.IsOccupied(x0, y0, nx, ny))
+                return false; // wall in the way
+            x0 = nx; y0 = ny;
+        }
+        return true;
+    }
 
     (int X, int Y) GetWaypointTarget()
     {

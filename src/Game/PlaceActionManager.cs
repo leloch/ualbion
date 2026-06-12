@@ -81,6 +81,14 @@ public class PlaceActionManager : GameComponent
         var textSet = context?.EventSet?.StringSetId ?? StringSetId.None;
         _pendingSuccessText = e.Unk4 != 0 && !textSet.IsNone ? new StringId(textSet, e.Unk4) : null;
 
+        // Unk2 = intro/greeting text shown when the service starts (RE 5D: every
+        // handler does `if (Unk2 != 0xFF) ShowDialog(text[Unk2])`).
+        if (e.Unk2 != 0xFF && e.Unk2 != 0 && !textSet.IsNone)
+        {
+            var tfIntro = Resolve<ITextFormatter>();
+            Raise(new DescriptionTextEvent(tfIntro.Format(new StringId(textSet, e.Unk2))));
+        }
+
         if (e.Unk3 != 0 && !textSet.IsNone)
         {
             bool confirmed = await RaiseQueryA(new YesNoPromptEvent(new StringId(textSet, e.Unk3)));
