@@ -36,7 +36,9 @@ public static class DjiKantosSpells
         SpellEffectRegistry.Register(new EventSpellEffect(Base.Spell.MapView,
             () => new UAlbion.Game.Entities.Map3D.RevealAutomapEvent(),
             () => new UAlbion.Game.Entities.Map3D.ShowAutomapEvent()));
-        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Teleporter, "open the teleporter destination picker (needs the Goto-marker map list UI)"));
+        // Teleporter: destination picker over the current 3D map's automap markers.
+        SpellEffectRegistry.Register(new EventSpellEffect(Base.Spell.Teleporter,
+            () => new UAlbion.Game.Events.ShowTeleporterMenuEvent()));
         // Levitation: the party floats over pit (no-floor) tiles until the map changes.
         SpellEffectRegistry.Register(new LevitationEffect(Base.Spell.Levitation));
     }
