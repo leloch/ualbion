@@ -13,6 +13,7 @@ public class Video : GameComponent
 {
     readonly VideoId _id;
     readonly bool _looping;
+    readonly Vector2? _uiPosition;
     Sprite _sprite;
     FlicPlayer _player;
     SimpleTexture<byte> _texture;
@@ -21,10 +22,17 @@ public class Video : GameComponent
 
     event Action Complete;
 
-    public Video(VideoId id, bool looping)
+    /// <summary>Fires every time the animation wraps back to frame 0 (looping videos).</summary>
+    public event Action CycleCompleted;
+
+    /// <param name="uiPosition">When set, the video renders at this UI-pixel position
+    /// (360×240 space) at its native size instead of fullscreen — used by the script
+    /// `start_anim` overlays (e.g. the intro cockpit window animations).</param>
+    public Video(VideoId id, bool looping, Vector2? uiPosition = null)
     {
         _id = id;
         _looping = looping;
+        _uiPosition = uiPosition;
         On<IdleClockEvent>(OnIdleClock);
     }
 
@@ -42,8 +50,9 @@ public class Video : GameComponent
         else
         {
             _player.NextFrame();
+            if (_player.Frame == 0)
+                CycleCompleted?.Invoke();
             Raise(_dirtyEvent);
-            Info($"Vid {_id} loaded frame {_player.Frame} / {_player.FrameCount}");
         }
     }
 
@@ -86,7 +95,21 @@ public class Video : GameComponent
             Position = new Vector3(-1, -1, 0),
         });
 
-        _sprite.Size = 2 * Vector2.One;
+        if (_uiPosition is { } uiPos)
+        {
+            // Positioned overlay: UI pixels (360×240 logical space) → NDC.
+            const float UiW = 360f, UiH = 240f;
+            float w = 2 * flic.Width / UiW;
+            float h = 2 * flic.Height / UiH;
+            float x = -1 + 2 * uiPos.X / UiW;
+            float yTop = 1 - 2 * uiPos.Y / UiH; // UI origin is top-left; NDC +Y is up
+            _sprite.Position = new Vector3(x, yTop - h, 0);
+            _sprite.Size = new Vector2(w, h);
+        }
+        else
+        {
+            _sprite.Size = 2 * Vector2.One;
+        }
 
         var oldId = Resolve<IPaletteManager>().Day?.Id;
         if (oldId.HasValue)
