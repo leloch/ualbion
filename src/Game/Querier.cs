@@ -53,11 +53,9 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
             return game.IsEventUsed(context.EventSet.Id, context.LastAction);
         });
 
-        OnQuery<QueryDemoVersionEvent, bool>(_ =>
-        {
-            Error("TODO: Query is demo");
-            return false;
-        });
+        // UAlbion always plays the full game data — never the demo. (The demo build of
+        // the original gated some content behind this query.)
+        OnQuery<QueryDemoVersionEvent, bool>(_ => false);
 
         OnQueryAsync<PromptPlayerEvent, bool>(async q =>
         {
