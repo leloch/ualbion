@@ -108,6 +108,18 @@ public class MonsterData
         ArgumentNullException.ThrowIfNull(other);
 
         CombatGfx = other.CombatGfx;
+        Unk37 = other.Unk37;
+        Unk152 = other.Unk152;
+        WidthPercentage = other.WidthPercentage;
+        HeightPercentage = other.HeightPercentage;
+
+        // Deep-copy the animation lists: EffectiveSheetCalculator builds combat clones
+        // through this method, and the battle view reads Effective.Monster.Animations —
+        // before this was copied every monster appeared frozen on its idle frame.
+        Animations = new Dictionary<CombatAnimationId, int[]>(other.Animations.Count);
+        foreach (var kvp in other.Animations)
+            Animations[kvp.Key] = (int[])kvp.Value?.Clone();
+
         return this;
     }
 }
