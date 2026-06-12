@@ -181,6 +181,7 @@ static class Albion
             new VeldridGameFactory(LoadMesh),
             new MeshManager(LoadMesh),
             new GameState(),
+            new Autosaver(),
             new GameClock(),
             new IdleClock(),
             new SlowClock(),

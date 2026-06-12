@@ -116,7 +116,19 @@ public class Battle : GameComponent, IReadOnlyBattle
         foreach (var (attacker, isParty) in OrderByInitiative(partyAlive, mobsAlive))
         {
             if (LifePoints(attacker) <= 0) continue; // killed earlier this round
-            if (!CanAct(attacker)) continue;
+            if (!CanAct(attacker))
+            {
+                // The original announces why the turn is lost (SYSTEXTS 762..773 via
+                // fcn.000363c2) — show the line and give the player a beat to read it.
+                var conds = attacker?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
+                var message = ConditionMessage(conds);
+                if (message != null)
+                {
+                    ShowCombatMessage(message.Value, attacker);
+                    await RaiseA(new WallClockTimerEvent(TurnDelaySeconds));
+                }
+                continue;
+            }
 
             // Playback: highlight whose turn it is, give the player a beat to register it,
             // resolve the action (which raises CombatHitEvents), then pause on the result.
@@ -162,6 +174,36 @@ public class Battle : GameComponent, IReadOnlyBattle
     }
 
     int TileOf(ICombatParticipant p) => p == null ? -1 : Array.IndexOf(_tiles, p);
+
+    /// <summary>
+    /// Show a combat system message in the status/description area. The original engine's
+    /// ShowSystemMessage (fcn.0002f85d) prints SYSTEXTS entries during combat — 443/444/445
+    /// for movement, 762..773 for per-condition turn messages (fcn.000363c2 emits
+    /// 762 + conditionIndex). "{NAME}" texts take the combatant's display name.
+    /// </summary>
+    void ShowCombatMessage(Base.SystemText text, ICombatParticipant subject = null)
+    {
+        var tf = TryResolve<Text.ITextFormatter>();
+        if (tf == null)
+            return;
+        var name = subject?.Effective?.GetName(ReadVar(V.User.Gameplay.Language));
+        var source = name == null ? tf.Format(text) : tf.Format(text, name);
+        Raise(new DescriptionTextEvent(source));
+    }
+
+    /// <summary>
+    /// The condition message for a combatant whose turn is affected, in the original's
+    /// priority order (SYSTEXTS 762..773). Null when no relevant condition is present.
+    /// </summary>
+    static Base.SystemText? ConditionMessage(UAlbion.Formats.Assets.Sheets.PlayerConditions conds)
+    {
+        if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.Unconscious) != 0) return Base.SystemText.Condition_XIsUnconscious;
+        if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.Paralysed) != 0)   return Base.SystemText.Condition_XIsUnableToMove;
+        if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.Asleep) != 0)      return Base.SystemText.Condition_XIsAsleep;
+        if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.Panicking) != 0)   return Base.SystemText.Condition_XIsPanicking;
+        if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.Insane) != 0)      return Base.SystemText.Condition_XHasGoneInsane;
+        return null;
+    }
 
     /// <summary>
     /// Monsters leave the grid when killed (the original plays a death animation then
@@ -287,6 +329,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             int row = attacker.CombatPosition / SavedGame.CombatColumns;
             if (row == SavedGame.CombatRows - 1)
             {
+                ShowCombatMessage(Base.SystemText.CombatMsg_XIsFleeing, attacker); // SYSTEXTS 445
                 var targetId = TryToTarget(attacker);
                 if (targetId != null)
                     Raise(new ChangeStatusEvent(targetId.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Fleeing, NumericOperation.AddAmount, 1));
@@ -373,6 +416,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (_tiles[targetTile] != null && LifePoints(_tiles[targetTile]) > 0)
         {
             Info($"[Combat] {mover.SheetId} can't move to occupied tile {targetTile}");
+            ShowCombatMessage(Base.SystemText.CombatMsg_MoveWasBlocked); // SYSTEXTS 443
             return;
         }
 
@@ -380,6 +424,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (oldTile >= 0)
             _tiles[oldTile] = null;
         _tiles[targetTile] = mover;
+        ShowCombatMessage(Base.SystemText.CombatMsg_XIsMoving, mover); // SYSTEXTS 444
         Info($"[Combat] {mover.SheetId} moves from tile {oldTile} to {targetTile}");
         TraceLog.Emit("combat_move", ("actor", mover.SheetId), ("from", oldTile), ("to", targetTile));
 

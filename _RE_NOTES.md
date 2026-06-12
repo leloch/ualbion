@@ -1,4 +1,4 @@
-﻿# UAlbion - Reverse-Engineering Notes
+# UAlbion - Reverse-Engineering Notes
 
 > Tracks every `Unknown*` / `Unk*` field UAlbion has identified but not yet decoded.
 > Phase 1.1 added a first-pass classification per file location.
@@ -986,3 +986,92 @@ Tile pass (fcn.0005e12c), per tile with TestTile()==1:
 5. Marker gating by the three special-item bits (`[0x13e780]` bits 0/1/2) and the show-all override (`[0x147130]`) is absent from the remake.
 6. Bitfield layout in `Formats/Assets/Automap.cs` already matches the original byte-for-byte â€” no change needed there.
 
+
+## Sound id space (RE'd 2026-06-12)
+
+**Headline: there is no sound-id → sample mapping above 299, because the "PlaySample" ids 443/444/445 and 762-773 are not sound ids at all.** The function previously identified as PlaySample (fcn.0002f85d) is actually **ShowSystemMessage**: it posts a SYSTEXTS string to the combat/system message UI control. Sample ids genuinely stop at 299 (SAMPLES0-2.XLD); nothing maps 400+ to wavelib entries. CONFIRMED end-to-end.
+
+### The 0x15d824 table is the SYSTEXTS string table — CONFIRMED
+
+`fcn.00043c51` (init, called from fcn.00010bd7 @ 0x10cd1):
+
+```
+buf = LoadResource(0x13)            # fcn.000230e3(eax=0x13), handle → [0x15e514]
+len = ResourceSize(buf)             # fcn.0008b739
+ptr = Lock(buf)                     # fcn.0008ba38
+ParseTexts(ptr, len, 0x15d824, 800) # fcn.00043dd4: eax=buf, edx=len, ebx=table, ecx=count
+Unlock(buf)                         # fcn.0008b808
+```
+
+Resource id 0x13 (19) indexes the global file table (entry = `0x135a62 + id*0x14`, filename = `0x1351c5 + id*13`, description = `0x135442 + id*32`): id 19 → filename **"SYSTEXTS"** (0x1352bc), description **"System texts"** (0x1356a2). Path is built as `XLDLIBS\<language-dir>\SYSTEXTS` (flags byte at entry+0x13: bit0 → language subdir from `[0x134580]`, bit1 → `CURRENT`, else plain `XLDLIBS`). CONFIRMED.
+
+`fcn.00043dd4` (table fill) — parses the raw SYSTEXTS text:
+
+```
+ParseTexts(char* buf, int len, char** tab, int count):   # count = 0x320 = 800
+    buf[len-1] = 0
+    for i in 0..count-1: tab[i] = NULL
+    p = buf
+    while (p = strchr(p, '[')):                # fcn.000950e3, edx=0x5b
+        p++
+        digits = strncpy("0000", p, 4)         # template @ 0x43c48, fcn.00092bf2
+        id = strtol(digits, base 10)           # fcn.000978b3
+        p += 5                                 # skip "NNNN:"
+        if id < count:
+            if tab[id] != NULL: Error(3)       # duplicate id → fcn.00045d0c
+            else: tab[id] = p                  # pointer to text after the colon
+        p = strchr(p, ']'); if !p: break
+        *p = 0; p++                            # terminate string in place
+    for i in 0..count-1:
+        if tab[i] == NULL: tab[i] = "NOT DEFINED"   # str @ 0x13dd28
+```
+
+So `[0x15d824 + id*4]` = pointer to SYSTEXTS entry `id` (format `[NNNN:text]`, ids 0-799). It is indexed straight by text id; no XLD/wavelib involvement whatsoever.
+
+### fcn.0002f85d = ShowSystemMessage(textId) — CONFIRMED
+
+```
+ShowSystemMessage(id):                          # fcn.0002f85d
+    if ControlExists([0x1530ea]):               # fcn.00074c4c
+        SendMessage([0x1530ea], msg=0x16, param=systexts[id])   # fcn.000747ad
+```
+
+`fcn.000747ad` is the generic control message dispatcher (`g:\albion\src\ui\control.c`): looks up the control object (fcn.00074bda), walks its 6-byte `{word msgId, dword handler}` table at `[[obj+0x16]+4]` and calls the matching handler. The message-window control id is stored at 0x1530ea (created @ 0x2d37f via fcn.0007410a, descriptor 0x13d632; handler table @ 0x13d614: msg 0x01→0x2f509, 0x12→0x2f589, 0x13→0x2f695, **0x16→0x2f737**). The msg-0x16 handler (0x2f737) strcpy's the string into the control's text buffer (+0x26) and wakes the display task — pure text output (honours the "Combat text delay" option, SYSTEXTS 0416).
+
+### Concrete answers — CONFIRMED against XLDLIBS\ENGLISH\SYSTEXTS
+
+Combat movement phase (calls @ 0x4e70f/0x4e78d with eax=0x1bc, @ 0x4e788→ eax=0x1bb, @ 0x4e81b→ eax=0x1bc):
+
+| id | SYSTEXTS entry |
+|---|---|
+| 443 | `{INK 006}Move was blocked!` |
+| 444 | `{COMB}{NAME} is moving.` |
+| 445 | `{COMB}{NAME} is fleeing!` |
+
+Condition cues: `fcn.000363c2` takes a condition index 0-11 plus a per-condition suppression bitmask, and calls `ShowSystemMessage(762 + conditionIndex)` (add eax, 0x2fa @ 0x3643b):
+
+| id | condition message |
+|---|---|
+| 762 | `{INK 006}{SUBJ}{NAME} is unconscious!` |
+| 763 | `{INK 006}{SUBJ}{NAME} has been poisoned!` |
+| 764 | `{INK 006}{SUBJ}{NAME} is ill!` |
+| 765 | `{INK 006}{SUBJ}{NAME} is exhausted!` |
+| 766 | `{INK 006}{SUBJ}{NAME} is unable to move!` (paralysed) |
+| 767 | `{INK 006}{SUBJ}{NAME} has fled!` |
+| 768 | `{INK 006}{SUBJ}{NAME} is intoxicated!` |
+| 769 | `{INK 006}{SUBJ}{NAME} has been blinded!` |
+| 770 | `{INK 006}{SUBJ}{NAME} is panicking!` |
+| 771 | `{INK 006}{SUBJ}{NAME} is asleep!` |
+| 772 | `{INK 006}{SUBJ}{NAME} has gone insane!` |
+| 773 | `{INK 006}{SUBJ}{NAME} is irritated!` |
+
+(Other 0x2fa hits at 0x849f2/0xc87b9 are unrelated data, not `add eax, 0x2fa` call sites — only fcn.000363c2 uses the 762 base. INFERRED that it is the sole condition-cue emitter; CONFIRMED for the formula itself.)
+
+### Wavelib note
+
+For actual audio: SAMPLES0.XLD is file-table id 30, WAVELIB0.XLD id 31 (filenames @ 0x13534b / 0x135358). Sample playback goes through the AIL 3.0 driver API (AIL_allocate_sample_handle etc., strings @ 0x132f69+). Since ids 300+ turned out to be text, the remake's existing 0-299 sample space already covers everything `PlaySample`-like; WAVELIB entries are addressed separately (per-monster combat wave libs), not via a global 800-entry id space.
+
+### Remake implications
+
+- Any UAlbion mapping that treats 443/444/445 or 762-773 as `SampleId`s should instead use `Base.SystemText` ids: 443=MoveBlocked, 444=IsMoving, 445=IsFleeing, 762-773=per-condition status lines (order: unconscious, poisoned, ill, exhausted, paralysed, fled, intoxicated, blinded, panicking, asleep, insane, irritated).
+- The 800-entry limit (0x320) is the engine's SYSTEXTS table size, not a sound table size.
