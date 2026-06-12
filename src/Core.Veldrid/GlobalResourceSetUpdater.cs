@@ -18,8 +18,21 @@ public class GlobalResourceSetUpdater : Component
     void UpdatePerFrameResources()
     {
         var clock = TryResolve<IClock>();
-        var textureSource = Resolve<ITextureSource>();
-        var paletteManager = Resolve<IPaletteManager>();
+        var textureSource = TryResolve<ITextureSource>();
+        if (textureSource == null)
+            return;
+
+        // Startup race: the first frames can render before the palette manager attaches
+        // (especially when -c "load_game N" loads a map during boot). GlobalSet.Build
+        // dereferences its texture holders, so seed dummies rather than leaving nulls.
+        var paletteManager = TryResolve<IPaletteManager>();
+        if (paletteManager?.Day == null)
+        {
+            _globalSet.DayPalette ??= textureSource.GetDummySimpleTexture();
+            _globalSet.NightPalette ??= textureSource.GetDummySimpleTexture();
+            return;
+        }
+
         var engineFlags = ReadVar(V.Core.User.EngineFlags);
 
         var dayPalette = textureSource.GetSimpleTexture(paletteManager.Day.Texture);

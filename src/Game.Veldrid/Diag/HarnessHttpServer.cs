@@ -157,6 +157,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /labyrinth":       WriteJson(ctx, BuildLabyrinthDump()); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
+            case "GET /npcs":            WriteJson(ctx, BuildNpcsDump()); break;
             case "GET /wallpixels":      HandlePixelDump(ctx, useWalls: true); break;
             case "GET /floorpixels":     HandlePixelDump(ctx, useWalls: false); break;
             case "GET /gpuwallpixels":   WriteGpuLayerPng(ctx, useWalls: true); break;
@@ -607,6 +608,31 @@ public sealed class HarnessHttpServer : Component, IDisposable
         sb.Append($"\"distinctColors\":{allColors.Count}");
 
         sb.Append('}');
+        return sb.ToString();
+    }
+
+    string BuildNpcsDump()
+    {
+        var state = TryResolve<IGameState>();
+        if (state?.Loaded != true) return "{\"npcs\":[]}";
+
+        var sb = new StringBuilder();
+        sb.Append("{\"mticks\":").Append(state.MTicksToday).Append(",\"npcs\":[");
+        bool first = true;
+        for (int i = 0; i < state.Npcs.Count; i++)
+        {
+            var npc = state.Npcs[i];
+            if (npc == null || npc.Id.IsNone) continue;
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append('{');
+            sb.Append($"\"n\":{i},");
+            sb.Append($"\"id\":{JsonString(npc.Id.ToString())},");
+            sb.Append($"\"x\":{npc.X},\"y\":{npc.Y},");
+            sb.Append($"\"movement\":{JsonString(npc.MovementType.ToString())}");
+            sb.Append('}');
+        }
+        sb.Append("]}");
         return sb.ToString();
     }
 
