@@ -149,12 +149,12 @@ public class Movement3D : Component
         int fromY = (int)MathF.Floor(leaderPos.Z);
 
         // Predict next tile from the leader's facing direction. The math must match exactly
-        // what CameraMotion3D does: world delta = Vector3.Transform((eX, 0, eY), Q(yaw)).
-        // For yaw=0 the transform is identity, so input forward=+1 (Z velocity) moves in +Z
-        // world direction = +tileY. Input strafe=+1 (X velocity) moves +X = +tileX (east).
+        // what CameraMotion3D does: world delta = Vector3.Transform((eX, 0, -eY), Q(yaw)).
+        // The camera looks along -Z at yaw 0, so forward=+1 moves -Z = -tileY; strafe=+1
+        // moves +X = +tileX.
         var camera = TryResolve<UAlbion.Core.Visual.ICamera>();
         float yaw = camera?.Yaw ?? 0f;
-        var localVel = new System.Numerics.Vector3(strafe, 0, forward);
+        var localVel = new System.Numerics.Vector3(strafe, 0, -forward);
         var rotation = System.Numerics.Quaternion.CreateFromYawPitchRoll(yaw, 0f, 0f);
         var worldVel = System.Numerics.Vector3.Transform(localVel, rotation);
         int toX = fromX + (int)MathF.Round(worldVel.X);

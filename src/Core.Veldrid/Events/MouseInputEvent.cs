@@ -13,7 +13,10 @@ public class MouseInputEvent : EngineEvent, IVerboseEvent
     public Vector2 WheelDelta { get; set; }
     public Vector2 MousePosition { get; set; }
     public IReadOnlyList<MouseButtonEvent> MouseEvents { get; set; }
-    public bool IsMouseDown(MouseButton button) => (Snapshot.MouseDown & button) != 0;
+    // Synthetic events (e.g. the HTTP harness's /click/at) have no InputSnapshot — fall
+    // back to the per-event list so they report the button as down on the press event.
+    public bool IsMouseDown(MouseButton button) =>
+        Snapshot != null ? (Snapshot.MouseDown & button) != 0 : CheckMouse(button, true);
     public InputSnapshot Snapshot { get; set; } // Only used for IsMouseDown
 
     public bool CheckMouse(MouseButton button, bool pressed)

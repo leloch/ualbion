@@ -35,7 +35,7 @@ public class DungeonMap : GameComponent, IMap
         _camera = camera ?? throw new ArgumentNullException(nameof(camera));
         _sceneObjects = new($"MapObjects_{mapId}");
 
-        On<WorldCoordinateSelectEvent>(Select);
+        On<TriggerMapTileEvent>(TileTriggered);
         On<MapInitEvent>(_ => FireEventChains(TriggerType.MapInit, true));
         On<SlowClockEvent>(_ => FireEventChains(TriggerType.EveryStep, false));
         On<HourElapsedEvent>(_ => FireEventChains(TriggerType.EveryHour, false));
@@ -94,6 +94,7 @@ public class DungeonMap : GameComponent, IMap
         var selection = new Selection3D();
         _sceneObjects.Add(renderable);
         _sceneObjects.Add(selection);
+        _sceneObjects.Add(new SelectionHandler3D(_logicalMap, TileSize));
 
         AttachChild(new ScriptManager());
         AttachChild(new Collider3D(_logicalMap));
@@ -198,9 +199,15 @@ public class DungeonMap : GameComponent, IMap
         }
     }
 
-    void Select(WorldCoordinateSelectEvent worldCoordinateSelectEvent)
+    void TileTriggered(TriggerMapTileEvent e)
     {
-        // TODO
+        // Raised by SelectionHandler3D's context menu (Examine / Manipulate / Take / TalkTo)
+        var zone = _logicalMap?.GetOffsetZone(e.X, e.Y);
+        if (zone?.Node == null)
+            return;
+
+        var source = new EventSource(_mapData.Id, e.Type, zone.X, zone.Y);
+        Raise(new TriggerChainEvent(_mapData, zone.EventIndex, source));
     }
 
     void FireEventChains(TriggerType type, bool log)
