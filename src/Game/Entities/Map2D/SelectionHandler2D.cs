@@ -150,7 +150,12 @@ public sealed class SelectionHandler2D : GameComponent
             }
         }
 
-        // Check if map allows Rest
+        // PLACEHOLDER: the original gates Rest by map flags ("It's too dangerous here") —
+        // offered unconditionally until the map-flag check is RE'd.
+        options.Add(new ContextMenuOption(
+            S(Base.SystemText.MapPopup_Rest),
+            new RestEvent(),
+            ContextMenuGroup.Actions2));
 
         options.Add(new ContextMenuOption(
             S(Base.SystemText.MapPopup_MainMenu),

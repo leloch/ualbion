@@ -91,6 +91,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyDaysEvent>(OnModifyDays);
         On<ModifyHoursEvent>(OnModifyHours);
         On<ModifyMTicksEvent>(OnModifyMTicks);
+        On<RestEvent>(OnRest);
         On<SetSpecialItemActiveEvent>(ActivateItem);
         On<EventChainOffEvent>(e => _game.SetChainDisabled(e.Map, e.ChainNumber, SetFlag(e.Operation, _game.IsChainDisabled(e.Map, e.ChainNumber))));
         On<ModifyNpcOffEvent>(e => _game.SetNpcDisabled(e.Map, e.NpcNum, SetFlag(e.Operation, _game.IsNpcDisabled(e.Map, e.NpcNum))));
@@ -166,7 +167,9 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
                 break;
             }
             case NumericOperation.AddAmount:
-                for (int i = 0; i < e.Amount; i++) AdvanceTimeInHours(e.Amount * HoursPerDay);
+                // Was `for (i < Amount) AdvanceTimeInHours(Amount * HoursPerDay)` — advanced
+                // Amount² days instead of Amount.
+                AdvanceTimeInHours(e.Amount * HoursPerDay);
                 break;
         }
     }
@@ -182,8 +185,9 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
                 break;
             }
             case NumericOperation.AddAmount:
+                // AdvanceTimeInHours already adds the hours — the extra ElapsedTime add here
+                // doubled every time advance (rest for 8h moved the clock 16h).
                 AdvanceTimeInHours(e.Amount);
-                _game.ElapsedTime += TimeSpan.FromHours(e.Amount);
                 break;
         }
     }
@@ -385,6 +389,39 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             return AlbionTask.CompletedTask;
 
         return InitialiseGame();
+    }
+
+    void OnRest(RestEvent e)
+    {
+        if (_game == null || _party == null)
+            return;
+
+        // NOTE: these route through the handler methods directly rather than Raise() —
+        // the exchange skips a sender's own subscriptions, and GameState owns all of them.
+        OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)e.Hours));
+        _game.HoursSinceResting = 0;
+
+        foreach (var member in _party.StatusBarOrder)
+        {
+            if (member == null) continue;
+            var target = member.Id;
+
+            // Clear exactly the six conditions the original engine's rest-recovery clears
+            // (fcn.0003822d, byte-exact set — Poisoned/Ill/Exhausted/Intoxicated/Blind/
+            // Irritated need explicit cures and are deliberately left alone).
+            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Unconscious, NumericOperation.SetToMinimum));
+            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Paralysed,   NumericOperation.SetToMinimum));
+            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Insane,      NumericOperation.SetToMinimum));
+            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Asleep,      NumericOperation.SetToMinimum));
+            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Panicking,   NumericOperation.SetToMinimum));
+            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Fleeing,     NumericOperation.SetToMinimum));
+
+            // PLACEHOLDER recovery rates pending RE: 2 LP and 1 SP per hour rested.
+            OnDataChange(new DataChangeEvent(target, ChangeProperty.Health, NumericOperation.AddAmount, (ushort)(2 * e.Hours)));
+            OnDataChange(new DataChangeEvent(target, ChangeProperty.Mana,   NumericOperation.AddAmount, (ushort)e.Hours));
+        }
+
+        Info($"The party rests for {e.Hours} hours.");
     }
 
     void SaveGame(ushort id, string name)
