@@ -72,10 +72,20 @@ unknowns (_RE_COMBAT.md "RE batch 4"); everything applied:
   View of Life (monster LP on the grid), Levitation (pit-tile exemption).
 - **Audio fail-soft**: a missing/busy audio device no longer crashes the game.
 
+### Seventh pass (same day) — Teleporter, executor-gate fix, live service sweep
+
+Commit `12046d8c`. Teleporter is real (automap-marker destination picker → same-map
+TeleportEvent; verified live on Jirinaar — party jumped to the Stadttor marker). Rest
+gates corrected: RestMode/hostiles/3-hour checks belong to the map-menu popup, not the
+executor — inn stays no longer refuse while monsters exist on the map. Live service
+sweep on the wounded save-2 party: svc_heal restored Rainer 8→33, Cure cleared
+Mellthas's Poisoned, the inn stay advanced exactly 8 h, healed 50 %+Stamina/15 and woke
+both unconscious members (cure-only conditions untouched).
+
 ### Open items
 - Battle-loot window (break/kill loot lists — fcn.000665ce/0004e124 decoded, UI absent);
   trap/mine/Banish AREA placement ("Big"/row/all variants currently single-target).
-- Teleporter travel UI (the last placeholder spell); shadow LUT palette-snap
+- Teleporter offers ALL markers (original gates by visited); shadow LUT palette-snap
   (50 %-black approximation in place — the original remaps via 0x17d25c tables).
 - World-map mouse pathfinding, key-rebind UI (maintainer wishlist).
 - Automap RENDERING still uses fixed glyphs (original: connection-mask wall glyphs).
