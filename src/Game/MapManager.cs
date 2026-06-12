@@ -23,6 +23,7 @@ public class MapManager : GameServiceComponent<IMapManager>, IMapManager
                 child.IsActive = e.Show ?? true;
         });
 
+        On<DumpMapZonesEvent>(_ => OnDumpMapZones());
         OnAsync<TeleportEvent>(Teleport);
         OnAsync<LoadMapEvent>(async e =>
         {
@@ -35,6 +36,26 @@ public class MapManager : GameServiceComponent<IMapManager>, IMapManager
             await LoadMap(e.MapId);
             Raise(new CameraJumpEvent(0, 0));
         });
+    }
+
+    [Event("dump_map_zones", "Diagnostic: log every event zone on the current map")]
+    public class DumpMapZonesEvent : Event { }
+
+    void OnDumpMapZones()
+    {
+        if (Current?.MapData is not BaseMapData mapData)
+        {
+            Warn("[DumpMapZones] no map loaded");
+            return;
+        }
+
+        for (int i = 0; i < mapData.Width * mapData.Height; i++)
+        {
+            var zone = mapData.GetZone(i);
+            if (zone == null)
+                continue;
+            Info($"[Zone] ({zone.X},{zone.Y}) {zone.Trigger} chain={zone.Chain} node={zone.Node?.Id}: {zone.Node?.Event}");
+        }
     }
 
     async AlbionTask LoadMap(MapId mapId)

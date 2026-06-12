@@ -132,8 +132,15 @@ public class ConversationManager : GameServiceComponent<IConversationManager>, I
         return leader.PortraitId;
     }
 
-    AlbionTask StartDialogueCommon(PartyMemberId left, ICharacterSheet right) =>
-        WithFrozenClock((this, left, right), async static tuple =>
+    AlbionTask StartDialogueCommon(PartyMemberId left, CharacterSheet right)
+    {
+        if (Conversation != null) // Don't allow nested conversations (e.g. a ChaseParty NPC initiating contact-talk while another dialogue is open) - they stack input modes and wedge the UI.
+        {
+            Info($"Ignoring start_dialogue for {right.Id}: a conversation is already active");
+            return AlbionTask.CompletedTask;
+        }
+
+        return WithFrozenClock((this, left, right), async static tuple =>
         {
             var (x, left, right) = tuple;
             x.Conversation = x.AttachChild(new Conversation(left, right));
@@ -141,6 +148,7 @@ public class ConversationManager : GameServiceComponent<IConversationManager>, I
             x.Conversation.Remove();
             x.Conversation = null;
         });
+    }
 
     async AlbionTask StartDialogue(StartDialogueEvent e)
     {
