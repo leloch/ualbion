@@ -32,7 +32,7 @@ public class DebugVisualizerGraphData
             if (node == null)
                 continue;
 
-            data.Nodes.Add(new DebugVisualizerNodeData(i.ToString())
+            data.Nodes.Add(new DebugVisualizerNodeData(i.ToString(System.Globalization.CultureInfo.InvariantCulture))
             {
                 Label = node.ToString()
                 // Color = ...
@@ -43,8 +43,8 @@ public class DebugVisualizerGraphData
         {
             var label = graph.GetEdgeLabel(start, end);
             data.Edges.Add(new DebugVisualizerEdgeData(
-                start.ToString(),
-                end.ToString())
+                start.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                end.ToString(System.Globalization.CultureInfo.InvariantCulture))
             {
                 Label = label switch
                 {

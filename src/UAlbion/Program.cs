@@ -149,7 +149,7 @@ static class Program
         Console.WriteLine("Exiting");
 
         var reflectorManager = exchange.Resolve<ReflectorManager>();
-        reflectorManager.SaveOverrides();
+        reflectorManager?.SaveOverrides(); // Not registered in dump/headless modes
 
         exchange.Dispose();
     }

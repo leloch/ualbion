@@ -9,29 +9,23 @@ namespace UAlbion.Core.Veldrid.Textures;
 
 public static class ImageSharpUtil
 {
+    // Blit into our own contiguous buffer then hand it to ImageSharp via LoadPixelData.
+    // ImageSharp's allocator splits large images (e.g. the big 2D tilesets) into multiple
+    // memory blocks, so DangerousTryGetSinglePixelMemory fails for them.
     public static Image<Rgba32> ToImageSharp(ReadOnlyImageBuffer<byte> from, ReadOnlySpan<uint> palette)
     {
-        Image<Rgba32> image = new Image<Rgba32>(from.Width, from.Height);
-        if (!image.DangerousTryGetSinglePixelMemory(out var rgbaMemory))
-            throw new InvalidOperationException("Could not retrieve single span from Image");
-
-        Span<uint> toBuffer = MemoryMarshal.Cast<Rgba32, uint>(rgbaMemory.Span);
-        var to = new ImageBuffer<uint>(from.Width, from.Height, from.Width, toBuffer);
+        var buffer = new uint[from.Width * from.Height];
+        var to = new ImageBuffer<uint>(from.Width, from.Height, from.Width, buffer);
         BlitUtil.BlitTiled8To32(from, to, palette, 255, 0);
-
-        return image;
+        return Image.LoadPixelData<Rgba32>(MemoryMarshal.Cast<uint, Rgba32>(buffer), from.Width, from.Height);
     }
 
     public static Image<Rgba32> ToImageSharp(ReadOnlyImageBuffer<uint> from)
     {
-        Image<Rgba32> image = new Image<Rgba32>(from.Width, from.Height);
-        if (!image.DangerousTryGetSinglePixelMemory(out var rgbaMemory))
-            throw new InvalidOperationException("Could not retrieve single span from Image");
-
-        Span<uint> toBuffer = MemoryMarshal.Cast<Rgba32, uint>(rgbaMemory.Span);
-        var to = new ImageBuffer<uint>(from.Width, from.Height, from.Width, toBuffer);
+        var buffer = new uint[from.Width * from.Height];
+        var to = new ImageBuffer<uint>(from.Width, from.Height, from.Width, buffer);
         BlitUtil.BlitDirect(from, to);
-        return image;
+        return Image.LoadPixelData<Rgba32>(MemoryMarshal.Cast<uint, Rgba32>(buffer), from.Width, from.Height);
     }
 
     public static Image<Rgba32> PackSpriteSheet(uint[] palette, int frameCount, GetFrameMethod<byte> getFrame)
