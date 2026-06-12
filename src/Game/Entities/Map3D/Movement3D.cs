@@ -98,10 +98,10 @@ public class Movement3D : Component
         Raise(new CameraMove3DWorldEvent(world.X, world.Z));
     }
 
-    // RE'd from MAIN.EXE fcn.0001ede1 (9-zone sub-tile collision test): the wall margin is
-    // min(tileSize/4, 50) world units. Standard labyrinths use 512-unit tiles, so the
-    // margin is 50/512 ≈ 0.0977 of a tile — see _RE_COMBAT.md "Punch-list RE" item 5.
-    const float CollisionRadiusTiles = 50f / 512f;
+    // RE'd from MAIN.EXE fcn.0001ede1 (9-zone sub-tile collision test): the wall margin
+    // is MAX(tileSize/4, 50) world units (RE 5D corrected the earlier min() reading) —
+    // on the standard 512-unit tiles that's 128/512 = exactly a QUARTER tile.
+    const float CollisionRadiusTiles = 0.25f;
 
     /// <summary>
     /// Axis-separated sub-tile collision: each world axis of the velocity is tested
