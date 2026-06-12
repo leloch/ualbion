@@ -12,14 +12,20 @@ public class UiFixedPositionElement : UiElement
 {
     readonly SpriteId _id;
     readonly Rectangle _extents;
+    readonly DrawLayer _layer;
+    readonly SpriteKeyFlags _extraKeyFlags;
     BatchLease<SpriteKey, SpriteInfo> _sprite;
 
-    public UiFixedPositionElement(SpriteId id, Rectangle extents)
+    public UiFixedPositionElement(SpriteId id, Rectangle extents) : this(id, extents, DrawLayer.Interface) { }
+
+    public UiFixedPositionElement(SpriteId id, Rectangle extents, DrawLayer layer, SpriteKeyFlags extraKeyFlags = 0)
     {
         On<BackendChangedEvent>(_ => Rebuild());
         On<GameWindowResizedEvent>(_ => Rebuild());
         _id = id;
         _extents = extents;
+        _layer = layer;
+        _extraKeyFlags = extraKeyFlags;
     }
 
     public override string ToString() => $"{_id} @ {_extents}";
@@ -39,7 +45,7 @@ public class UiFixedPositionElement : UiElement
                 return;
             }
             Info($"UiFixedPositionElement: {_id} loaded {texture.Width}x{texture.Height} ({texture.GetType().Name})");
-            var key = new SpriteKey(texture, SpriteSampler.Point, DrawLayer.Interface, SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest);
+            var key = new SpriteKey(texture, SpriteSampler.Point, _layer, SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest | _extraKeyFlags);
             _sprite = sm.Borrow(key, 1, this);
         }
 

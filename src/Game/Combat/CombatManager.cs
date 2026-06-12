@@ -35,6 +35,16 @@ public class CombatManager : GameComponent
         if (backgroundId.IsNone)
             backgroundId = Resolve<IMapManager>().Current.MapData.CombatBackgroundId;
 
+        // The original engine asserts fatally when no combat background loads (combat.c:419
+        // in MAIN.EXE fcn.0004ac00) — every original fight supplies one, and the combat
+        // PALETTE is looked up from the background index. Monster combat gfx are painted
+        // for the combat palettes (default pal.24 DungeonCombat), so without this fallback
+        // any map lacking a CombatBackgroundId renders the monsters in the map palette
+        // (e.g. all-white in Jirinaar). PLACEHOLDER: Dungeon chosen as the generic fallback
+        // because it uses the monster gfx default palette; the original has no fallback at all.
+        if (backgroundId.IsNone)
+            backgroundId = (SpriteId)(CombatBackgroundId)Base.CombatBackground.Dungeon;
+
         Raise(new PushSceneEvent(SceneId.Combat));
 
         var info = Assets.GetAssetInfo(backgroundId);

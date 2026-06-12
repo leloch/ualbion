@@ -61,15 +61,25 @@ public class Battle : GameComponent, IReadOnlyBattle
         Mobs = _mobs;
         AttachChild(new CombatActionPicker());
         AttachChild(new CombatAudio());
-        if (System.Environment.GetEnvironmentVariable("UALBION_BATTLEVIEW") == "1")
-            AttachChild(new BattleView(this)); // EXPERIMENTAL: projection confirmed, but palette + some monster textures render wrong — see BattleView.cs notes
+        AttachChild(new BattleView(this)); // the animated battle scene (backdrop + monster sprites)
 
-        // The painted combat backdrop fills the screen below the combat UI like the
-        // original. It renders through the UI sprite path (Interface layer, NoDepthTest)
-        // — the world keeps drawing in its own passes underneath, and a world-space
-        // Sprite at a high layer corrupts the 3D billboard batches, so the UI element is
-        // the safe mechanism.
-        AttachChild(new UAlbion.Game.Gui.Controls.UiFixedPositionElement(backgroundId, UiConstants.UiExtents));
+        // The painted combat backdrop is the original's 360x192 blit at (0,0) (the status
+        // bar covers the bottom 48 UI pixels). It renders through the UI sprite path
+        // (NoDepthTest) — the world keeps drawing in its own passes underneath, and a
+        // world-space Sprite at a high layer corrupts the 3D billboard batches, so the UI
+        // element is the safe mechanism. It must draw at BattleView.BackdropLayer: BELOW
+        // the battle-view monster sprites (which sit just under the UI band) — at
+        // DrawLayer.Interface it would cover them, leaving only speckles through the
+        // backdrop's index-0 holes. Stretching to the full 360x240 would also be wrong:
+        // the projection's horizon is y=96 of the 192-high image.
+        // ZeroOpaque: the original's background blit is unmasked — its palette-index-0
+        // pixels are solid black, not holes (without this the map scene shows through
+        // the backdrop's dark areas as colour speckles).
+        AttachChild(new UAlbion.Game.Gui.Controls.UiFixedPositionElement(
+            backgroundId,
+            new UAlbion.Core.Rectangle(0, 0, 360, 192),
+            BattleView.BackdropLayer,
+            SpriteKeyFlags.ZeroOpaque));
     }
 
     AlbionTask Observe(ObserveCombatEvent _) =>
