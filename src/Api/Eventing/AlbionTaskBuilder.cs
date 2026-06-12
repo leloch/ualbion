@@ -69,7 +69,10 @@ public struct AlbionTaskBuilder
 
     /// <summary>Rethrows immediately, as AlbionTasks are only intended for single-threaded scenarios.</summary>
     /// <param name="exception">The exception to throw.</param>
-    public void SetException(Exception exception) => throw exception;
+    public void SetException(Exception exception)
+        // Preserve the original stack trace — a bare `throw exception` resets it to this
+        // frame, which masks the real failure site in crash logs.
+        => System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
 
     public void SetStateMachine(IAsyncStateMachine stateMachine)
     {
