@@ -44,6 +44,22 @@ public sealed class SpellCastContext
     /// don't exercise the mutation path; effects must tolerate a null delegate.
     /// </summary>
     public System.Action<IEvent> RaiseEvent { get; init; }
+
+    /// <summary>
+    /// Apply damage to a combat participant through the battle's HP tracking (which owns
+    /// the monster HP shadow that DataChangeEvent cannot reach). Null outside combat —
+    /// effects fall back to RaiseEvent-based health changes for party targets.
+    /// </summary>
+    public System.Action<ICombatParticipant, int> ApplyDamage { get; init; }
+
+    /// <summary>Heal a combat participant through the battle's HP tracking. Null outside combat.</summary>
+    public System.Action<ICombatParticipant, int> ApplyHeal { get; init; }
+
+    /// <summary>Place a damage trap on a combat tile (trap/mine spells). Null outside combat.</summary>
+    public System.Action<int, int> PlaceTrap { get; init; }
+
+    /// <summary>Remove any trap from a combat tile (remove-trap spells). Null outside combat.</summary>
+    public System.Action<int> RemoveTrap { get; init; }
 }
 
 public enum SpellCastOutcome
