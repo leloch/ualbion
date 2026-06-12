@@ -127,9 +127,11 @@ RandomVary(v) = (rand()%51 + 50) * v / 100      // uniform 50%..100%
 
 ## Known issues (as of latest session)
 
-1. **🔴 Save 5 (Map.Nakiridaani) renders black** with only UI visible. Smoke still loads it cleanly (purely visual). **NOT** caused by the offscreen-render refactor (that was fully reverted and the bug persists). Not yet bisected — see `_PROJECT_LOG.md §9` for hypotheses (try save 11, same map; check 2D `R_Tile`/`S_Tile` path; check party-all-Unconscious interaction).
-2. **🟡 3D dungeon walls/floors look streaked** (Drinno saves 1/2). Pre-existing, not a regression. Analysis (`_PROJECT_LOG.md §6`): the renderer is technically correct — it's texture aliasing (tiny atlases, point-sampled, no mipmaps, glancing angles). Mipmap fix attempted and reverted (didn't visibly help).
-3. **🟡 `/screenshot` returns 503.** The offscreen mirror that made it work broke 2D rendering and was reverted. Needs a window-resize-aware reattempt.
+All three legacy rendering issues were **FIXED 2026-06-12** (commit `0dc83ac3`) — single root cause: the optimizing GLSL→SPIR-V compile in Release builds. The optimizer stripped unused resource declarations (shifting every later D3D11 register off the slots Veldrid binds — the 3D dungeon was rendering the *palette texture* as walls) and broke D3D11 structured-buffer reads (2D `Map[]` read as zeros → black 2D maps). `ShaderCache` now always compiles with debug options. **Never re-enable SPIR-V optimization**; if shaders ever regress to rainbow stripes / black maps, compare `%LOCALAPPDATA%\ualbion\ShaderCache\*.hlsl` registers against the C# resource-set layouts and clear that cache (its hash covers GLSL content only, not compile options).
+
+`/screenshot` works again via the resize-aware `FB_Render` offscreen mirror. New diagnostics: `/wallpixels?format=png` (CPU atlas layer as PNG), `/gpuwallpixels?layer=N` (GPU texture readback). Note the original 2D-black-screen suspicion of the offscreen mirror was wrong — it was the shader bug all along.
+
+Map-type correction: Jirinaar (110) and HunterClanCellar (123) are **3D** maps (Albion cities/dungeons are first-person); only Nakiridaani (200), Winion (132), JirinaarTownHall (113), SnirdArmoury (118) of the user's saves are true 2D.
 
 ## Where things live
 
