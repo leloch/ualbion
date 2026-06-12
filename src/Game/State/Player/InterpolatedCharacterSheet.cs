@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using UAlbion.Api;
 using UAlbion.Formats.Assets.Inv;
 using UAlbion.Formats.Assets.Sheets;
@@ -35,6 +35,9 @@ public class InterpolatedCharacterSheet : IEffectiveCharacterSheet
     public byte Level => _b().Level;
     public ushort ExperienceReward => _b().ExperienceReward;
     public byte UnknownE => _b().UnknownE;
+    public byte Morale => _b().Morale;
+    public byte UnkownC => _b().UnkownC;
+    public byte UnkownD => _b().UnkownD;
     public MonsterData Monster => _b().Monster;
     public SpriteId SpriteId => _b().SpriteId;
     public SpriteId PortraitId => _b().PortraitId;

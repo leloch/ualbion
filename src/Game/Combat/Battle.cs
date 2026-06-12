@@ -41,6 +41,11 @@ public class Battle : GameComponent, IReadOnlyBattle
     // members read/write their persistent sheets via Mana events instead. Without this,
     // monster casts never drained SP and repeated casts were free.
     readonly Dictionary<SheetId, int> _liveSp = [];
+    // Combatants removed from the battle (fled via Retreat — fcn.0004b49e); excluded
+    // from LiveParticipants. _fledParty drives the "party escaped" outcome.
+    readonly HashSet<SheetId> _removed = [];
+    bool _fledParty;
+    int _initialMonsterCount;
 
     // XP pool: each kill adds the monster sheet's ExperienceReward (offset 0x20); on
     // victory every LIVING party member receives max(1, total/livingCount) — RE'd from
@@ -212,8 +217,11 @@ public class Battle : GameComponent, IReadOnlyBattle
     {
         if (partyAlive == 0)
         {
-            Raise(new EndCombatEvent(CombatResult.PartyKilled));
-            HandleCombatEnd(CombatResult.PartyKilled); // Raise() skips own handlers
+            // Outcome codes per fcn.0004b256 (0x15f112): 2 = "party escaped" when no
+            // active party member remains but someone has fled; 3 = defeat otherwise.
+            var result = _fledParty ? CombatResult.Retreat : CombatResult.PartyKilled;
+            Raise(new EndCombatEvent(result));
+            HandleCombatEnd(result); // Raise() skips own handlers
             return true;
         }
         if (mobsAlive == 0)
@@ -409,6 +417,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         {
             if (IsParty(p) != forParty) continue;
             if (LifePoints(p) <= 0) continue;
+            if (_removed.Contains(p.SheetId)) continue; // fled / removed from battle
             yield return p;
         }
     }
@@ -447,10 +456,37 @@ public class Battle : GameComponent, IReadOnlyBattle
         // "Punch-list RE" item 4). Setup grants every monster Melee|Ranged and adds Magic
         // when the sheet has spells; Magic is disabled at 0 SP. The 16-entry weight table
         // favours Magic/Ranged 6/16 each over Melee 4/16; failed commits clear their bit.
+        // Honour the per-combatant status gate FIRST (fcn.0004bf77): Asleep skips the
+        // turn; Panicking is auto-piloted into flight toward its own back edge (party
+        // members too — flag+4 bit2 puts them under AI control); Insane acts randomly.
+        var conds = attacker?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
+        var outcome = MonsterAi.ResolveStatusBehavior(conds);
+        if (outcome == MonsterAi.StatusOutcome.SkipTurn)
+            return;
+        if (outcome == MonsterAi.StatusOutcome.Flee) // Panicking
+        {
+            PanicFlee(attacker);
+            return;
+        }
+        if (outcome == MonsterAi.StatusOutcome.InsaneRandomAct)
+        {
+            InsaneTurn(attacker);
+            return;
+        }
+
         if (!forParty)
         {
+            // Monster voluntary flight (fcn.0004fb63): the behaviour-table fight
+            // predicate runs before any action choice; a broken monster takes the same
+            // flee path as panic. Class-bit 0x80 creatures never flee.
+            if (MoraleBroken(attacker))
+            {
+                PanicFlee(attacker);
+                return;
+            }
+
             var available = MonsterAi.AvailableActions.Melee | MonsterAi.AvailableActions.Ranged;
-            int sp = attacker?.Effective?.Magic?.SpellPoints?.Current ?? 0;
+            int sp = SpellPoints(attacker);
             if (sp > 0 && (attacker?.Effective?.Magic?.KnownSpells?.Count ?? 0) > 0)
                 available |= MonsterAi.AvailableActions.Magic;
 
@@ -458,26 +494,16 @@ public class Battle : GameComponent, IReadOnlyBattle
             var picked = MonsterAi.ChooseNormalAction(available, () => aiRng.Generate(16), bit => bit switch
             {
                 MonsterAi.AvailableActions.Magic => TryMonsterCast(attacker),
-                MonsterAi.AvailableActions.Melee => true, // resolved by the AP loop below
-                // Ranged commits when the mob actually holds a long-range weapon — the
-                // strike pipeline then rolls LongRangeCombat for it. PLACEHOLDER:
-                // ammunition rules + the original's mid-fight auto-equip pending RE 5A.
-                MonsterAi.AvailableActions.Ranged => HasRangedWeapon(attacker),
+                MonsterAi.AvailableActions.Melee => true, // resolved by the strike loop below
+                // Ranged commits when the mob holds a usable long-range weapon (typeid 6
+                // + ammo per fcn.000513bf); the strike pipeline rolls LongRangeCombat.
+                MonsterAi.AvailableActions.Ranged => RangedUsable(attacker),
                 _ => false,
             });
 
             if (picked == MonsterAi.AvailableActions.Magic)
                 return; // the cast already resolved this turn
         }
-
-        // Honour the per-combatant status gate (Sleep/Panicking/Insane) — RE'd from
-        // MAIN.EXE fcn.0004bf77 (see _RE_COMBAT.md). Insane mobs still act but pick a
-        // random opponent regardless of which side they're on; Panicking ones lose
-        // their turn (would flee if we had a flee mechanic).
-        var conds = attacker?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
-        var outcome = MonsterAi.ResolveStatusBehavior(conds);
-        if (outcome == MonsterAi.StatusOutcome.SkipTurn || outcome == MonsterAi.StatusOutcome.Flee)
-            return;
 
         // Pull the player's queued choice (if any). Defaults to Melee for unset members
         // and for all monsters — matches the original engine's behaviour where unconfigured
@@ -486,21 +512,13 @@ public class Battle : GameComponent, IReadOnlyBattle
         var chosenAction = pending.Action;
         var chosenTile = pending.TargetTile;
 
-        // Skip-turn actions (DoNothing / Retreat with the Fleeing status applied) exit early.
+        // Skip-turn actions (DoNothing) exit early.
         if (chosenAction == CombatAction.None)
             return;
 
         if (chosenAction == CombatAction.Retreat)
         {
-            // Only back-row members can retreat (party row 4) per fcn.0004f5d3.
-            int row = attacker.CombatPosition / SavedGame.CombatColumns;
-            if (row == SavedGame.CombatRows - 1)
-            {
-                ShowCombatMessage(Base.SystemText.CombatMsg_XIsFleeing, attacker); // SYSTEXTS 445
-                var targetId = TryToTarget(attacker);
-                if (targetId != null)
-                    Raise(new ChangeStatusEvent(targetId.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Fleeing, NumericOperation.AddAmount, 1));
-            }
+            ExecuteRetreat(attacker);
             return;
         }
 
@@ -512,6 +530,12 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         if (chosenAction is CombatAction.CastSpell or CombatAction.CastSchool5 or CombatAction.CastSchool6)
         {
+            // Cancel mask 0xF31 (vtable_1 kind 5): Irritated blocks casting at execution.
+            if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.Irritated) != 0)
+            {
+                Info($"[Combat] {attacker.SheetId}'s cast is cancelled (Irritated)");
+                return;
+            }
             CastQueuedSpell(attacker, pending.Spell, chosenTile);
             return;
         }
@@ -522,51 +546,406 @@ public class Battle : GameComponent, IReadOnlyBattle
             return;
         }
 
-        int ap = attacker?.Effective?.Combat?.ActionPoints ?? 1;
-        if (ap < 1) ap = 1;
-        // Berserk doubles the AP attempt count — the original's "powered" flag at
-        // Combatant+0x04 bit 0 (byte-exact mechanic from MAIN.EXE fcn.0004ef8b).
-        if (CombatBuffs.IsBerserk(attacker.SheetId))
-            ap <<= 1;
+        ResolveAttackAction(attacker, forParty, chosenTile);
+    }
 
-        for (int attempt = 0; attempt < ap; attempt++)
+    /// <summary>
+    /// The attack action (melee/ranged), per the RE'd planners+executors (RE 5A):
+    /// a usable long-range weapon FORCES ranged (whole grid, no LoS); otherwise melee is
+    /// restricted to the 8 Chebyshev-adjacent tiles at planning time — when no enemy is
+    /// adjacent the AI converts the attack into a greedy approach move. The combatant
+    /// strikes ActionPoints (sheet+0x11) times (×2 under Hurry); the strike loop stops
+    /// when the target dies (snd 453 in the original), the ammo reserve empties (454) or
+    /// the weapon breaks — NOT on a successful hit.
+    /// </summary>
+    void ResolveAttackAction(ICombatParticipant attacker, bool forParty, int chosenTile)
+    {
+        bool ranged = RangedUsable(attacker);
+        ICombatParticipant target = null;
+
+        if (chosenTile >= 0 && chosenTile < _tiles.Length)
         {
-            ICombatParticipant target;
-            if (outcome == MonsterAi.StatusOutcome.InsaneRandomAct)
-            {
-                // Insane: pick a random LIVE combatant of any side (50/50 in the original
-                // engine for "ally vs enemy" but we just pick any live target — close enough
-                // until we have proper friendly-fire mechanics).
-                var allLive = new System.Collections.Generic.List<ICombatParticipant>();
-                foreach (var p in _mobs)
-                    if (LifePoints(p) > 0 && p.SheetId != attacker.SheetId)
-                        allLive.Add(p);
-                if (allLive.Count == 0) return;
-                target = allLive[attempt % allLive.Count];   // deterministic-cycle for now
-            }
-            else if (chosenTile >= 0 && chosenTile < _tiles.Length)
-            {
-                // Explicit target tile from the player's menu choice. Falls back to
-                // nearest-enemy if the chosen tile is empty or the occupant is dead.
-                target = _tiles[chosenTile];
-                if (target == null || LifePoints(target) <= 0)
-                    target = LiveParticipants(forParty: !forParty).FirstOrDefault();
-            }
-            else
-            {
-                target = LiveParticipants(forParty: !forParty).FirstOrDefault();
-            }
-            if (target == null) return;
-
-            int hpBefore = LifePoints(target);
-            ApplyMeleeAttack(attacker, target);
-            int hpAfter  = LifePoints(target);
-
-            // Stop the AP loop on a successful hit — matches the original's "stop on success"
-            // semantics from fcn.0004ef8b. ApplyMeleeAttack rolls hit/miss internally; a miss
-            // leaves hpAfter == hpBefore so the loop retries on the next AP point.
-            if (hpAfter < hpBefore) return;
+            target = _tiles[chosenTile];
+            if (target == null || LifePoints(target) <= 0)
+                target = null;
         }
+
+        if (!ranged)
+        {
+            // Melee reach: the target must be Chebyshev-adjacent (fcn.0004d512).
+            if (target != null && !IsAdjacent(attacker, target))
+                target = null;
+            target ??= AdjacentEnemy(attacker);
+
+            if (target == null)
+            {
+                // No adjacent enemy: the attack intent converts to a greedy approach
+                // move toward the nearest enemy's column (fcn.00050887).
+                ApproachMove(attacker);
+                return;
+            }
+        }
+        else
+        {
+            target ??= LiveParticipants(forParty: !forParty).FirstOrDefault();
+            if (target == null)
+                return;
+        }
+
+        int strikes = attacker?.Effective?.Combat?.ActionPoints ?? 1;
+        if (strikes < 1) strikes = 1;
+        // Hurry doubles the strike count — the original's "powered" flag at
+        // Combatant+0x04 bit 0 (fcn.0004ef8b / the attack planners).
+        if (CombatBuffs.IsBerserk(attacker.SheetId))
+            strikes <<= 1;
+
+        int ammoReserve = ranged ? CountAmmo(attacker) : int.MaxValue;
+        for (int strike = 0; strike < strikes; strike++)
+        {
+            if (LifePoints(target) <= 0)
+                return; // target tile empty mid-action — remaining strikes are lost (snd 453)
+
+            if (ranged && ammoReserve != int.MaxValue)
+            {
+                if (ammoReserve <= 0)
+                {
+                    // Reserve exhausted: sound 454 + no further strikes (fcn.0004f4da).
+                    Raise(new SoundEffectEvent(new SampleId(454), 100, 0, 0, 0, SoundMode.GlobalOneShot));
+                    return;
+                }
+                ConsumeAmmo(attacker); // consumed BEFORE the to-hit roll — misses burn ammo
+                ammoReserve--;
+            }
+
+            ApplyMeleeAttack(attacker, target);
+            if (Exchange == null || _combatEnded)
+                return;
+        }
+    }
+
+    static bool IsAdjacent(ICombatParticipant a, ICombatParticipant b)
+    {
+        if (a == null || b == null) return false;
+        int dx = Math.Abs(a.CombatPosition % SavedGame.CombatColumns - b.CombatPosition % SavedGame.CombatColumns);
+        int dy = Math.Abs(a.CombatPosition / SavedGame.CombatColumns - b.CombatPosition / SavedGame.CombatColumns);
+        return Math.Max(dx, dy) == 1 || (dx == 0 && dy == 0);
+    }
+
+    ICombatParticipant AdjacentEnemy(ICombatParticipant attacker)
+    {
+        int tile = TileOf(attacker);
+        if (tile < 0) return null;
+        int col = tile % SavedGame.CombatColumns, row = tile / SavedGame.CombatColumns;
+        bool attackerIsParty = IsParty(attacker);
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                int nc = col + dx, nr = row + dy;
+                if (nc < 0 || nr < 0 || nc >= SavedGame.CombatColumns || nr >= SavedGame.CombatRows) continue;
+                var p = _tiles[nr * SavedGame.CombatColumns + nc];
+                if (p != null && LifePoints(p) > 0 && IsParty(p) != attackerIsParty)
+                    return p;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Greedy approach move toward the nearest enemy's column (fcn.00050887): per step —
+    /// straight at the enemy rows, else diagonal, else sideways toward the target column
+    /// (50/50 random order), else stop. Up to clamp(Speed/30, 1, 3) steps; a blocked
+    /// funnel truncates the move (no backtracking).
+    /// </summary>
+    void ApproachMove(ICombatParticipant mover)
+    {
+        int tile = TileOf(mover);
+        if (tile < 0) return;
+        var enemy = LiveParticipants(forParty: !IsParty(mover)).FirstOrDefault();
+        int targetCol = enemy != null ? TileOf(enemy) % SavedGame.CombatColumns : -1;
+        GreedyStep(mover, towardRow: IsParty(mover) ? -1 : +1, targetCol);
+    }
+
+    /// <summary>
+    /// Forced flight toward the combatant's own back edge (fcn.0004bff7 party →
+    /// row 4 / fcn.00050c15 monster → row 0); when already AT the edge, Retreat fires
+    /// (leaving the battle this round).
+    /// </summary>
+    void PanicFlee(ICombatParticipant p)
+    {
+        int tile = TileOf(p);
+        if (tile < 0) return;
+        int edgeRow = IsParty(p) ? SavedGame.CombatRows - 1 : 0;
+        if (tile / SavedGame.CombatColumns == edgeRow)
+        {
+            ExecuteRetreat(p);
+            return;
+        }
+
+        GreedyStep(p, towardRow: IsParty(p) ? +1 : -1, targetCol: -1);
+    }
+
+    /// <summary>
+    /// The shared greedy stepper: straight in the row direction, else diagonal, else
+    /// sideways (toward targetCol when given, else 50/50 random first side), up to
+    /// clamp(Speed/30, 1, 3) steps. Commits the final tile through MoveCombatantDirect.
+    /// </summary>
+    void GreedyStep(ICombatParticipant mover, int towardRow, int targetCol)
+    {
+        int tile = TileOf(mover);
+        if (tile < 0) return;
+        int col = tile % SavedGame.CombatColumns, row = tile / SavedGame.CombatColumns;
+        int steps = Math.Clamp((mover.Effective?.Attributes?.Speed?.Current ?? 0) / 30, 1, 3);
+        var rng = Resolve<IRandom>();
+
+        bool Free(int c, int r)
+        {
+            if (c < 0 || r < 0 || c >= SavedGame.CombatColumns || r >= SavedGame.CombatRows)
+                return false;
+            bool rowAllowed = IsParty(mover) ? r >= SavedGame.CombatRowsForMobs : r <= SavedGame.CombatRowsForMobs;
+            if (!rowAllowed) return false;
+            var occupant = _tiles[r * SavedGame.CombatColumns + c];
+            return occupant == null || LifePoints(occupant) <= 0;
+        }
+
+        for (int s = 0; s < steps; s++)
+        {
+            int nr = row + towardRow;
+            int sideFirst = targetCol >= 0
+                ? Math.Sign(targetCol - col) is int sign && sign != 0 ? sign : (rng.Generate(2) == 0 ? -1 : 1)
+                : (rng.Generate(2) == 0 ? -1 : 1);
+
+            if (nr >= 0 && nr < SavedGame.CombatRows && Free(col, nr)) { row = nr; continue; }
+            if (nr >= 0 && nr < SavedGame.CombatRows && Free(col + sideFirst, nr)) { col += sideFirst; row = nr; continue; }
+            if (nr >= 0 && nr < SavedGame.CombatRows && Free(col - sideFirst, nr)) { col -= sideFirst; row = nr; continue; }
+            if (targetCol >= 0 && col != targetCol && Free(col + sideFirst, row)) { col += sideFirst; continue; }
+            break; // stuck — partial path kept
+        }
+
+        int dest = row * SavedGame.CombatColumns + col;
+        if (dest != tile)
+            MoveCombatantDirect(mover, tile, dest);
+    }
+
+    /// <summary>Commit a validated move (grid swap + message + trap trigger) without range checks.</summary>
+    void MoveCombatantDirect(ICombatParticipant mover, int fromTile, int toTile)
+    {
+        _tiles[fromTile] = null;
+        _tiles[toTile] = mover;
+        ShowCombatMessage(Base.SystemText.CombatMsg_XIsMoving, mover); // SYSTEXTS 444
+        Info($"[Combat] {mover.SheetId} moves from tile {fromTile} to {toTile}");
+        TraceLog.Emit("combat_move", ("actor", mover.SheetId), ("from", fromTile), ("to", toTile));
+
+        if (_traps.TryGetValue(toTile, out var trapDamage))
+        {
+            _traps.Remove(toTile);
+            Info($"[Combat] {mover.SheetId} triggers a trap on tile {toTile} for {trapDamage} damage");
+            ApplyDirectDamage(mover, trapDamage);
+        }
+    }
+
+    /// <summary>
+    /// The Retreat executor (fcn.0004f5d3): edge-row only (party row 4 / monster row 0);
+    /// sets Fleeing and REMOVES the combatant from the battle the same round. A fleeing
+    /// monster still credits its XP reward to the pool (fcn.0004b49e path).
+    /// </summary>
+    void ExecuteRetreat(ICombatParticipant p)
+    {
+        int tile = TileOf(p);
+        if (tile < 0) return;
+        int edgeRow = IsParty(p) ? SavedGame.CombatRows - 1 : 0;
+        if (tile / SavedGame.CombatColumns != edgeRow)
+            return; // not at the edge yet — no-op
+
+        ShowCombatMessage(Base.SystemText.CombatMsg_XIsFleeing, p); // SYSTEXTS 445
+        _tiles[tile] = null;
+        _removed.Add(p.SheetId);
+
+        if (IsParty(p))
+        {
+            _fledParty = true;
+            var targetId = TryToTarget(p);
+            if (targetId != null)
+                Raise(new ChangeStatusEvent(targetId.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Fleeing, NumericOperation.AddAmount, 1));
+        }
+        else
+        {
+            // A fled monster still pays XP (RE 5A: the Retreat executor adds sheet+0x20).
+            _xpPool += p.Effective?.ExperienceReward ?? 0;
+        }
+
+        Info($"[Combat] {p.SheetId} fled the battle");
+        TraceLog.Emit("combat_fled", ("actor", p.SheetId));
+    }
+
+    /// <summary>
+    /// Insane turn (fcn.0004c1e4): exact 50/50 (rand%8 >= 4) random-move-first vs
+    /// attack-first with the other as fallback. The attack target is UNIFORM over all
+    /// occupied tiles of BOTH sides (the original spoofs the combatant's kind), ranged
+    /// preferred when usable; melee picks among adjacent occupants of either side.
+    /// </summary>
+    void InsaneTurn(ICombatParticipant p)
+    {
+        var rng = Resolve<IRandom>();
+        bool moveFirst = rng.Generate(8) >= 4;
+        if (moveFirst && TryInsaneMove(p, rng)) return;
+        if (TryInsaneAttack(p, rng)) return;
+        if (!moveFirst) TryInsaneMove(p, rng);
+    }
+
+    bool TryInsaneMove(ICombatParticipant p, IRandom rng)
+    {
+        int tile = TileOf(p);
+        if (tile < 0) return false;
+        int col = tile % SavedGame.CombatColumns, row = tile / SavedGame.CombatColumns;
+        int range = Math.Clamp((p.Effective?.Attributes?.Speed?.Current ?? 0) / 30, 1, 3);
+
+        var candidates = new List<int>();
+        for (int r = Math.Max(0, row - range); r <= Math.Min(SavedGame.CombatRows - 1, row + range); r++)
+        {
+            bool rowAllowed = IsParty(p) ? r >= SavedGame.CombatRowsForMobs : r <= SavedGame.CombatRowsForMobs;
+            if (!rowAllowed) continue;
+            for (int c = Math.Max(0, col - range); c <= Math.Min(SavedGame.CombatColumns - 1, col + range); c++)
+            {
+                int t = r * SavedGame.CombatColumns + c;
+                if (t == tile) continue;
+                var occupant = _tiles[t];
+                if (occupant == null || LifePoints(occupant) <= 0)
+                    candidates.Add(t);
+            }
+        }
+
+        if (candidates.Count == 0)
+            return false;
+        MoveCombatantDirect(p, tile, candidates[rng.Generate(candidates.Count)]);
+        return true;
+    }
+
+    bool TryInsaneAttack(ICombatParticipant p, IRandom rng)
+    {
+        bool ranged = RangedUsable(p);
+        var candidates = new List<ICombatParticipant>();
+        foreach (var other in _mobs)
+        {
+            if (other == null || LifePoints(other) <= 0 || _removed.Contains(other.SheetId)) continue;
+            if (other.SheetId == p.SheetId && !ranged) continue; // melee can't self-target
+            if (!ranged && !IsAdjacent(p, other)) continue;
+            candidates.Add(other);
+        }
+
+        if (candidates.Count == 0)
+            return false;
+        ApplyMeleeAttack(p, candidates[rng.Generate(candidates.Count)]);
+        return true;
+    }
+
+    /// <summary>
+    /// Monster fight predicate (fcn.0004fb63 → behaviour table 0x13e1f0; variant by the
+    /// MONCHAR strategy byte sheet+0x0C): the base morale formula (fcn.00051506) is
+    /// flee when (deadMonsterPct + ownLostLpPct)/2 >= Morale. Variants: 2 = flees once
+    /// any monster has died; 7 = fights only while monsters >= party AND LP% >=
+    /// (row+1)·25; 8 = caster stay-back (approximated by the base formula). Class-bit
+    /// 0x80 creatures never flee.
+    /// </summary>
+    bool MoraleBroken(ICombatParticipant m)
+    {
+        var sheet = m?.Effective;
+        if (sheet == null || (sheet.UnknownE & 0x80) != 0)
+            return false;
+
+        int living = LiveParticipants(forParty: false).Count();
+        int total = Math.Max(1, _initialMonsterCount);
+        int lp = LifePoints(m);
+        int maxLp = Math.Max(1, (int)(sheet.Combat?.LifePoints?.Max ?? 1));
+
+        switch (sheet.UnkownC)
+        {
+            case 2: // fights only while no monster has died yet
+                return living < total;
+            case 7: // outnumbered + LP threshold: deeper rows give up sooner
+            {
+                int row = Math.Max(0, TileOf(m)) / SavedGame.CombatColumns;
+                int party = LiveParticipants(forParty: true).Count();
+                bool fight = living >= party && lp * 100 / maxLp >= (row + 1) * 25;
+                return !fight;
+            }
+            default:
+            {
+                int deadPct = 100 - living * 100 / total;
+                int lostPct = 100 - lp * 100 / maxLp;
+                return (deadPct + lostPct) / 2 >= sheet.Morale;
+            }
+        }
+    }
+
+    /// <summary>
+    /// RangedUsable (fcn.000513bf): a LongRangeWeapon in the weapon hand whose AmmoType
+    /// is intrinsic (0) or matched by a non-broken Ammo item in any equipment slot.
+    /// </summary>
+    bool RangedUsable(ICombatParticipant p)
+    {
+        var slot = p?.Effective?.Inventory?.RightHand;
+        if (slot == null || slot.Item.Type != AssetType.Item)
+            return false;
+        var weapon = Assets.LoadItem(slot.Item);
+        if (weapon?.TypeId != UAlbion.Formats.Assets.Inv.ItemType.LongRangeWeapon)
+            return false;
+        if (weapon.AmmoType == UAlbion.Formats.Assets.Inv.AmmunitionType.Intrinsic)
+            return true;
+
+        foreach (var eq in p.Effective.Inventory.EnumerateBodyParts())
+        {
+            if (eq == null || eq.Item.Type != AssetType.Item || (eq.Flags & UAlbion.Formats.Assets.Inv.ItemSlotFlags.Broken) != 0)
+                continue;
+            var item = Assets.LoadItem(eq.Item);
+            if (item?.TypeId == UAlbion.Formats.Assets.Inv.ItemType.Ammo && item.AmmoType == weapon.AmmoType)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Total matching ammo available (equipped + backpack stacks) for the strike loop.</summary>
+    int CountAmmo(ICombatParticipant p)
+    {
+        var slot = p?.Effective?.Inventory?.RightHand;
+        if (slot == null || slot.Item.Type != AssetType.Item)
+            return 0;
+        var weapon = Assets.LoadItem(slot.Item);
+        if (weapon == null)
+            return 0;
+        if (weapon.AmmoType == UAlbion.Formats.Assets.Inv.AmmunitionType.Intrinsic)
+            return int.MaxValue; // self-sufficient (a flag-0x10 weapon consumes itself via the charge path)
+
+        int total = 0;
+        foreach (var s in p.Effective.Inventory.EnumerateAll())
+        {
+            if (s == null || s.Item.Type != AssetType.Item || (s.Flags & UAlbion.Formats.Assets.Inv.ItemSlotFlags.Broken) != 0)
+                continue;
+            var item = Assets.LoadItem(s.Item);
+            if (item?.TypeId == UAlbion.Formats.Assets.Inv.ItemType.Ammo && item.AmmoType == weapon.AmmoType)
+                total += (int)s.Amount;
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// Consume one round of ammo (fcn.0004f3e2/fcn.0004f4da: backpack stacks refill the
+    /// equipped slot, so the backpack depletes first). Party members only — monster
+    /// inventories are transient clones (their reserve is tracked by the strike loop).
+    /// </summary>
+    void ConsumeAmmo(ICombatParticipant p)
+    {
+        if (p?.SheetId.Type != AssetType.PartySheet)
+            return;
+        var slot = p.Effective?.Inventory?.RightHand;
+        if (slot == null || slot.Item.Type != AssetType.Item)
+            return;
+        var weapon = Assets.LoadItem(slot.Item);
+        if (weapon == null || weapon.AmmoType == UAlbion.Formats.Assets.Inv.AmmunitionType.Intrinsic)
+            return;
+
+        Raise(new ConsumeAmmoEvent(new PartyMemberId(AssetType.PartyMember, p.SheetId.Id), weapon.AmmoType));
     }
 
     /// <summary>
@@ -1202,6 +1581,9 @@ public class Battle : GameComponent, IReadOnlyBattle
                 _tiles[monster.CombatPosition] = monster;
             }
         }
+
+        // Morale formula baseline (fcn.00051506 reads the round-start total 0x15f118).
+        _initialMonsterCount = _mobs.Count(m => !IsParty(m));
     }
 
     public ICombatParticipant GetTile(int x, int y)

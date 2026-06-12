@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using UAlbion.Api.Settings;
 using UAlbion.Config;
 using UAlbion.Formats.Assets.Inv;
@@ -34,6 +34,9 @@ public static class EffectiveSheetCalculator
             Level = sheet.Level,
             ExperienceReward = sheet.ExperienceReward,
             UnknownE = sheet.UnknownE, // crit-immunity / creature-class flags — combat reads these off Effective
+            Morale = sheet.Morale,     // flee threshold (fcn.00051506)
+            UnkownC = sheet.UnkownC,   // AI behaviour/strategy id (table 0x13e1f0)
+            UnkownD = sheet.UnkownD,   // battle-view render class (bob/sway/translucency)
 
             // Display and behaviour
             Languages = sheet.Languages,

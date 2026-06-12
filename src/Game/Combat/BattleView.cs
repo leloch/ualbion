@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using UAlbion.Api.Eventing;
@@ -23,9 +24,10 @@ namespace UAlbion.Game.Combat;
 /// Hit (with the file-0x28 #46/#47 damage splash at 200%+4·damage), killed ones play Die
 /// and freeze on the last frame as a corpse — all at the original's 6.67 fps animation
 /// rate (effects at 2 engine frames per gfx frame). Party members are never drawn (the
-/// original has no party battle sprites). PLACEHOLDERs: no hover bob (sine behaviours) /
-/// soul-rise for demonic corpses / smooth walk paths yet; shadows are 50 %-opacity
-/// silhouettes instead of the original's darkening LUT blit.
+/// original has no party battle sprites). Render classes 2/3/4 (MONCHAR +0x0D) get the
+/// RE'd sine hover bob (±4-6 world units, 3.0-4.95 s, random phase; 2/4 add an X sway).
+/// PLACEHOLDERs: soul-rise for demonic corpses / smooth walk paths / class-2
+/// translucency; shadows are 50 %-opacity silhouettes instead of the darkening LUT blit.
 /// </summary>
 public class BattleView : GameComponent
 {
@@ -39,6 +41,28 @@ public class BattleView : GameComponent
         public bool OneShot;
         public bool Dying; // Die anim pending/playing; on tile clear the mob becomes a corpse
         public int Tile;
+
+        // Hover bob (RE 5A, oscillator cb 0x54eeb): render classes 2 (ghostly) / 3
+        // (flying) / 4 (sway) attach true-sine oscillators at 20 Hz — amplitude uniform
+        // 4.00..5.99 world units (tile = 64), period 60..99 ticks (3.0..4.95 s), random
+        // phase; classes 2/4 add an equal X sway. Ground monsters (class 1) hold still.
+        public int RenderClass = 1;
+        public float BobAmplitude;
+        public int BobPeriod;
+        public int BobPhase;
+        public float SwayAmplitude;
+        public int SwayPeriod;
+        public int SwayPhase;
+
+        public float BobOffset =>
+            RenderClass >= 2 && BobPeriod > 0
+                ? BobAmplitude * MathF.Sin(2 * MathF.PI * BobPhase / BobPeriod)
+                : 0;
+
+        public float SwayOffset =>
+            RenderClass is 2 or 4 && SwayPeriod > 0
+                ? SwayAmplitude * MathF.Sin(2 * MathF.PI * SwayPhase / SwayPeriod)
+                : 0;
     }
 
     sealed class Effect
@@ -198,6 +222,16 @@ public class BattleView : GameComponent
     void Update()
     {
         bool stepAnims = ++_frameCounter % FramesPerAnimStep == 0;
+        bool stepBob = _frameCounter % 3 == 0; // 20 Hz logic ticks at 60 fps (oscillator cb 0x54eeb)
+        if (stepBob)
+        {
+            foreach (var m in _mobs.Values)
+            {
+                if (m.RenderClass < 2) continue;
+                if (m.BobPeriod > 0) m.BobPhase = (m.BobPhase + 1) % m.BobPeriod;
+                if (m.SwayPeriod > 0) m.SwayPhase = (m.SwayPhase + 1) % m.SwayPeriod;
+            }
+        }
 
         for (int tile = 0; tile < SavedGame.CombatRows * SavedGame.CombatColumns; tile++)
         {
@@ -262,8 +296,22 @@ public class BattleView : GameComponent
                         SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest,
                         (SpriteFlags.LeftAligned | SpriteFlags.DropShadow).SetOpacity(0.5f))),
                 };
+                // Hover-bob oscillators (RE 5A): render class = MONCHAR byte sheet+0x0D
+                // (UnkownD), 0 defaults to 1 (ground, no bob).
+                mob.RenderClass = Math.Max((int)occupant.Effective.UnkownD, 1);
+                if (mob.RenderClass >= 2)
+                {
+                    var rng = TryResolve<IRandom>();
+                    int Roll(int n) => rng?.Generate(n) ?? 0;
+                    mob.BobPeriod = Roll(40) + 60;             // 60..99 logic ticks (20 Hz)
+                    mob.BobPhase = Roll(mob.BobPeriod);
+                    mob.BobAmplitude = (Roll(200) + 400) / 100f; // 4.00..5.99 world units
+                    mob.SwayPeriod = Roll(40) + 60;
+                    mob.SwayPhase = Roll(mob.SwayPeriod);
+                    mob.SwayAmplitude = (Roll(200) + 400) / 100f;
+                }
                 _mobs[tile] = mob;
-                Info($"[BattleView] tile {tile} ({tile % SavedGame.CombatColumns},{row}): {occupant.SheetId} gfx {occupant.Effective.CombatGfx}");
+                Info($"[BattleView] tile {tile} ({tile % SavedGame.CombatColumns},{row}): {occupant.SheetId} gfx {occupant.Effective.CombatGfx} class {mob.RenderClass}");
             }
 
             if (stepAnims && mob.OneShot)
@@ -390,11 +438,13 @@ public class BattleView : GameComponent
 
         // Vertical offset: the original sets slot.y = -Unk152 world units (ShowCombatant,
         // sheet+0x4B8) — flying monsters have NEGATIVE values, lifting the body above the
-        // ground; the shadow slot stays at y = 0.
-        float bodyY = y + monster.Unk152 * scale;
+        // ground; the shadow slot stays at y = 0. Classes 2/3/4 add the sine bob (and
+        // 2/4 the X sway) — world units project through the same scale factor.
+        float bodyY = y + (monster.Unk152 - mob.BobOffset) * scale;
+        float bodyX = x + mob.SwayOffset * scale;
 
-        // Bottom-centre at (x, bodyY): top-left = (x - w/2, bodyY - h).
-        mob.Sprite.Position = new Vector3(-1 + 2 * (x - w / 2) / UiW, 1 - 2 * (bodyY - h) / UiH, 0);
+        // Bottom-centre at (bodyX, bodyY): top-left = (bodyX - w/2, bodyY - h).
+        mob.Sprite.Position = new Vector3(-1 + 2 * (bodyX - w / 2) / UiW, 1 - 2 * (bodyY - h) / UiH, 0);
         mob.Sprite.Size = new Vector2(2 * w / UiW, -2 * h / UiH);
 
         if (mob.Shadow != null)

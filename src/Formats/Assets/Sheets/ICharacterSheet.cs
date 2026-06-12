@@ -22,6 +22,20 @@ public interface ICharacterSheet
     // (demons = mask 0x44 — the all-demons value 20 is the only sheet value with bit 2 set).
     byte UnknownE { get; }
 
+    // Combat morale 0..100 (sheet offset 0x0F): a monster flees when
+    // (deadMonsterPct + ownLostLpPct)/2 >= Morale (fcn.00051506, RE batch 5A).
+    byte Morale { get; }
+
+    // AI behaviour/strategy id (MONCHAR sheet offset 0x0C → table 0x13e1f0, RE 5A):
+    // selects the fight-predicate variant (1/3/4/5/6/9 = morale formula, 2 = flees once
+    // any monster dies, 7 = outnumbered+LP threshold, 8 = caster stay-back).
+    byte UnkownC { get; }
+
+    // Battle-view render class (MONCHAR sheet offset 0x0D, RE 5A; 0 defaults to 1):
+    // 1 = ground (no idle motion), 2 = ghostly (translucent + Y bob + X sway),
+    // 3 = flying (Y bob), 4 = sway variant (Y bob + X sway).
+    byte UnkownD { get; }
+
     // Visual
     SpriteId SpriteId { get; } // Overworld / 3D graphics
     SpriteId PortraitId { get; } // Conversation portrait
