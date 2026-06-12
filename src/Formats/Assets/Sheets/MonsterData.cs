@@ -12,7 +12,7 @@ public class MonsterData
     const int AnimationCount = 8;
 
     public SpriteId CombatGfx { get; set; }
-    public byte Unk37 { get; set; } // PLACEHOLDER: AI action-mask bitfield (probable). Observed values: 0 [42x: melee-only], 2 [9x: Krondir/Plague/Robot], 6 [3x: AI bodies], 0x10 [3x: Kizz], 0x12 [2x: Skrinn]. Bit 1 (0x02) and bit 4 (0x10) are the special-attack flags; bit 2 (0x04) likely amplifies one of them. Maps to MonsterAi.AvailableActions in some shape — confirm by reading the bit a mob's Battle.TakeTurn picks up to dispatch through `vtable_2`.
+    public byte Unk37 { get; set; } // Per-animation ping-pong playback bitfield (CONFIRMED by the battle-view RE pass - NOT an AI action mask). Bit n set = animation n plays forward-then-backward.
     public short Unk152 { get; set; } // Some sort of offset? Sometimes negative.
     public short WidthPercentage { get; set; }
     public short HeightPercentage { get; set; }
@@ -111,3 +111,4 @@ public class MonsterData
         return this;
     }
 }
+
