@@ -30,7 +30,14 @@ public class UiFixedPositionElement : UiElement
         if (_sprite == null)
         {
             var sm = Resolve<IBatchManager<SpriteKey, SpriteInfo>>();
-            var texture = Assets.LoadTexture(_id);
+            var texture = _id.IsNone ? null : Assets.LoadTexture(_id);
+            if (texture == null)
+            {
+                // Missing/None texture: render nothing rather than crash — e.g. combat on
+                // a map with no CombatBackgroundId set.
+                Warn($"UiFixedPositionElement: no texture for {_id}");
+                return;
+            }
             var key = new SpriteKey(texture, SpriteSampler.Point, DrawLayer.Interface, SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest);
             _sprite = sm.Borrow(key, 1, this);
         }
@@ -46,6 +53,9 @@ public class UiFixedPositionElement : UiElement
 
     void Rebuild()
     {
+        if (_sprite == null)
+            return;
+
         var window = Resolve<IGameWindow>();
         var position = new Vector3(window.UiToNorm(_extents.X, _extents.Y), 0);
         var size = window.UiToNormRelative(_extents.Width, _extents.Height);

@@ -233,12 +233,14 @@ public class SheetApplier : Component
 
         // If the dead member was the party leader, hand the torch to the first conscious
         // walk-order member so the camera/status bar don't end up tied to an unconscious body.
+        // PartyMemberId → SheetId must go through ToSheet() (PartyMember.N → PartySheet.N);
+        // the raw AssetId cast throws ArgumentOutOfRange (SheetId rejects PartyMember ids).
         var party = TryResolve<IParty>();
-        if (party?.Leader != null && (SheetId)(AssetId)party.Leader.Id == sheet.Id)
+        if (party?.Leader != null && party.Leader.Id.ToSheet() == sheet.Id)
         {
             foreach (var candidate in party.WalkOrder)
             {
-                if ((SheetId)(AssetId)candidate.Id == sheet.Id)
+                if (candidate.Id.ToSheet() == sheet.Id)
                     continue;
                 if ((candidate.Apparent?.Combat?.Conditions & PlayerConditions.UnconsciousMask) != 0)
                     continue;
@@ -286,15 +288,17 @@ public class SheetApplier : Component
         // LifePointsPerLevel / SpellPointsPerLevel / TrainingPointsPerLevel are encoded
         // in the sheet binary at fixed offsets — see CharacterSheet.cs:105-107. Read them
         // and apply to current and max. These ARE engine-encoded so trustworthy.
+        // Null guards: non-caster members have no SpellPoints attribute, and malformed
+        // sheets can lack LifePoints — a level-up must never crash the round resolution.
         var hpGain = sheet.LifePointsPerLevel;
-        if (hpGain > 0)
+        if (hpGain > 0 && sheet.Combat?.LifePoints != null)
         {
             sheet.Combat.LifePoints.ApplyToMax(NumericOperation.AddAmount, hpGain);
             sheet.Combat.LifePoints.Apply(NumericOperation.AddAmount, hpGain);
         }
 
         var spGain = sheet.SpellPointsPerLevel;
-        if (spGain > 0)
+        if (spGain > 0 && sheet.Magic?.SpellPoints != null)
         {
             sheet.Magic.SpellPoints.ApplyToMax(NumericOperation.AddAmount, spGain);
             sheet.Magic.SpellPoints.Apply(NumericOperation.AddAmount, spGain);

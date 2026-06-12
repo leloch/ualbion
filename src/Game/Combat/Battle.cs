@@ -48,12 +48,11 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     public Battle(MonsterGroupId groupId, SpriteId backgroundId)
     {
-        On<EndCombatEvent>(e =>
-        {
-            if (e.Result == CombatResult.Victory)
-                AwardExperience();
-            Complete?.Invoke();
-        });
+        // Handles EXTERNAL end_combat raises (debug menu, scripts). Battle's own
+        // CheckBattleOver calls HandleCombatEnd directly because Raise() skips the
+        // sender's handlers — without the direct call, natural victories leave the
+        // battle subscribed and the combat scene pushed forever.
+        On<EndCombatEvent>(e => HandleCombatEnd(e.Result));
         OnAsync<BeginCombatRoundEvent>(BeginRoundAsync);
         OnAsync<ObserveCombatEvent>(Observe);
         On<QueueCombatActionEvent>(OnQueueAction);
@@ -108,6 +107,8 @@ public class Battle : GameComponent, IReadOnlyBattle
     const float TurnDelaySeconds = 0.3f;
     const float TurnResultDelaySeconds = 0.5f;
 
+    bool _roundInProgress;
+
     async AlbionTask BeginRoundAsync(BeginCombatRoundEvent _)
     {
         // Resolve exactly ONE round per invocation — the original runs a single round each
@@ -115,6 +116,26 @@ public class Battle : GameComponent, IReadOnlyBattle
         // initiative order (highest Speed first) — matches the original engine's
         // fcn.0004c3f5 builder which sorts the combatant table descending by sheet
         // attribute #3 (Speed).
+        //
+        // Re-entrancy guard: playback awaits wall-clock timers, so a second
+        // begin_combat_round arriving mid-round would interleave two resolutions (and
+        // crash with a null Exchange if the first ends the battle while the second is
+        // suspended). One round at a time.
+        if (_roundInProgress || _combatEnded)
+            return;
+        _roundInProgress = true;
+        try
+        {
+            await RunRound();
+        }
+        finally
+        {
+            _roundInProgress = false;
+        }
+    }
+
+    async AlbionTask RunRound()
+    {
         var partyAlive = LiveParticipants(forParty: true).ToList();
         var mobsAlive  = LiveParticipants(forParty: false).ToList();
         if (CheckBattleOver(partyAlive.Count, mobsAlive.Count))
@@ -122,6 +143,7 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         foreach (var (attacker, isParty) in OrderByInitiative(partyAlive, mobsAlive))
         {
+            if (Exchange == null || _combatEnded) return; // detached mid-playback
             if (LifePoints(attacker) <= 0) continue; // killed earlier this round
             if (!CanAct(attacker))
             {
@@ -141,12 +163,17 @@ public class Battle : GameComponent, IReadOnlyBattle
             // resolve the action (which raises CombatHitEvents), then pause on the result.
             Raise(new CombatTurnHighlightEvent(TileOf(attacker)));
             await RaiseA(new WallClockTimerEvent(TurnDelaySeconds));
+            if (Exchange == null || _combatEnded) return;
             TakeTurn(attacker, forParty: isParty);
             await RaiseA(new WallClockTimerEvent(TurnResultDelaySeconds));
+            if (Exchange == null || _combatEnded) return;
 
             if (!LiveParticipants(forParty: true).Any() || !LiveParticipants(forParty: false).Any())
                 break;
         }
+
+        if (Exchange == null || _combatEnded)
+            return;
 
         Raise(new CombatTurnHighlightEvent(-1));
 
@@ -170,14 +197,29 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (partyAlive == 0)
         {
             Raise(new EndCombatEvent(CombatResult.PartyKilled));
+            HandleCombatEnd(CombatResult.PartyKilled); // Raise() skips own handlers
             return true;
         }
         if (mobsAlive == 0)
         {
             Raise(new EndCombatEvent(CombatResult.Victory));
+            HandleCombatEnd(CombatResult.Victory); // Raise() skips own handlers
             return true;
         }
         return false;
+    }
+
+    bool _combatEnded;
+
+    void HandleCombatEnd(CombatResult result)
+    {
+        if (_combatEnded) // Guard against double-handling (external raise + direct call)
+            return;
+        _combatEnded = true;
+
+        if (result == CombatResult.Victory)
+            AwardExperience();
+        Complete?.Invoke();
     }
 
     int TileOf(ICombatParticipant p) => p == null ? -1 : Array.IndexOf(_tiles, p);
