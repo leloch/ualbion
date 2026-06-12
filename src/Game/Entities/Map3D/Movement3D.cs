@@ -72,22 +72,87 @@ public class Movement3D : Component
     void OnMove3D(PartyMove3DEvent e)
     {
         // Velocity.X = strafe intensity (positive = right), Velocity.Y = forward intensity.
-        // CameraMoveEvent uses tile-relative deltas that CameraMotion3D yaw-transforms and
-        // integrates with the engine's delta time. Integer sign is enough for forward/strafe;
-        // CameraMotion3D scales by tile size and delta time.
         int strafe = Math.Abs(e.Velocity.X) > MoveDeadZone ? Math.Sign(e.Velocity.X) : 0;
         int forward = Math.Abs(e.Velocity.Y) > MoveDeadZone ? Math.Sign(e.Velocity.Y) : 0;
         if (strafe == 0 && forward == 0)
             return;
 
-        if (!_noclip && IsBlocked(strafe, forward))
+        // Rotate the camera-local input into world tile axes. The camera looks along -Z at
+        // yaw 0, so forward=+1 maps to -Z before rotation.
+        var camera = TryResolve<UAlbion.Core.Visual.ICamera>();
+        float yaw = camera?.Yaw ?? 0f;
+        var local = new Vector3(strafe, 0, -forward);
+        var world = Vector3.Transform(local, Quaternion.CreateFromYawPitchRoll(yaw, 0f, 0f));
+
+        if (!_noclip)
         {
-            TraceLog.Emit("move3d_blocked", ("strafe", strafe), ("forward", forward));
-            return;
+            world = FilterCollision(world);
+            if (world.X == 0 && world.Z == 0)
+            {
+                TraceLog.Emit("move3d_blocked", ("strafe", strafe), ("forward", forward));
+                return;
+            }
         }
 
-        TraceLog.Emit("move3d", ("strafe", strafe), ("forward", forward));
-        Raise(new CameraMoveEvent(strafe, forward, null));
+        TraceLog.Emit("move3d", ("strafe", strafe), ("forward", forward), ("wx", world.X), ("wz", world.Z));
+        Raise(new CameraMove3DWorldEvent(world.X, world.Z));
+    }
+
+    // PLACEHOLDER: collision radius around the party in tile units. The original engine's
+    // exact wall margin hasn't been recovered from MAIN.EXE (the 3D-engine module retains
+    // no debug strings); 0.25 matches its feel — you can approach a wall to about a quarter
+    // tile and slide along it. Confirm by measuring the original under DOSBox if precision
+    // matters later.
+    const float CollisionRadiusTiles = 0.25f;
+
+    /// <summary>
+    /// Axis-separated sub-tile collision: each world axis of the velocity is tested
+    /// independently against the tile the party's collision margin would enter, so motion
+    /// into a wall is cancelled on that axis only and the remainder slides along the wall —
+    /// matching the original engine's smooth wall-hugging movement.
+    /// </summary>
+    Vector3 FilterCollision(Vector3 worldVel)
+    {
+        var detector = TryResolve<ICollisionManager>();
+        var party = TryResolve<IParty>();
+        var leader = party?.Leader;
+        if (detector == null || leader == null)
+            return worldVel;
+
+        var pos = leader.GetPosition(); // Tile units; tile N owns [N, N+1)
+        int curX = (int)MathF.Floor(pos.X);
+        int curY = (int)MathF.Floor(pos.Z);
+
+        bool xBlocked = false, yBlocked = false;
+        int targetX = curX, targetY = curY;
+
+        if (worldVel.X != 0)
+        {
+            targetX = (int)MathF.Floor(pos.X + MathF.Sign(worldVel.X) * CollisionRadiusTiles + worldVel.X * 0.05f);
+            if (targetX != curX && detector.IsOccupied(curX, curY, targetX, curY))
+                xBlocked = true;
+        }
+
+        if (worldVel.Z != 0)
+        {
+            targetY = (int)MathF.Floor(pos.Z + MathF.Sign(worldVel.Z) * CollisionRadiusTiles + worldVel.Z * 0.05f);
+            if (targetY != curY && detector.IsOccupied(curX, curY, curX, targetY))
+                yBlocked = true;
+        }
+
+        // Diagonal corner case: both axes individually clear but the corner tile is solid.
+        if (!xBlocked && !yBlocked && targetX != curX && targetY != curY
+            && detector.IsOccupied(curX, curY, targetX, targetY))
+        {
+            xBlocked = true; // Arbitrarily keep the Z component so we slide rather than stop dead
+        }
+
+        TraceLog.Emit("collide_check",
+            ("from_x", curX), ("from_y", curY),
+            ("to_x", targetX), ("to_y", targetY),
+            ("x_blocked", xBlocked), ("y_blocked", yBlocked));
+
+        return new Vector3(xBlocked ? 0 : worldVel.X, 0, yBlocked ? 0 : worldVel.Z);
     }
 
     void OnTurn(PartyTurnEvent e)
@@ -125,47 +190,4 @@ public class Movement3D : Component
         _pendingYawDegrees = delta;
     }
 
-    bool IsBlocked(int strafe, int forward)
-    {
-        var detector = TryResolve<ICollisionManager>();
-        if (detector == null)
-            return false;
-
-        var party = TryResolve<IParty>();
-        var leader = party?.Leader;
-        if (leader == null)
-            return false;
-
-        var leaderPos = leader.GetPosition();
-        // Camera/world axes in this engine: X = east-west, Z = north-south (Y is up).
-        // The map's tile Y maps to world Z (see DungeonMap.Setup: VerticalSpacing = TileSize * UnitZ).
-        // leader.GetPosition() returns position/TileSize so it's already in tile units.
-        //
-        // We use Floor (not Round) for the "current" tile: tile coordinate N owns the
-        // half-open range [N, N+1), so position 31.6 is INSIDE tile 31. Round would flip
-        // to tile 32 once we pass the half-tile mark and check the wrong destination tile
-        // — that was the bug the user reported as "no collisions".
-        int fromX = (int)MathF.Floor(leaderPos.X);
-        int fromY = (int)MathF.Floor(leaderPos.Z);
-
-        // Predict next tile from the leader's facing direction. The math must match exactly
-        // what CameraMotion3D does: world delta = Vector3.Transform((eX, 0, -eY), Q(yaw)).
-        // The camera looks along -Z at yaw 0, so forward=+1 moves -Z = -tileY; strafe=+1
-        // moves +X = +tileX.
-        var camera = TryResolve<UAlbion.Core.Visual.ICamera>();
-        float yaw = camera?.Yaw ?? 0f;
-        var localVel = new System.Numerics.Vector3(strafe, 0, -forward);
-        var rotation = System.Numerics.Quaternion.CreateFromYawPitchRoll(yaw, 0f, 0f);
-        var worldVel = System.Numerics.Vector3.Transform(localVel, rotation);
-        int toX = fromX + (int)MathF.Round(worldVel.X);
-        int toY = fromY + (int)MathF.Round(worldVel.Z);
-
-        var blocked = detector.IsOccupied(fromX, fromY, toX, toY);
-        TraceLog.Emit("collide_check",
-            ("from_x", fromX), ("from_y", fromY),
-            ("to_x",   toX),   ("to_y",   toY),
-            ("yaw",    yaw),
-            ("blocked", blocked));
-        return blocked;
-    }
 }
