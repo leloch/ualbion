@@ -40,22 +40,26 @@ LightningStrike ungated, shields = hour-duration entries in SavedGame.ActiveSpel
 original's SP timing vs zero-continuation casts); monster-AI spell pick should be
 uniform-random over candidates matching preferred target bits (ours = first affordable).
 
-### Cluster C (world tick & state) — RUNNING (retry; first run died without output)
-| # | Question | Unlocks |
-|---|---|---|
-| C1 | Light's ambient entry {hours,pct} write + accumulation + percent→ambient mapping; whether Levitation is an active-spell entry | Real Light/Levitation decay (`DjiKasSpells.cs:58`, `MapRenderable3D.cs:48`, `ActivePartySpells`, `Collider3D.cs:35`) |
-| C2 | Lockpicking formula + trap-trigger + lockpick consumption | `InventoryLockPane.cs:102` |
-| C3 | Query opcodes 0xC / 0x19 / 0x1E / 0x21 | `Querier.cs:87-90` |
-| C4 | Rest interruption (mid-rest abort?) | rest fidelity |
+### Cluster C (world tick & state) — ✅ DECODED (`_RE_5C.md`) and ✅ APPLIED (`fe822d22`)
+Real Light system (ambient entry accumulates, dungeon formula min(100, max(spell,
+items)) + Iskai bonus, hourly decay, recompute on cast/hour/inventory); lockpicking
+formula (auto ≥ difficulty, else skill·(100−diff)/100 roll); the four query opcodes
+(facing / leader-language / schedule-tick / is-it-light); rest heals before the clock
+advance, no mid-rest interruption exists. Levitation (37) confirmed DEAD in the
+original (NULL handler + env 0) — our implementation stays dormant.
 
-### Cluster D (NPC & misc constants) — RUNNING
-Give-up radius, 3D NPC walk speed, MonsterEye proximity, 3D collision margin,
-SetPartyLeader unk2/3, sheet+0x1C, MapNpc leftovers, PlaceAction Unk2.
+### Cluster D (NPC & misc constants) — ✅ DECODED (`_RE_5D.md`) and ✅ APPLIED (`c9fd77a9`)
+Collision margin = MAX(tile/4, 50) (bug fixed — quarter tile); detection 10 Euclidean
+2D / Bresenham LOS 3D / unlimited cities; binary MonsterEye; 3D NPC walk 0.7 tiles/s;
+PlaceAction Unk2 = intro text (shown); SetPartyLeader unk2/3 ignored; sheet+0x1C =
+removed-NPC index.
 
-## 3. Implementation blocked only on the above RE
-C1→Light/Levitation, C2→lockpicking, C3→queries, C4→rest abort, D→constant swaps +
-unk decodes. Plus the cluster-A/B leftovers listed above (battle-view walk lerp, ghost
-translucency, fizzle SP timing, AI spell-pick randomisation).
+## 3. Remaining implementation leftovers from the clusters
+- Battle-view WALK lerp for multi-tile monster moves (state side done).
+- Fizzle SP timing: verify the original doesn't charge SP on zero-target casts.
+- 5D extras not yet wired: MapNpc V2 byte1 = ambient sound-set index (positional loop
+  samples, table 13×0x28 @0x13db10); NpcState ActiveSfx0-3 = the sample handles;
+  MapNpc flag 0x40 = collision class 1; NoClip is really a collision-class selector.
 
 ## 4. Implementation possible NOW (no RE needed)
 
