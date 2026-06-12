@@ -51,6 +51,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         OnAsync<DrinkItemEvent>(OnDrinkItem);
         OnAsync<ReadItemEvent>(OnReadItem);
         On<ReadSpellScrollEvent>(OnReadSpellScroll);
+        On<ConsumeItemChargeEvent>(OnConsumeCharge);
 
         ItemInHand = new ReadOnlyItemSlot(_hand);
     }
@@ -652,6 +653,42 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
 
         slot.Amount--;
         Update(e.SlotId.Id);
+    }
+
+    void OnConsumeCharge(ConsumeItemChargeEvent e)
+    {
+        // Combat magic-item use: charged items (wands etc) lose one charge; uncharged
+        // consumables (potions) lose one from the stack instead.
+        var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
+        var inv = _getInventory(invId);
+        if (inv == null)
+            return;
+
+        ItemSlot uncharged = null;
+        foreach (var slot in inv.EnumerateAll())
+        {
+            if (slot.Item != e.ItemId)
+                continue;
+
+            if (slot.Charges > 0)
+            {
+                slot.Charges--;
+                Info($"[Inv] {e.MemberId} used a charge of {e.ItemId} ({slot.Charges} left)");
+                Raise(new InventoryChangedEvent(invId));
+                return;
+            }
+
+            uncharged ??= slot;
+        }
+
+        if (uncharged != null)
+        {
+            uncharged.Amount--;
+            if (uncharged.Amount == 0)
+                uncharged.Clear();
+            Info($"[Inv] {e.MemberId} consumed one {e.ItemId} ({uncharged.Amount} left)");
+            Raise(new InventoryChangedEvent(invId));
+        }
     }
 
     AlbionTask OnReadItem(ReadItemEvent e)
