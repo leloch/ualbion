@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Numerics;
 using UAlbion.Api.Eventing;
 using UAlbion.Api.Settings;
@@ -43,8 +43,6 @@ public class Monster : GameComponent, ICombatParticipant
     public int FrameCount => _sprite.FrameCount;
 
     public SheetId SheetId => _sheet.Id;
-    public SpriteId TacticalSpriteId => _sheet.TacticalGfx;
-    public SpriteId CombatSpriteId => _sheet.CombatGfx;
     public IEffectiveCharacterSheet Effective { get; private set; }
     public override string ToString()
         => $"{_sheet.Id} at {CombatPosition} ({CombatPosition % SavedGame.CombatColumns}, {CombatPosition / SavedGame.CombatColumns})";

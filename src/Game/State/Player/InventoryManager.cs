@@ -701,8 +701,8 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         // Combat equipment wear (MAIN.EXE fcn.0004f920): flag the slot broken (the item
         // id never changes — RE batch 4 confirmed there is NO morph) and show the
         // "X is broken!" message. The original moves the broken item to the post-combat
-        // loot list and empties the slot; we keep it equipped with the Broken flag
-        // (PLACEHOLDER until the battle-loot window exists). RepairItem clears the flag.
+        // loot list and empties the slot; we keep it equipped with the Broken flag — a
+        // deliberate equivalent-outcome deviation. RepairItem clears the flag.
         var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
         var inv = _getInventory(invId);
         var slot = inv?.GetSlot(e.SlotId);

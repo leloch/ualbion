@@ -127,8 +127,6 @@ public class CombatBuffsTests
 
         public int CombatPosition => 0;
         public SheetId SheetId { get; }
-        public SpriteId TacticalSpriteId => default;
-        public SpriteId CombatSpriteId => default;
         public UAlbion.Formats.Assets.Sheets.IEffectiveCharacterSheet Effective { get; }
     }
 }

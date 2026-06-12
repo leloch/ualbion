@@ -10,7 +10,7 @@ public interface ICombatParticipant
     int X => CombatPosition % SavedGame.CombatColumns;
     int Y => CombatPosition / SavedGame.CombatColumns;
     SheetId SheetId { get; }
-    SpriteId TacticalSpriteId { get; }
-    SpriteId CombatSpriteId { get; }
+    // Combat visuals come from Effective.TacticalGfx / Effective.CombatGfx —
+    // the sheet derives them for both party members and monsters.
     IEffectiveCharacterSheet Effective { get; }
 }
