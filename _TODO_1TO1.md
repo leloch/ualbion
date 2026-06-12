@@ -55,8 +55,10 @@ PlaceAction Unk2 = intro text (shown); SetPartyLeader unk2/3 ignored; sheet+0x1C
 removed-NPC index.
 
 ## 3. Remaining implementation leftovers from the clusters
-- Battle-view WALK lerp for multi-tile monster moves (state side done).
-- Fizzle SP timing: verify the original doesn't charge SP on zero-target casts.
+- Battle-view WALK lerp for multi-tile monster moves (state side done; view needs a
+  CombatMoveEvent → per-tile lerp at Move-anim-length engine frames).
+- ~~Fizzle SP timing~~ VERIFIED CORRECT `57bc62e5` (the fizzle return precedes the
+  SP charge — zero-target casts cost nothing).
 - 5D extras not yet wired: MapNpc V2 byte1 = ambient sound-set index (positional loop
   samples, table 13×0x28 @0x13db10); NpcState ActiveSfx0-3 = the sample handles;
   MapNpc flag 0x40 = collision class 1; NoClip is really a collision-class selector.
@@ -70,7 +72,7 @@ removed-NPC index.
 | ~~Dead `TacticalSpriteId`~~ | — | DONE `021a3481` — removed from interface + impls |
 | ~~VideoManager positioned pics~~ | `VideoManager.cs` | DONE `9212f855` — non-zero x/y draws at native size at UI coords |
 | Selection3D per-tile picking | `Selection3D.cs:22` | Ground-plane intersection only; wall-face ray refinement |
-| Conversation default block | `Conversation.cs:187` | Unhandled BlockId falls through silently — enumerate which ids hit it (harness trace) and handle |
+| ~~Conversation default block~~ | `Conversation.cs` | RESOLVED `57bc62e5` — all four real BlockIds handled; default now warns on malformed data |
 | Goddess' amulet activation | `InventoryManager.cs:223` | Special-item activation chain ("TODO: Goddess' amulet etc"); story-critical late-game item |
 | TextFormatter Damage token | `TextFormatter.cs:40` | Guessed semantics; scan game texts for actual usage to confirm |
 | Animated 3D meshes | `MapObject.cs:102` | 3D map objects don't animate |
