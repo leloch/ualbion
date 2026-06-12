@@ -1051,21 +1051,37 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (spells == null || spells.Count == 0)
             return false;
 
+        // Candidate filter (RE 5B §4.2, fcn.0004fd56): known + affordable + combat
+        // environment + OFFENSIVE targets only (0x38 — monsters never self-buff);
+        // the pick is UNIFORM RANDOM over the candidates (fcn.00050360).
         int sp = SpellPoints(caster);
+        var candidates = new List<SpellId>();
         foreach (var spellId in spells)
         {
             var spell = Assets.LoadSpell(spellId);
-            if (spell == null || (spell.Cost > 0 && spell.Cost > sp))
+            if (spell == null || spell.Cost <= 0 || spell.Cost > sp)
                 continue;
-
-            var target = LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault();
-            if (target == null)
-                return false;
-
-            CastQueuedSpell(caster, spellId, TileOf(target));
-            return true;
+            if ((spell.Environments & UAlbion.Formats.Assets.SpellEnvironments.Combat) == 0)
+                continue;
+            const UAlbion.Formats.Assets.SpellTargets offensive =
+                UAlbion.Formats.Assets.SpellTargets.OneMonster
+                | UAlbion.Formats.Assets.SpellTargets.RowOfMonsters
+                | UAlbion.Formats.Assets.SpellTargets.AllMonsters;
+            if ((spell.Targets & offensive) == 0)
+                continue;
+            candidates.Add(spellId);
         }
-        return false;
+
+        if (candidates.Count == 0)
+            return false;
+
+        var target = LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault();
+        if (target == null)
+            return false;
+
+        var rng = Resolve<IRandom>();
+        CastQueuedSpell(caster, candidates[rng.Generate(candidates.Count)], TileOf(target));
+        return true;
     }
 
     /// <summary>
