@@ -1,69 +1,53 @@
-﻿# UAlbion â€” Iteration Session Status
+﻿# UAlbion — Iteration Session Status
 
-> Rolling status. Updated 2026-06-12 after the **rendering-root-cause session**.
+> Rolling status. Updated 2026-06-12 (second pass) after the **gameplay-completeness session**.
 
-## 2026-06-12 session â€” BOTH headline rendering bugs fixed (one root cause)
+## 2026-06-12 second pass — five gameplay systems landed
 
-### The big fix: SPIR-V optimization broke D3D11 (commit `0dc83ac3`)
+1. **Sub-tile 3D collision with wall sliding** — axis-separated margin checks (0.25-tile
+   radius PLACEHOLDER), diagonal input slides along walls; CameraMove3DWorldEvent carries
+   collision-filtered world-axis velocity. Verified: party stops at wall + 0.25, slides on
+   diagonal input.
+2. **Combat action pickers** — Move / Use magic / Use magic item fully wired:
+   CombatActionPicker drives spell/item submenus + target-tile clicks into
+   QueueCombatActionEvent (now carries SpellId/ItemId); Battle resolves Move (teleport
+   PLACEHOLDER, original path-finds via fcn.00051b51), CastSpell (SP gating + consumption)
+   and UseItem. Fixed: GameState.GetTarget crashed on PartyMember targets; ChangeStatus/
+   ChangeItem/ChangeAttribute/etc script events were never routed to SheetApplier (map
+   event chains silently did nothing!).
+3. **NPC schedules** — 2D waypoint-following verified (Jiris + herd migrate with game
+   time); 3D maps get live Npc3D entities (wander + waypoint walk; previously static
+   props). GET /npcs endpoint for empirical verification. MTicksToday = 48/hour (1152
+   slots/day) matches the waypoint arrays.
+4. **All 39 named spells have effect handlers** — CombatBuffs (Berserk = the RE'd
+   "powered" AP-doubling flag; Hurry/Boasting/MagicShield/PersonalProtection), combat
+   traps/mines, Steal Life/Magic, Quick Withdrawal, anti-demon damage line, utility
+   placeholders that trace their missing subsystem. Spells finally damage MONSTERS (battle
+   HP-shadow callbacks); empty-tile casts retarget by SpellData.Targets (was self-nuking).
+5. **3D automap (Phase 5.3)** — AutomapDialog composes the dungeon top-down from
+   AutomapTiles gfx via MapData3D.AutomapGraphics (the original's wall→tile table),
+   discovery radius marked on tile entry, persisted via SavedGame.Automaps (original-save
+   blobs restore; their stride differs slightly so reads are bounds-safe). Toggle:
+   show_automap event / "Map" in the 3D context menu.
 
-The "3D striped walls" (Drinno) and "2D black map" (Nakiridaani/Winion) bugs shared one
-root cause: `ShaderCache` compiled GLSLâ†’SPIR-V **with optimization in Release builds**:
+Also: --dump --formats png fixed end-to-end (8268 PNGs, 21 categories, 0 failures) for
+the user's upscaling work; GlobalResourceSetUpdater startup race fixed (dummy palette
+seeding — was a reliable crash with -c load_game at boot).
 
-1. The optimizer strips never-referenced resource declarations. Veldrid.SPIRV assigns
-   D3D11 registers from surviving declarations only, but Veldrid binds by the full C#
-   resource-set layout. `ExtrudedTileMapSF`'s palette declarations are unused (dead
-   `#ifdef USE_PALETTE`), so `DayFloors`/`DayWalls` shifted to t0/t1 â€” the palette
-   texture slots. **The 3D dungeon was rendering the palette texture** (vivid 1-px
-   columns = palette entries). `BlendedSpriteSF` (2D day/night map layers) and `MeshSF`
-   had the same shift â†’ 2D maps drew the palette (rainbow) or discarded to black.
-2. Even with correct registers (TilesSF references everything), optimized SPIR-V made
-   D3D11 structured-buffer reads return zeros (`Map[]` empty â†’ tile ids all 0 â†’ black).
+### Verification (all green)
+- **503 unit tests** (207 in Game.Tests), smoke **13/13**, explore gauntlet
+  (load + 24h + encounter + 3 combat rounds × 13 saves) **0 failures**.
 
-Debug builds compiled without optimization â€” which is why developers never saw it.
-Vulkan was always correct. Diagnosis chain that cracked it: working `/screenshot` â†’
-UV-probe shaders â†’ CPU atlas PNG dumps (perfect) â†’ GPU texture readback (perfect after
-cache poke) â†’ cached `.hlsl` register inspection (wrong) â†’ Debug-vs-Release A/B.
-
-**Fixes**: ShaderCache always compiles with debug options; keep-alive blocks in the three
-shaders guard against re-enabling optimization. **Never re-enable SPIR-V optimization.**
-Shader cache (`%LOCALAPPDATA%\ualbion\ShaderCache`) hash covers GLSL content only â€” clear
-it manually if compile options ever change.
-
-### Other fixes this session
-
-- **EventExchange detached-handler guard** â€” components detached mid-broadcast by an
-  earlier handler no longer receive the event (NRE crash in `SkyboxRenderable` when
-  `load_game` tore down the old map during `EngineUpdateEvent`). `IComponent.IsSubscribed`
-  added.
-- **LogicalMap2D out-of-range tile ids** â€” `GetUnderlay`/`GetOverlay` now bounds-check
-  against `TileData.Tiles.Count`; corrupt cells (e.g. `ChangeUnderlay 0` â†’ 0xFFFF) no
-  longer crash NPC pathing (`CollisionManager.IsOccupied` AOORE on save 4).
-- **Offscreen render mirror re-applied, resize-aware** â€” `P_Game â†’ FB_Render`,
-  `P_Composite â†’ FB_Screen`; `C_WindowUpdater` resizes `FB_Render` with the window.
-  `/screenshot` works on all backends. (The old "mirror broke 2D" suspicion was wrong â€”
-  that was the shader bug.)
-- **`party_move_3d` text-parseable** â€” harness/console can drive 3D movement; verified
-  forward/backward/strafe + collision blocking + noclip via HTTP.
-- **Harness upgrades**: `/wallpixels|/floorpixels?format=png` (CPU atlas layer as PNG),
-  `/gpuwallpixels|/gpufloorpixels?layer=N` (live GPU texture readback), `/camera` works
-  on 2D scenes (resolves via `ICameraProvider`).
-- **`_harness_explore.ps1` report fixed** (`$script:report`) â€” full gauntlet now reports.
-
-### Verification state (all green)
-
-| Check | Result |
+### Known PLACEHOLDERs for byte-exact follow-up (all marked in code)
+| Area | What needs RE |
 |---|---|
-| Unit tests | **483 / 483** |
-| Smoke (13 saves, `--startuponly`) | **13 / 13 clean** |
-| Harness E2E (`_harness_drive.ps1`) | **20 / 20 PASS** |
-| Explore gauntlet (load + 24h + encounter + 3 combat rounds Ã— 13 saves) | **0 failures** |
-| Visual sweep | **All 13 saves screenshot-verified rendering correctly on D3D11 Release** |
-
-### Map-type correction (save catalog)
-
-Jirinaar (110), HunterClanCellar (123), Drinno (146/147) are **3D**; Nakiridaani (200),
-Winion (132), JirinaarTownHall (113), SnirdArmoury (118) are true 2D. (Earlier docs
-mislabelled Jirinaar/HunterClanCellar as 2D.)
+| Collision radius 0.25 | measure original under DOSBox |
+| Combat Move | path-find + range via fcn.00051b51/fcn.00053871 |
+| Buff magnitudes/durations | per-spell handlers in the deferred-action dispatcher |
+| Spell damage/heal numbers | school cast-info blocks at 0x13e1a4+ |
+| Automap tile selection | automap.c (debug strings retained at 0x13168c!) |
+| 3D NPC walk speed / collision | original step rate not decoded |
+| Light/MapView/Teleporter/Levitation/ViewOfLife | need light-override / automap-reveal / travel-UI subsystems |
 
 ## Still-pending gameplay work (next session targets)
 
@@ -92,4 +76,5 @@ Start-Process -FilePath 'build\UAlbion\bin\Release\net9.0\UAlbion.exe' -Argument
 Invoke-RestMethod -Method POST http://localhost:7878/event/raw -Body "load_game 1" -ContentType text/plain
 Invoke-WebRequest -Method POST http://localhost:7878/screenshot -OutFile _shot.png
 ```
+
 
