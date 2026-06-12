@@ -234,7 +234,14 @@ public class Battle : GameComponent, IReadOnlyBattle
         _combatEnded = true;
 
         if (result == CombatResult.Victory)
+        {
             AwardExperience();
+            if (_loot.Count > 0 || _lootGold > 0 || _lootRations > 0)
+            {
+                var items = _loot.Select(kvp => (kvp.Key, (ushort)Math.Min(ushort.MaxValue, kvp.Value))).ToList();
+                Raise(new ShowBattleLootEvent(items, _lootGold, _lootRations));
+            }
+        }
         ClearCombatScopedConditions();
         Complete?.Invoke();
     }
@@ -304,6 +311,22 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// Monsters leave the grid when killed (the original plays a death animation then
     /// clears the cell). Party members stay — unconscious bodies remain visible.
     /// </summary>
+    // Post-combat loot, RE'd from MAIN.EXE fcn.0004e124 (monster-death dump): a killed
+    // monster's equipped items + backpack + gold (sheet+0x18) + rations (sheet+0x1A) go
+    // into the loot list; broken party gear is added here too (fcn.000665ce moves it to
+    // the same list). Presented at victory in the battle-loot window.
+    readonly Dictionary<ItemId, int> _loot = [];
+    int _lootGold;
+    int _lootRations;
+
+    void AddLoot(ItemId item, int amount)
+    {
+        if (item.IsNone || amount <= 0)
+            return;
+        _loot.TryGetValue(item, out int existing);
+        _loot[item] = existing + amount;
+    }
+
     void RemoveMonsterCorpse(ICombatParticipant p)
     {
         if (p == null || p.SheetId.Type == AssetType.PartySheet)
@@ -313,6 +336,21 @@ public class Battle : GameComponent, IReadOnlyBattle
             _tiles[tile] = null;
         _corpses.Add(p);
         _xpPool += p.Effective?.ExperienceReward ?? 0;
+        CollectMonsterLoot(p);
+    }
+
+    void CollectMonsterLoot(ICombatParticipant p)
+    {
+        var inv = p.Effective?.Inventory;
+        if (inv == null)
+            return;
+
+        foreach (var slot in inv.EnumerateAll())
+            if (slot != null && slot.Item.Type == AssetType.Item)
+                AddLoot(slot.Item, Math.Max(1, (int)slot.Amount));
+
+        _lootGold += inv.Gold?.Amount ?? 0;
+        _lootRations += inv.Rations?.Amount ?? 0;
     }
 
     void AwardExperience()
@@ -708,6 +746,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             GetLiveEnemies = () => LiveParticipants(forParty: !IsParty(caster)).ToList(),
             GetAllies = () => LiveParticipants(forParty: IsParty(caster)).ToList(),
             HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
+            ModifySp = ModifySpellPoints,
             // Instant kill = LP wipe through the normal damage path so death / corpse /
             // XP-pool handling resolve identically (the original's fcn.0004e247).
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
@@ -733,9 +772,8 @@ public class Battle : GameComponent, IReadOnlyBattle
     }
 
     /// <summary>
-    /// Resolve a queued magic-item use: cast the item's spell with no SP cost.
-    /// PLACEHOLDER: charge consumption needs the inventory slot plumbing
-    /// (InventoryManager.OnActivateItemSpell has it for the out-of-combat path).
+    /// Resolve a queued magic-item use: cast the item's spell with no SP cost; a charge
+    /// (or one consumable) is consumed on success via ConsumeItemChargeEvent below.
     /// </summary>
     void UseQueuedItem(ICombatParticipant user, QueueCombatActionEvent pending)
     {
@@ -764,6 +802,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             GetLiveEnemies = () => LiveParticipants(forParty: !IsParty(user)).ToList(),
             GetAllies = () => LiveParticipants(forParty: IsParty(user)).ToList(),
             HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
+            ModifySp = ModifySpellPoints,
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
         };
 
@@ -815,6 +854,28 @@ public class Battle : GameComponent, IReadOnlyBattle
     }
 
     /// <summary>
+    /// Add (+) or drain (−) SP on a combatant: party members via Mana events (persistent
+    /// sheet), monsters via the battle SP shadow. Used by Steal Magic.
+    /// </summary>
+    void ModifySpellPoints(ICombatParticipant p, int delta)
+    {
+        if (p == null || delta == 0)
+            return;
+
+        if (p.SheetId.Type == AssetType.PartySheet)
+        {
+            var target = new TargetId(AssetType.PartyMember, p.SheetId.Id);
+            var op = delta > 0 ? NumericOperation.AddAmount : NumericOperation.SubtractAmount;
+            Raise(new DataChangeEvent(target, ChangeProperty.Mana, op, (ushort)Math.Min(ushort.MaxValue, Math.Abs(delta))));
+        }
+        else
+        {
+            int max = p.Effective?.Magic?.SpellPoints?.Max ?? int.MaxValue;
+            _liveSp[p.SheetId] = Math.Clamp(SpellPoints(p) + delta, 0, max);
+        }
+    }
+
+    /// <summary>
     /// Current SP: party members read their live sheet (Mana events keep it current);
     /// monsters use the battle-scoped shadow so casts actually drain their pool.
     /// </summary>
@@ -858,10 +919,22 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         var rng = Resolve<IRandom>();
 
+        // Weapon-type gate: a LongRangeWeapon (ItemType 6) in the weapon hand routes the
+        // strike through the RANGED callback semantics (fcn.0004f057) — the to-hit roll
+        // uses LongRangeCombat instead of CloseRangeCombat. PLACEHOLDER: ammunition
+        // (AmmoType matching + consumption per shot) pending RE.
+        bool ranged = false;
+        var weaponSlot = attacker.Effective?.Inventory?.RightHand;
+        if (weaponSlot != null && weaponSlot.Item.Type == AssetType.Item)
+            ranged = Assets.LoadItem(weaponSlot.Item)?.TypeId == UAlbion.Formats.Assets.Inv.ItemType.LongRangeWeapon;
+
         // 1. TO-HIT: the attacker's weapon skill vs 100 (RE'd from the attack completion
-        // callback fcn.0004eac1 — RollSkill fcn.00035bdc). There is NO defender-side
-        // evasion: the only defender check in the original is dead code (conditions & 0).
-        int weaponSkill = EffectiveSkillFor(attacker, CombatBuffs.BuffKind.CloseCombatSkill, isWeaponSkill: true);
+        // callbacks fcn.0004eac1/fcn.0004f057 — RollSkill fcn.00035bdc). There is NO
+        // defender-side evasion: the only defender check in the original is dead code.
+        int weaponSkill = EffectiveSkillFor(
+            attacker,
+            ranged ? CombatBuffs.BuffKind.RangedCombatSkill : CombatBuffs.BuffKind.CloseCombatSkill,
+            isWeaponSkill: true);
         if (!DamageCalculator.PercentRoll(weaponSkill, rng.Generate(100)))
         {
             TraceLog.Emit("attack_miss",
@@ -904,6 +977,9 @@ public class Battle : GameComponent, IReadOnlyBattle
                          + CombatBuffs.Bonus(attacker.SheetId, CombatBuffs.BuffKind.Attack);
             int rawDef = DamageCalculator.TotalDefense(d)
                          + CombatBuffs.Bonus(defender.SheetId, CombatBuffs.BuffKind.Defense);
+            // MagicShield/PersonalProtection: the active-spell percentage MULTIPLIES
+            // defense (fcn.0004ee3b: rawDef += rawDef·pct/100) — not a flat bonus.
+            rawDef += rawDef * CombatBuffs.Bonus(defender.SheetId, CombatBuffs.BuffKind.ShieldPct) / 100;
             int variedAtk = DamageCalculator.VaryDamage(rawAtk, atkRoll);
             int variedDef = DamageCalculator.VaryDamage(rawDef, defRoll);
             adjusted = Math.Max(0, variedAtk - variedDef);
@@ -986,6 +1062,8 @@ public class Battle : GameComponent, IReadOnlyBattle
         Info($"[Combat] {p.SheetId}'s {item.Id} broke (rate {item.BreakRate}/1000)");
         TraceLog.Emit("item_broke", ("owner", p.SheetId), ("item", item.Id), ("slot", slotId));
         Raise(new BreakInventorySlotEvent(new PartyMemberId(AssetType.PartyMember, p.SheetId.Id), slotId));
+        // The original moves the broken item to the post-combat loot list (it leaves the
+        // body slot); we keep it equipped+Broken for repairability, so don't add to loot.
     }
 
     protected override void Subscribed()

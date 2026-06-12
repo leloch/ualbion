@@ -37,7 +37,7 @@ public class PlaceActionManager : GameComponent
 {
     public PlaceActionManager()
     {
-        On<PlaceActionEvent>(OnPlaceAction);
+        OnAsync<PlaceActionEvent>(OnPlaceAction);
         On<ServiceHealEvent>(DoHeal);
         On<ServiceTrainEvent>(DoTrain);
         On<ServiceBuyFoodEvent>(DoBuyFood);
@@ -57,8 +57,38 @@ public class PlaceActionManager : GameComponent
     [Event("svc_recharge")] public record ServiceRechargeEvent([property: EventPart("member")] PartyMemberId MemberId, [property: EventPart("slot")] UAlbion.Formats.Assets.Inv.ItemSlotId SlotId, [property: EventPart("charges")] ushort Charges, [property: EventPart("price")] ushort Price) : EventRecord;
     [Event("svc_identify")] public record ServiceIdentifyEvent([property: EventPart("member")] PartyMemberId MemberId, [property: EventPart("slot")] UAlbion.Formats.Assets.Inv.ItemSlotId SlotId, [property: EventPart("price")] ushort Price) : EventRecord;
 
-    void OnPlaceAction(PlaceActionEvent e)
+    // The success text (Unk4) for the most recent service offer — shown by the Do*
+    // handlers when the service completes (the menus run asynchronously, so the text
+    // id is held between the offer and the execution like the original's globals).
+    StringId? _pendingSuccessText;
+
+    void ShowSuccessText()
     {
+        if (_pendingSuccessText == null)
+            return;
+        var tf = Resolve<ITextFormatter>();
+        Raise(new DescriptionTextEvent(tf.Format(_pendingSuccessText.Value)));
+        _pendingSuccessText = null;
+    }
+
+    async AlbionTask OnPlaceAction(PlaceActionEvent e)
+    {
+        // Unk3 = confirm-text override, Unk4 = success text (RE batch 4) — string ids
+        // into the firing event set's text set.
+        var context = Context as EventContext;
+        var textSet = context?.EventSet?.StringSetId ?? StringSetId.None;
+        _pendingSuccessText = e.Unk4 != 0 && !textSet.IsNone ? new StringId(textSet, e.Unk4) : null;
+
+        if (e.Unk3 != 0 && !textSet.IsNone)
+        {
+            bool confirmed = await RaiseQueryA(new YesNoPromptEvent(new StringId(textSet, e.Unk3)));
+            if (!confirmed)
+            {
+                _pendingSuccessText = null;
+                return;
+            }
+        }
+
         switch (e.Type)
         {
             case PlaceActionType.Heal:              ShowHealMenu(e.Unk6); break;
@@ -160,6 +190,7 @@ public class PlaceActionManager : GameComponent
                 return;
             Raise(new DataChangeEvent(new TargetId(AssetType.PartyMember, e.MemberId.Id), ChangeProperty.Health, NumericOperation.AddAmount, (ushort)missing));
             Info($"[PlaceAction] Healed {e.MemberId} for {missing} LP ({missing * e.GoldPerLp} gold)");
+            ShowSuccessText();
             return;
         }
     }
@@ -176,6 +207,7 @@ public class PlaceActionManager : GameComponent
             Raise(new ChangeStatusEvent(target, PlayerCondition.Ill, NumericOperation.SubtractAmount, 1));
         }
         Info($"[PlaceAction] Cured the party ({gold} gold)");
+        ShowSuccessText();
     }
 
     void Sleep(ushort gold)
@@ -183,6 +215,7 @@ public class PlaceActionManager : GameComponent
         if (!TrySpendGold(gold))
             return;
         Info($"[PlaceAction] Sleeping in room ({gold} gold)");
+        ShowSuccessText();
         Raise(new RestEvent(8));
     }
 
@@ -205,6 +238,7 @@ public class PlaceActionManager : GameComponent
             return;
         Raise(new DataChangeEvent(new TargetId(AssetType.PartyMember, e.MemberId.Id), ChangeProperty.Food, NumericOperation.AddAmount, e.Amount));
         Info($"[PlaceAction] Bought {e.Amount} rations ({e.Price * e.Amount} gold)");
+        ShowSuccessText();
     }
 
     void ShowTrainMenu(Skill skill, ushort goldPerPoint)
@@ -239,6 +273,7 @@ public class PlaceActionManager : GameComponent
             Raise(new DataChangeEvent(target, ChangeProperty.TrainingPoints, NumericOperation.SubtractAmount, 1));
             Raise(new ChangeSkillEvent(target, e.Skill, NumericOperation.AddAmount, 1));
             Info($"[PlaceAction] Trained {e.MemberId} {e.Skill} +1 (1 TP + {e.Gold} gold)");
+            ShowSuccessText();
             return;
         }
     }
@@ -310,6 +345,7 @@ public class PlaceActionManager : GameComponent
         // SheetApplier sets the known bit and seeds mastery = 4 × MagicTalent.
         Raise(new ChangeSpellsEvent(new TargetId(AssetType.PartyMember, e.MemberId.Id), e.School, e.SpellNumber, NumericOperation.SetToMaximum));
         Info($"[PlaceAction] {e.MemberId} learned {e.School} spell {e.SpellNumber} ({e.Price} gold-tenths)");
+        ShowSuccessText();
     }
 
     // --- RepairItem (type 0xC): price = item value × Unk6/100; clears the Broken flag. ---
@@ -335,6 +371,7 @@ public class PlaceActionManager : GameComponent
         if (!TrySpendGold(e.Price))
             return;
         Raise(new RepairInventorySlotEvent(e.MemberId, e.SlotId));
+        ShowSuccessText();
     }
 
     // --- RestoreItemEnergy (type 0x5): spell items only; price = Unk6 per charge,
@@ -366,6 +403,7 @@ public class PlaceActionManager : GameComponent
         if (!TrySpendGold(e.Price))
             return;
         Raise(new RechargeInventorySlotEvent(e.MemberId, e.SlotId, e.Charges));
+        ShowSuccessText();
     }
 
     // --- RemoveCurse (type 0x3): flat price; DESTROYS all cursed equipped items. ---
@@ -402,6 +440,7 @@ public class PlaceActionManager : GameComponent
         if (!TrySpendGold(e.Price))
             return;
         Raise(new IdentifyInventorySlotEvent(e.MemberId, e.SlotId));
+        ShowSuccessText();
     }
 
     // --- helpers ---

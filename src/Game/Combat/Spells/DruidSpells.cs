@@ -28,7 +28,7 @@ public static class DruidSpells
         // max(1, M·10/100)+1 rounds; Boasting inflicts Panicking on the target.
         SpellEffectRegistry.Register(new BerserkSpellEffect(Base.Spell.Berserk));
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Boasting, PlayerCondition.Panicking));
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.MagicShield, CombatBuffs.BuffKind.Defense, amount: 8, baseDuration: 0, persistent: true)); // battle-persistent (active-spell table)
+        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.MagicShield, CombatBuffs.BuffKind.Defense, amount: 0, baseDuration: 0, persistent: true)); // pct-only: defense × (1 + M/100), battle-persistent
 
         // Anti-demon line — CONFIRMED (handlers 0xa1aec/0xa1b20): demon-class targets
         // (creature mask 0x44) die outright iff M > MagicResist; no damage K exists.

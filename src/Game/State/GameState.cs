@@ -256,8 +256,20 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
 
     void AdvanceTimeInHours(int hours)
     {
-        _game.ElapsedTime += TimeSpan.FromHours(hours);
-        // TODO
+        // The original advances bulk time (rest, wait, inn stays) through the normal
+        // hour tick (fcn.000439b3), so the per-hour processing — EveryHour map event
+        // chains, the poison drain, the fatigue counter, dungeon light decay — runs for
+        // every hour skipped. GameClock only detects hour crossings from incremental
+        // frame time, so we fire the events here. (No double-fire: GameClock re-reads
+        // state.Time each frame, so it never sees the jump as a crossing.)
+        for (int i = 0; i < hours; i++)
+        {
+            var before = Time;
+            _game.ElapsedTime += TimeSpan.FromHours(1);
+            Raise(HourElapsedEvent.Instance);
+            if (Time.Date != before.Date)
+                Raise(DayElapsedEvent.Instance);
+        }
     }
 
     static bool SetFlag(SwitchOperation operation, bool value) =>

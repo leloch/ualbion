@@ -94,6 +94,13 @@ public sealed class SpellCastContext
     /// Null when unavailable.
     /// </summary>
     public System.Func<int> HoursAwake { get; init; }
+
+    /// <summary>
+    /// Add (positive) or drain (negative) spell points on a combatant — party members
+    /// route through Mana events, monsters through the battle SP shadow. Null outside
+    /// combat (party-only effects fall back to RaiseEvent). Used by Steal Magic.
+    /// </summary>
+    public System.Action<ICombatParticipant, int> ModifySp { get; init; }
 }
 
 public enum SpellCastOutcome

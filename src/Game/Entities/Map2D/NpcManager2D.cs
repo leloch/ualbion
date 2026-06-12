@@ -2,6 +2,7 @@
 using System.Numerics;
 using UAlbion.Api;
 using UAlbion.Api.Eventing;
+using UAlbion.Config;
 using UAlbion.Formats.Assets;
 using UAlbion.Formats.Assets.Maps;
 using UAlbion.Formats.Assets.Save;
@@ -33,8 +34,43 @@ class NpcManager2D : Component
         On<NpcMoveEvent>(DispatchNpcEvent);
         On<NpcTurnEvent>(DispatchNpcEvent);
         On<NpcUnlockEvent>(DispatchNpcEvent);
-        On<ChangeNpcMovementEvent>(DispatchNpcEvent);
-        On<ChangeNpcSpriteEvent>(DispatchNpcEvent);
+        // NPC morph events apply live via the NPC component AND are recorded in the
+        // map-change collection so they replay when the map is re-entered (previously
+        // they were lost on map change — scripts that morph NPCs only worked until
+        // the player left the map).
+        On<ChangeNpcMovementEvent>(e =>
+        {
+            DispatchNpcEvent(e);
+            RecordNpcChange(e.NpcNum, IconChangeType.NpcMovement, (ushort)e.Mode, e.Scope);
+        });
+        On<ChangeNpcSpriteEvent>(e =>
+        {
+            DispatchNpcEvent(e);
+            int disk = e.SpriteOrGroup.ToDisk(AssetMapping.Global);
+            if (disk is >= 0 and <= ushort.MaxValue)
+                RecordNpcChange(e.NpcNum, IconChangeType.NpcSprite, (ushort)disk, e.Scope);
+        });
+    }
+
+    void RecordNpcChange(byte npcNum, IconChangeType type, ushort value, EventScope scope)
+    {
+        bool temp = scope is EventScope.AbsTemp or EventScope.RelTemp;
+        _logicalMap.Modify(npcNum, 0, type, temp, ChangeIconLayers.None, value);
+    }
+
+    void ApplyNpcChange(NpcState state, IconChangeType type, ushort value)
+    {
+        switch (type)
+        {
+            case IconChangeType.NpcMovement:
+                state.MovementType = (NpcMovement)value;
+                break;
+            case IconChangeType.NpcSprite:
+                state.SpriteOrGroup = _logicalMap.UseSmallSprites
+                    ? SpriteId.FromDisk(AssetType.NpcSmallGfx, value, AssetMapping.Global)
+                    : SpriteId.FromDisk(AssetType.NpcLargeGfx, value, AssetMapping.Global);
+                break;
+        }
     }
 
     void UpdateNpcStatus(byte npcNum)
@@ -63,17 +99,31 @@ class NpcManager2D : Component
                 game.Npcs[index] = state;
             }
 
-            bool isDisabled = game.IsNpcDisabled(_logicalMap.Id, (byte)index);
-
             if (initialise)
-                InitialiseState(npc, state, !isDisabled, _logicalMap.Events, _logicalMap.TileSize);
+                InitialiseState(npc, state, !game.IsNpcDisabled(_logicalMap.Id, (byte)index), _logicalMap.Events, _logicalMap.TileSize);
+        }
 
+        // Re-apply persisted NPC sprite/movement changes (change_npc_* map events) on
+        // top of the freshly initialised states, before the NPC entities are built.
+        if (initialise)
+        {
+            foreach (var (npcNum, type, value) in _logicalMap.NpcChanges)
+            {
+                if (npcNum < game.Npcs.Count && game.Npcs[npcNum] != null)
+                    ApplyNpcChange(game.Npcs[npcNum], type, value);
+            }
+        }
+
+        for (var index = 0; index < _logicalMap.Npcs.Count; index++)
+        {
+            var npc = _logicalMap.Npcs[index];
             if (npc.IsUnused)
                 continue;
 
+            bool isDisabled = game.IsNpcDisabled(_logicalMap.Id, (byte)index);
             _npcs[index] = new Npc2D(
                 _sceneObjects,
-                state,
+                game.Npcs[index],
                 npc,
                 (byte)index,
                 !_logicalMap.UseSmallSprites,
