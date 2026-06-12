@@ -422,31 +422,35 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
 
         var tf = Resolve<ITextFormatter>();
 
-        // RE'd rest gating (_RE_COMBAT.md "Placeholder formulas" item 3, popup builder
-        // 0x2204e + executor 0x68b05): map RestMode (mapFlags & 0xC) — city(0) gets Wait
-        // instead, interior(3) has no rest at all; active hostile monsters block with
-        // "too dangerous" (601); awake < 3 hours blocks with "nobody is tired" (603).
+        // RE'd rest gating (_RE_COMBAT.md "Placeholder formulas" item 3): ALL the gates
+        // live in the map-menu popup builder (0x2204e), not the executor — map RestMode
+        // (mapFlags & 0xC), active hostile monsters ("too dangerous", 601) and the
+        // 3-hour fatigue check ("nobody is tired", 603) only apply to the map-menu rest
+        // (hours == 0). Explicit-hour rests (inn SleepInRoom, scripts) run the executor
+        // directly like the original's 0x68b05.
         var restMode = TryResolve<IMapManager>()?.Current?.MapData?.RestMode
                        ?? UAlbion.Formats.Assets.Maps.RestMode.RestEightHours;
-        bool explicitHours = e.Hours > 0; // inn rest (SleepInRoom) bypasses the map gate
-        if (!explicitHours
-            && restMode is UAlbion.Formats.Assets.Maps.RestMode.Wait
-                        or UAlbion.Formats.Assets.Maps.RestMode.NoResting)
+        bool explicitHours = e.Hours > 0;
+        if (!explicitHours)
         {
-            Info($"Resting is not available here (RestMode {restMode})");
-            return;
-        }
+            if (restMode is UAlbion.Formats.Assets.Maps.RestMode.Wait
+                         or UAlbion.Formats.Assets.Maps.RestMode.NoResting)
+            {
+                Info($"Resting is not available here (RestMode {restMode})");
+                return;
+            }
 
-        if (HostileMonstersOnMap())
-        {
-            Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.MapPopup_ItsTooDangerousHere)));
-            return;
-        }
+            if (HostileMonstersOnMap())
+            {
+                Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.MapPopup_ItsTooDangerousHere)));
+                return;
+            }
 
-        if (_game.HoursSinceResting < 3)
-        {
-            Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_NobodyInThePartyIsTired)));
-            return;
+            if (_game.HoursSinceResting < 3)
+            {
+                Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_NobodyInThePartyIsTired)));
+                return;
+            }
         }
 
         // Duration (executor 0x68b05): dungeons — and daytime hours [4, 19) anywhere —

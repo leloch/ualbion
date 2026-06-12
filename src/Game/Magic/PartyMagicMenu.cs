@@ -37,6 +37,38 @@ public class PartyMagicMenu : GameComponent
         On<ShowMagicMenuEvent>(e => ShowSpells(e.MemberId));
         On<ShowMagicTargetMenuEvent>(ShowTargetMenu);
         On<CastPartySpellEvent>(Cast);
+        On<UAlbion.Game.Events.ShowTeleporterMenuEvent>(_ => ShowTeleporterMenu());
+    }
+
+    /// <summary>
+    /// The Teleporter spell's destination picker: the current 3D map's automap markers
+    /// (goto-points). Choosing one jumps the party there. PLACEHOLDER: all markers are
+    /// offered — the original limits the list to places already visited.
+    /// </summary>
+    void ShowTeleporterMenu()
+    {
+        var map = TryResolve<IMapManager>()?.Current?.MapData as UAlbion.Formats.Assets.Maps.MapData3D;
+        if (map == null || map.Automap.Count == 0)
+        {
+            Info("[Magic] Teleporter: no destinations on this map");
+            return;
+        }
+
+        var mapId = TryResolve<IMapManager>()?.Current?.MapId ?? MapId.None;
+        var options = new List<ContextMenuOption>();
+        foreach (var marker in map.Automap)
+        {
+            if (marker == null)
+                continue;
+            var label = string.IsNullOrWhiteSpace(marker.Name) ? $"({marker.X}, {marker.Y})" : marker.Name;
+            options.Add(new ContextMenuOption(
+                new LiteralText(label),
+                // Same-map teleport: MapManager handles PartyJump (2D) + CameraJump (3D).
+                new UAlbion.Formats.MapEvents.TeleportEvent(mapId, marker.X, marker.Y, UAlbion.Formats.Direction.Unchanged, 1, 2),
+                ContextMenuGroup.Actions));
+        }
+
+        ShowMenu(new LiteralText("Teleport where?"), options);
     }
 
     SpellEnvironments CurrentEnvironment()
