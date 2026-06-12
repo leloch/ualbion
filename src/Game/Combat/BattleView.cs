@@ -63,6 +63,26 @@ public class BattleView : GameComponent
             RenderClass is 2 or 4 && SwayPeriod > 0
                 ? SwayAmplitude * MathF.Sin(2 * MathF.PI * SwayPhase / SwayPeriod)
                 : 0;
+
+        // WalkPath lerp (RE 5A, vtable_2 sub 3 @0x52019): the sprite interpolates along
+        // the waypoints at N engine frames per tile (N = Move anim length), stepping
+        // the Move animation every engine frame while walking.
+        public List<int> WalkPath;       // [start, wp1, wp2, ...] tile indices
+        public int WalkSegment;          // index of the segment's START waypoint
+        public int WalkFrame;            // engine frames into the current segment
+        public int WalkFramesPerTile = 9;
+        public bool Walking => WalkPath != null;
+
+        public (float Col, float Row) WalkPosition(int columns)
+        {
+            if (WalkPath == null || WalkSegment + 1 >= WalkPath.Count)
+                return (Tile % columns, Tile / (float)columns);
+            int a = WalkPath[WalkSegment], b = WalkPath[WalkSegment + 1];
+            float t = WalkFramesPerTile <= 0 ? 1 : Math.Clamp(WalkFrame / (float)WalkFramesPerTile, 0, 1);
+            float col = (a % columns) + ((b % columns) - (a % columns)) * t;
+            float row = (a / columns) + ((b / columns) - (a / columns)) * t;
+            return (col, row);
+        }
     }
 
     sealed class Effect
@@ -103,6 +123,43 @@ public class BattleView : GameComponent
         On<PostEngineUpdateEvent>(_ => Update());
         On<CombatTurnHighlightEvent>(e => SetAnimation(e.TileIndex, CombatAnimationId.Melee));
         On<CombatHitEvent>(OnHit);
+        On<CombatWalkEvent>(OnWalk);
+    }
+
+    /// <summary>
+    /// A combatant walked: re-key its mob to the destination tile and start the
+    /// WalkPath lerp (the battle state has already committed the final tile).
+    /// </summary>
+    void OnWalk(CombatWalkEvent e)
+    {
+        if (e.Waypoints is not { Count: > 0 } || !_mobs.TryGetValue(e.FromTile, out var mob))
+            return;
+
+        int dest = e.Waypoints[^1];
+        _mobs.Remove(e.FromTile);
+        _mobs[dest] = mob;
+        mob.Tile = dest;
+
+        var path = new List<int>(e.Waypoints.Count + 1) { e.FromTile };
+        path.AddRange(e.Waypoints);
+        mob.WalkPath = path;
+        mob.WalkSegment = 0;
+        mob.WalkFrame = 0;
+
+        // N engine frames per tile, N = Move anim length (RE 5A).
+        var monster = mob.Participant?.Effective?.Monster;
+        int moveLen = 9;
+        if (monster?.Animations != null
+            && monster.Animations.TryGetValue(CombatAnimationId.Move, out var frames)
+            && frames is { Length: > 0 })
+        {
+            moveLen = frames.Length;
+        }
+        mob.WalkFramesPerTile = Math.Max(1, moveLen);
+
+        mob.Animation = CombatAnimationId.Move;
+        mob.AnimationStep = 0;
+        mob.OneShot = false;
     }
 
     void OnHit(CombatHitEvent e)
@@ -210,7 +267,7 @@ public class BattleView : GameComponent
     /// screenX = 180 + 148·x/(z+148), baselineY = 96 + 148·83/(z+148),
     /// scale = 148/(z+148). Resulting row scales: 0.536 / 0.698 / 1.0 / 1.168.
     /// </summary>
-    static (float X, float Y, float Scale) TileToScreen(int col, int row)
+    static (float X, float Y, float Scale) TileToScreen(float col, float row)
     {
         const float Focal = 148f, CameraHeight = 83f;
         float x = 64f * col - 160f;
@@ -322,6 +379,22 @@ public class BattleView : GameComponent
 
             if (stepAnims && mob.OneShot)
                 mob.AnimationStep++;
+            else if (mob.Walking)
+            {
+                // WalkPath steps the Move anim EVERY engine frame (RE 5A) and advances
+                // the lerp; arrival drops back to the static idle frame.
+                mob.AnimationStep++;
+                if (++mob.WalkFrame >= mob.WalkFramesPerTile)
+                {
+                    mob.WalkFrame = 0;
+                    mob.WalkSegment++;
+                    if (mob.WalkSegment + 1 >= mob.WalkPath.Count)
+                    {
+                        mob.WalkPath = null;
+                        mob.AnimationStep = 0;
+                    }
+                }
+            }
 
             // Idle is the STATIC Move[0] frame (the original doesn't cycle idles);
             // one-shot animations (Melee/Hit) play through then revert to idle.
@@ -432,7 +505,13 @@ public class BattleView : GameComponent
         mob.Sprite.Frame = physicalFrame;
 
         // Position: UI pixels → NDC, bottom-centre anchored (the original's anchor).
-        var (x, y, scale) = TileToScreen(mob.Tile % SavedGame.CombatColumns, mob.Tile / SavedGame.CombatColumns);
+        // Walking mobs lerp along their waypoint path (RE 5A WalkPath).
+        float fcol, frow;
+        if (mob.Walking)
+            (fcol, frow) = mob.WalkPosition(SavedGame.CombatColumns);
+        else
+            (fcol, frow) = (mob.Tile % SavedGame.CombatColumns, mob.Tile / SavedGame.CombatColumns);
+        var (x, y, scale) = TileToScreen(fcol, frow);
         float wPct = monster.WidthPercentage <= 0 ? 100 : monster.WidthPercentage;
         float hPct = monster.HeightPercentage <= 0 ? 100 : monster.HeightPercentage;
 
