@@ -48,11 +48,10 @@ public class Png32Loader : Component, IAssetLoader<IReadOnlyTexture<uint>>
                 {
                     var rgbaSpan = p.GetRowSpan(row);
                     var fromSpan = MemoryMarshal.Cast<Rgba32, uint>(rgbaSpan);
-                    var toSpan = pixels.AsSpan((currentY + row) * totalWidth, totalWidth * (p.Height - 1) + p.Width);
+                    // Copy one row at a time: the destination row length must be p.Width, not the
+                    // full remaining buffer (a longer length makes AsSpan throw for any row > 0).
+                    var toSpan = pixels.AsSpan((currentY + row) * totalWidth, p.Width);
                     fromSpan.CopyTo(toSpan);
-                    // var from = new ReadOnlyImageBuffer<uint>(p.Width, p.Height, p.Width, fromSpan);
-                    // var to = new ImageBuffer<uint>(p.Width, p.Height, totalWidth, toSpan);
-                    // BlitUtil.BlitDirect(from, to);
                 }
                 currentY += image.Height;
             });

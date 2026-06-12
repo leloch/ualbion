@@ -25,12 +25,19 @@ The numeric id matches the leading number of the files exported by
 These categories are stretch-to-fit at render time, so any source resolution works —
 4x/8x upscales are fine.
 
-## Known issue (open)
+## Known issue (partially resolved)
 
-Override loading through the dir-container path isn't resolving yet — a `<id>.png`
-dropped into `CombatBackgrounds/` is not picked up in-game (the original still loads).
-Likely an AssetPathPattern id-matching or path-resolution detail in `hd_assets.json`;
-needs a debugging pass against `DirectoryContainer.Read`/`AssetPathPattern.TryParse`.
+The original blocker was a buffer-math bug in `Png32Loader.Read` that threw for any
+image taller than one pixel (the png32 path had only ever been exercised for writing).
+Fixed — overrides now resolve through the asset pipeline (verified via
+`UAlbion.exe --dump --formats png --ids "CombatBackground.5" -mods "Albion HD"`:
+a 1440×768 override wins over the 360×192 original, and falls back correctly without
+the mod). NB `--ids` needs full enum names (`CombatBackground.5`), not aliases.
+
+Still open: in-game display of the 32-bit override through the UI sprite path hasn't
+been confirmed visually yet — the combat backdrop showed the original in a quick test.
+Needs a check of whether the sprite batch renders `IReadOnlyTexture<uint>` textures and
+whether the in-game load takes a different branch from the dump path.
 
 ## Current limitation
 
