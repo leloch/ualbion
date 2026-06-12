@@ -33,6 +33,9 @@ public class Battle : GameComponent, IReadOnlyBattle
     // begins). Members not in this map fall through to default Melee — matches Albion's
     // "leave defaults" behaviour when the player doesn't explicitly set actions.
     readonly Dictionary<SheetId, QueueCombatActionEvent> _pendingActions = [];
+    // Damage traps placed by trap/mine spells, keyed by tile index. Triggered when a
+    // combatant moves onto the tile (MoveCombatant); single-use like the original's.
+    readonly Dictionary<int, int> _traps = [];
 
     public IReadOnlyList<ICombatParticipant> Mobs { get; }
     public event Action Complete;
@@ -129,6 +132,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             // alone — clearing them speculatively would corrupt the original engine's
             // pacing. See _RE_COMBAT.md Phase 2.6 for the full per-condition tick table.
             DecaySleepOnAllCombatants();
+            CombatBuffs.TickRound();
         }
 
         // Safety: if both sides somehow still standing after the cap, fall through as Retreat.
@@ -146,7 +150,8 @@ public class Battle : GameComponent, IReadOnlyBattle
         => InitiativeOrder.Order(party, mobs, EffectiveSpeed);
 
     static int EffectiveSpeed(ICombatParticipant p)
-        => p?.Effective?.Attributes?.Speed?.Current ?? 0;
+        => (p?.Effective?.Attributes?.Speed?.Current ?? 0)
+           + (p?.SheetId != null ? CombatBuffs.Bonus(p.SheetId, CombatBuffs.BuffKind.Speed) : 0);
 
     void DecaySleepOnAllCombatants()
     {
@@ -272,6 +277,10 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         int ap = attacker?.Effective?.Combat?.ActionPoints ?? 1;
         if (ap < 1) ap = 1;
+        // Berserk doubles the AP attempt count — the original's "powered" flag at
+        // Combatant+0x04 bit 0 (byte-exact mechanic from MAIN.EXE fcn.0004ef8b).
+        if (CombatBuffs.IsBerserk(attacker.SheetId))
+            ap <<= 1;
 
         for (int attempt = 0; attempt < ap; attempt++)
         {
@@ -336,6 +345,49 @@ public class Battle : GameComponent, IReadOnlyBattle
         _tiles[targetTile] = mover;
         Info($"[Combat] {mover.SheetId} moves from tile {oldTile} to {targetTile}");
         TraceLog.Emit("combat_move", ("actor", mover.SheetId), ("from", oldTile), ("to", targetTile));
+
+        if (_traps.TryGetValue(targetTile, out var trapDamage))
+        {
+            _traps.Remove(targetTile);
+            Info($"[Combat] {mover.SheetId} triggers a trap on tile {targetTile} for {trapDamage} damage");
+            ApplyDirectDamage(mover, trapDamage);
+        }
+    }
+
+    /// <summary>
+    /// Apply non-melee damage (spells, traps) through the same HP-shadow + DataChangeEvent
+    /// plumbing as melee hits, so deaths/unconsciousness resolve identically.
+    /// </summary>
+    void ApplyDirectDamage(ICombatParticipant target, int amount)
+    {
+        if (target == null || amount <= 0)
+            return;
+
+        var clamped = (ushort)Math.Min(ushort.MaxValue, amount);
+        var current = LifePoints(target);
+        var next = Math.Max(0, current - clamped);
+        _liveHp[target.SheetId] = next;
+
+        var targetId = TryToTarget(target);
+        if (targetId != null)
+            Raise(new DataChangeEvent(targetId.Value, ChangeProperty.Health, NumericOperation.SubtractAmount, clamped));
+
+        Info($"[Combat] {target.SheetId} takes {clamped} damage (HP {next})");
+    }
+
+    void ApplyDirectHeal(ICombatParticipant target, int amount)
+    {
+        if (target == null || amount <= 0)
+            return;
+
+        var clamped = (ushort)Math.Min(ushort.MaxValue, amount);
+        var max = target.Effective?.Combat?.LifePoints?.Max ?? int.MaxValue;
+        var next = Math.Min(max, LifePoints(target) + clamped);
+        _liveHp[target.SheetId] = next;
+
+        var targetId = TryToTarget(target);
+        if (targetId != null)
+            Raise(new DataChangeEvent(targetId.Value, ChangeProperty.Health, NumericOperation.AddAmount, clamped));
     }
 
     /// <summary>
@@ -357,7 +409,20 @@ public class Battle : GameComponent, IReadOnlyBattle
         }
 
         var target = targetTile >= 0 && targetTile < _tiles.Length ? _tiles[targetTile] : null;
-        target ??= caster;
+        if (target == null || LifePoints(target) <= 0)
+        {
+            // Empty / dead tile picked: fall back by the spell's declared target side.
+            // Monster-targeting spells retarget the nearest live enemy (like melee);
+            // party-targeting ones apply to the caster. Without this an offensive spell
+            // at an empty tile would hit the caster.
+            var targets = spell?.Targets ?? default;
+            bool offensive = (targets & (UAlbion.Formats.Assets.SpellTargets.OneMonster
+                                        | UAlbion.Formats.Assets.SpellTargets.RowOfMonsters
+                                        | UAlbion.Formats.Assets.SpellTargets.AllMonsters)) != 0;
+            target = offensive
+                ? LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault() ?? caster
+                : caster;
+        }
 
         var rng = Resolve<IRandom>();
         var context = new SpellCastContext
@@ -367,7 +432,11 @@ public class Battle : GameComponent, IReadOnlyBattle
             CombatTargetPosition = targetTile,
             SpellStrength = (byte)(caster.Effective?.Level ?? 1),
             Random = max => rng.Generate(max),
-            RaiseEvent = Raise
+            RaiseEvent = Raise,
+            ApplyDamage = ApplyDirectDamage,
+            ApplyHeal = ApplyDirectHeal,
+            PlaceTrap = (tile, damage) => _traps[tile] = damage,
+            RemoveTrap = tile => _traps.Remove(tile)
         };
 
         var outcome = SpellEffectRegistry.Cast(spellId, context);
@@ -405,7 +474,11 @@ public class Battle : GameComponent, IReadOnlyBattle
             CombatTargetPosition = pending.TargetTile,
             SpellStrength = 1, // Item casts use the item's fixed strength, not caster level
             Random = max => rng.Generate(max),
-            RaiseEvent = Raise
+            RaiseEvent = Raise,
+            ApplyDamage = ApplyDirectDamage,
+            ApplyHeal = ApplyDirectHeal,
+            PlaceTrap = (tile, damage) => _traps[tile] = damage,
+            RemoveTrap = tile => _traps.Remove(tile)
         };
 
         var outcome = SpellEffectRegistry.Cast(pending.Spell, context);
@@ -459,8 +532,10 @@ public class Battle : GameComponent, IReadOnlyBattle
         int atkRoll = rng.Generate(51);
         int defRoll = rng.Generate(51);
         int strength = attacker.Effective?.Attributes?.Strength?.Current ?? 0;
-        int rawAtk = DamageCalculator.TotalAttackWithStrength(a, strength);
-        int rawDef = DamageCalculator.TotalDefense(d);
+        int rawAtk = DamageCalculator.TotalAttackWithStrength(a, strength)
+                     + CombatBuffs.Bonus(attacker.SheetId, CombatBuffs.BuffKind.Attack);
+        int rawDef = DamageCalculator.TotalDefense(d)
+                     + CombatBuffs.Bonus(defender.SheetId, CombatBuffs.BuffKind.Defense);
         int variedAtk = DamageCalculator.VaryDamage(rawAtk, atkRoll);
         int variedDef = DamageCalculator.VaryDamage(rawDef, defRoll);
         int adjusted = Math.Max(0, variedAtk - variedDef);
@@ -518,6 +593,8 @@ public class Battle : GameComponent, IReadOnlyBattle
     {
         if (_mobs.Count > 0)
             return;
+
+        CombatBuffs.Clear(); // Buffs are battle-scoped
 
         foreach (var partyMember in Resolve<IParty>().StatusBarOrder)
         {

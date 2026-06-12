@@ -25,8 +25,9 @@ public class DjiKasSpellsTests
         SpellEffectRegistry.Clear();
         DjiKasSpells.RegisterAll();
 
-        // 5 heal-school + 3 frost + 3 blinding + 2 status-inflict = 13
-        Assert.Equal(13, SpellEffectRegistry.RegisteredCount);
+        // 5 heal-school + 3 frost + 3 blinding + 2 status-inflict
+        // + Hurry/ThornTrap/RemoveTrapDK/Fungification/Light/ViewOfLife = 19
+        Assert.Equal(19, SpellEffectRegistry.RegisteredCount);
     }
 
     [Theory]

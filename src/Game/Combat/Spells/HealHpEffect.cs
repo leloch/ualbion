@@ -45,7 +45,12 @@ public sealed class HealHpEffect : ISpellEffect
         if (healed <= 0) return SpellCastOutcome.Failed;
         var amount = (ushort)Math.Min(ushort.MaxValue, healed);
 
-        if (context.RaiseEvent != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
+        if (context.ApplyHeal != null)
+        {
+            // In combat: keep the battle HP shadow in sync (covers monsters too).
+            context.ApplyHeal(context.Target, amount);
+        }
+        else if (context.RaiseEvent != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {
             // TargetId only accepts PartyMember; PartySheet.N → PartyMember.N (same numeric id).
             var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);

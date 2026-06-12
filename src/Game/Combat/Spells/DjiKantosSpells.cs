@@ -23,5 +23,11 @@ public static class DjiKantosSpells
 
         // Status — Irritation maps cleanly to the Irritated condition
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Irritation, PlayerCondition.Irritated));
+
+        // Escape / utility (PLACEHOLDERs documented per-spell)
+        SpellEffectRegistry.Register(new WithdrawEffect(Base.Spell.QuickWithdrawal)); // Ends combat as Retreat
+        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.MapView, "reveal the automap for the current map (hook into automap visited-state once Phase 5.3 lands)"));
+        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Teleporter, "open the teleporter destination picker (needs the Goto-marker map list UI)"));
+        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Levitation, "float over pit tiles in 3D maps (needs pit-tile collision exemption)"));
     }
 }

@@ -67,7 +67,8 @@ public class AllSpellSchoolsTests
     }
 
     [Theory]
-    // Unimplemented spells should fail-through so the AP-loop retries.
+    // Every named spell now has a registered handler — buffs, traps, drains, escape and
+    // utility placeholders included. (Was a fail-through list before 2026-06-12.)
     [InlineData(nameof(Base.Spell.Teleporter))]
     [InlineData(nameof(Base.Spell.Levitation))]
     [InlineData(nameof(Base.Spell.MapView))]
@@ -77,12 +78,24 @@ public class AllSpellSchoolsTests
     [InlineData(nameof(Base.Spell.MagicShield))]
     [InlineData(nameof(Base.Spell.StealLife))]
     [InlineData(nameof(Base.Spell.KamulosGaze))]
-    public void Unimplemented_Spell_Falls_Through_To_Failed(string spellName)
+    [InlineData(nameof(Base.Spell.Hurry))]
+    [InlineData(nameof(Base.Spell.ThornTrap))]
+    [InlineData(nameof(Base.Spell.RemoveTrapDK))]
+    [InlineData(nameof(Base.Spell.RemoveTrapKK))]
+    [InlineData(nameof(Base.Spell.LightningTrap))]
+    [InlineData(nameof(Base.Spell.BigLightningMine))]
+    [InlineData(nameof(Base.Spell.StealMagic))]
+    [InlineData(nameof(Base.Spell.PersonalProtection))]
+    [InlineData(nameof(Base.Spell.Boasting))]
+    [InlineData(nameof(Base.Spell.Fungification))]
+    [InlineData(nameof(Base.Spell.Light))]
+    [InlineData(nameof(Base.Spell.ViewOfLife))]
+    public void Every_Named_Spell_Is_Registered(string spellName)
     {
         RegisterEverything();
         var spell = (Base.Spell)System.Enum.Parse(typeof(Base.Spell), spellName);
-        var outcome = SpellEffectRegistry.Cast((SpellId)spell, new SpellCastContext());
-        Assert.Equal(SpellCastOutcome.Failed, outcome);
+        Assert.True(SpellEffectRegistry.TryGet((SpellId)spell, out _),
+            $"Expected {spellName} to have a registered effect handler.");
     }
 
     [Fact]

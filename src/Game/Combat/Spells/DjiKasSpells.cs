@@ -37,11 +37,17 @@ public static class DjiKasSpells
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BlindingRay,    baseDamage: 6,  strengthScale: 1));
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BlindingStorm,  baseDamage: 12, strengthScale: 2));
 
-        // --- Status-inflict — only the spells where the condition mapping is clear from
-        //     the original spell name. Hurry (speed buff) and Fungification (effect unclear
-        //     pending RE) deliberately left unregistered so they retry/Fail rather than
-        //     guessing the wrong condition.
+        // --- Status-inflict ---
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.SleepSpores,  PlayerCondition.Asleep));
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ThornSnare,   PlayerCondition.Paralysed));
+
+        // --- Buffs / traps / utility (PLACEHOLDER magnitudes pending RE) ---
+        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Hurry, CombatBuffs.BuffKind.Speed, amount: 10, rounds: 3));
+        SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.ThornTrap, damage: 8));
+        SpellEffectRegistry.Register(new RemoveTrapEffect(Base.Spell.RemoveTrapDK));
+        // Fungification: the wiki gives no mechanic; treated as damage + poison pending RE.
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Fungification, baseDamage: 6, strengthScale: 1));
+        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Light, "raise dungeon ambient light level (needs LabyrinthData light override plumbing)"));
+        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.ViewOfLife, "show monster LP in combat UI (needs combat UI hookup)"));
     }
 }
