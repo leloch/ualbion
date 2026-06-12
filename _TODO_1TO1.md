@@ -112,8 +112,11 @@ removed-NPC index.
 
 ## 7. Verification debt (live checks to run after the next batches)
 
-1. **Loot window**: kill a drop-carrying monster group via harness → window lists
-   items/gold → Take All lands in party inventory.
+1. **Loot window**: ✅ PARTIAL 2026-06-13 — Warniak victory resolves cleanly through
+   the new flee/morale/multi-strike pipeline (no errors, scene pops, MonsterEye live);
+   Warniaks carry no inventory so the no-drop case (no empty window) is verified.
+   STILL TODO: a drop-carrying group (e.g. humanoid bandits) → window lists items →
+   Take All lands in party inventory.
 2. **NPC morph persistence**: change_npc_sprite on a 2D map, leave, return → sprite
    still changed.
 3. **Hourly events during rest**: poison drains and EveryHour chains fire across an
