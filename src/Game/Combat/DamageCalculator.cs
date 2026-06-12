@@ -55,18 +55,6 @@ public static class DamageCalculator
         return Math.Max(0, raw);
     }
 
-    public static float HitChance(ICombatAttributes attacker, ICombatAttributes defender)
-    {
-        var atk = TotalAttack(attacker);
-        var def = TotalDefense(defender);
-        var total = atk + def;
-        if (total <= 0)
-            return 0.5f;
-
-        var ratio = (float)atk / total;
-        return Math.Clamp(ratio, 0.05f, 0.95f);
-    }
-
     public static int ComputeMagicDamage(CombatAttributes attacker, CombatAttributes defender, int spellPower)
     {
         ArgumentNullException.ThrowIfNull(attacker);
@@ -99,44 +87,25 @@ public static class DamageCalculator
     }
 
     /// <summary>
-    /// Roll a hit using the supplied 0..99 RNG value. Returns true if the attack lands.
+    /// The original engine's PercentRoll — **confirmed against MAIN.EXE `fcn.00035b15`**:
+    /// success iff <c>rand() % range &lt;= value</c> (note &lt;=, so the effective chance is
+    /// (value+1)/range), with auto-fail when value &lt;= 0. Used for the melee/ranged to-hit
+    /// roll (attacker's weapon skill vs 100, via RollSkill `fcn.00035bdc`), the critical-hit
+    /// roll (CriticalHit skill vs 100) and equipment break rolls (item break-rate vs 1000).
+    /// The caller supplies the raw roll (<c>rand() % range</c>).
     /// </summary>
-    public static bool RollHit(float hitChance, int randomValue0To99)
+    public static bool PercentRoll(int value, int roll)
     {
-        if (hitChance <= 0f) return false;
-        if (hitChance >= 1f) return true;
-        int normalized = ((randomValue0To99 % 100) + 100) % 100;
-        return normalized < (int)(hitChance * 100);
+        if (value <= 0) return false;
+        return roll <= value;
     }
 
     /// <summary>
-    /// Critical-hit roll. PLACEHOLDER: flat 5 % chance regardless of attacker/defender
-    /// stats. The original engine likely scales with Luck or weapon-skill — search the
-    /// `prtlogic.c` / `combat.c` randomness sites once the hit-roll site itself is fully
-    /// RE'd. A crit doubles the rolled damage.
+    /// Effective skill value for combat rolls, RE'd from `fcn.00035fd5` (GetEffectiveSkill):
+    /// the sheet skill (equipment bonuses already folded into Effective sheets) is HALVED
+    /// when the combatant is Blind — but only for the weapon skills (CloseRange/LongRange),
+    /// not CriticalHit or Lockpicking.
     /// </summary>
-    public const int CritChancePercent = 5;
-    public const int CritDamageMultiplier = 2;
-
-    public static bool RollCrit(int randomValue0To99)
-    {
-        int normalized = ((randomValue0To99 % 100) + 100) % 100;
-        return normalized < CritChancePercent;
-    }
-
-    /// <summary>
-    /// Defender parry / evasion roll — runs *after* the attacker's hit-roll lands but
-    /// *before* damage is applied. Returns true if the attack is parried (no damage).
-    /// PLACEHOLDER: flat 8 % chance. Original likely scales with defender's Dexterity
-    /// or shield. Implemented separately from <see cref="HitChance"/> so the two rolls
-    /// stack rather than collapsing into one mega-roll, matching the original's two-stage
-    /// "hit then parry" sequence visible in `fcn.00052b71`'s second weapon-slot read.
-    /// </summary>
-    public const int ParryChancePercent = 8;
-
-    public static bool RollParry(int randomValue0To99)
-    {
-        int normalized = ((randomValue0To99 % 100) + 100) % 100;
-        return normalized < ParryChancePercent;
-    }
+    public static int EffectiveSkill(int skillValue, bool isWeaponSkill, bool isBlind)
+        => isWeaponSkill && isBlind ? Math.Max(0, skillValue) / 2 : Math.Max(0, skillValue);
 }

@@ -231,7 +231,37 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         if (result == CombatResult.Victory)
             AwardExperience();
+        ClearCombatScopedConditions();
         Complete?.Invoke();
+    }
+
+    /// <summary>
+    /// The five combat-scoped conditions are batch-cleared for every party member when a
+    /// battle ends, regardless of outcome — RE'd from MAIN.EXE fcn.000650ad (called from
+    /// both the battle-exit and victory paths). Everything else (Poisoned, Ill, Blind,
+    /// Insane, Unconscious, ...) persists until an explicit cure.
+    /// </summary>
+    void ClearCombatScopedConditions()
+    {
+        ReadOnlySpan<UAlbion.Formats.Assets.Sheets.PlayerCondition> combatScoped =
+        [
+            UAlbion.Formats.Assets.Sheets.PlayerCondition.Irritated,
+            UAlbion.Formats.Assets.Sheets.PlayerCondition.Asleep,
+            UAlbion.Formats.Assets.Sheets.PlayerCondition.Panicking,
+            UAlbion.Formats.Assets.Sheets.PlayerCondition.Fleeing,
+            UAlbion.Formats.Assets.Sheets.PlayerCondition.Paralysed
+        ];
+
+        foreach (var p in _mobs)
+        {
+            if (p.SheetId.Type != AssetType.PartySheet)
+                continue;
+            var target = TryToTarget(p);
+            if (target == null)
+                continue;
+            foreach (var condition in combatScoped)
+                Raise(new ChangeStatusEvent(target.Value, condition, NumericOperation.SubtractAmount, 1));
+        }
     }
 
     int TileOf(ICombatParticipant p) => p == null ? -1 : Array.IndexOf(_tiles, p);
@@ -671,7 +701,11 @@ public class Battle : GameComponent, IReadOnlyBattle
             ApplyDamage = ApplyDirectDamage,
             ApplyHeal = ApplyDirectHeal,
             PlaceTrap = (tile, damage) => _traps[tile] = damage,
-            RemoveTrap = tile => _traps.Remove(tile)
+            RemoveTrap = tile => _traps.Remove(tile),
+            GetLiveEnemies = () => LiveParticipants(forParty: !IsParty(caster)).ToList(),
+            // Instant kill = LP wipe through the normal damage path so death / corpse /
+            // XP-pool handling resolve identically (the original's fcn.0004e247).
+            InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
         };
 
         var outcome = SpellEffectRegistry.Cast(spellId, context);
@@ -719,7 +753,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             ApplyDamage = ApplyDirectDamage,
             ApplyHeal = ApplyDirectHeal,
             PlaceTrap = (tile, damage) => _traps[tile] = damage,
-            RemoveTrap = tile => _traps.Remove(tile)
+            RemoveTrap = tile => _traps.Remove(tile),
+            GetLiveEnemies = () => LiveParticipants(forParty: !IsParty(user)).ToList(),
+            InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
         };
 
         var outcome = SpellEffectRegistry.Cast(pending.Spell, context);
@@ -765,6 +801,25 @@ public class Battle : GameComponent, IReadOnlyBattle
         return initial;
     }
 
+    /// <summary>
+    /// Effective weapon/crit skill for combat rolls: Effective sheet skill (equipment
+    /// bonuses already merged) + Berserk's battle buff, halved for weapon skills when
+    /// Blind (fcn.00035fd5).
+    /// </summary>
+    static int EffectiveSkillFor(ICombatParticipant p, CombatBuffs.BuffKind buffKind, bool isWeaponSkill)
+    {
+        int skill = buffKind switch
+        {
+            CombatBuffs.BuffKind.CloseCombatSkill  => p?.Effective?.Skills?.CloseCombat?.Current ?? 0,
+            CombatBuffs.BuffKind.RangedCombatSkill => p?.Effective?.Skills?.RangedCombat?.Current ?? 0,
+            CombatBuffs.BuffKind.CritSkill         => p?.Effective?.Skills?.CriticalChance?.Current ?? 0,
+            _ => 0
+        };
+        skill += CombatBuffs.Bonus(p.SheetId, buffKind);
+        bool blind = ((p?.Effective?.Combat?.Conditions ?? 0) & UAlbion.Formats.Assets.Sheets.PlayerConditions.Blind) != 0;
+        return DamageCalculator.EffectiveSkill(skill, isWeaponSkill, blind);
+    }
+
     void ApplyMeleeAttack(ICombatParticipant attacker, ICombatParticipant defender)
     {
         var a = attacker?.Effective?.Combat;
@@ -772,46 +827,71 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (a == null || d == null || d.LifePoints == null)
             return;
 
-        // RE'd from MAIN.EXE fcn.0004ed77 → fcn.0004ee3b: the original engine has NO
-        // separate "did it hit?" roll. Both attacker damage and defender protection get
-        // varied independently by 50..100 %, then subtracted. delta == 0 IS the miss.
-        // This produces a natural hit-chance distribution from the variance overlap
-        // (heavy armour = damage often falls to 0; powerful attacker = damage rarely 0).
-        //
-        // Attacker damage includes Strength/25 per fcn.0004ee3b at +0x29.
         var rng = Resolve<IRandom>();
-        int atkRoll = rng.Generate(51);
-        int defRoll = rng.Generate(51);
-        int strength = attacker.Effective?.Attributes?.Strength?.Current ?? 0;
-        int rawAtk = DamageCalculator.TotalAttackWithStrength(a, strength)
-                     + CombatBuffs.Bonus(attacker.SheetId, CombatBuffs.BuffKind.Attack);
-        int rawDef = DamageCalculator.TotalDefense(d)
-                     + CombatBuffs.Bonus(defender.SheetId, CombatBuffs.BuffKind.Defense);
-        int variedAtk = DamageCalculator.VaryDamage(rawAtk, atkRoll);
-        int variedDef = DamageCalculator.VaryDamage(rawDef, defRoll);
-        int adjusted = Math.Max(0, variedAtk - variedDef);
 
-        if (adjusted <= 0)
+        // 1. TO-HIT: the attacker's weapon skill vs 100 (RE'd from the attack completion
+        // callback fcn.0004eac1 — RollSkill fcn.00035bdc). There is NO defender-side
+        // evasion: the only defender check in the original is dead code (conditions & 0).
+        int weaponSkill = EffectiveSkillFor(attacker, CombatBuffs.BuffKind.CloseCombatSkill, isWeaponSkill: true);
+        if (!DamageCalculator.PercentRoll(weaponSkill, rng.Generate(100)))
         {
             TraceLog.Emit("attack_miss",
                 ("attacker", attacker.SheetId),
                 ("defender", defender.SheetId),
-                ("varied_atk", variedAtk),
-                ("varied_def", variedDef));
+                ("skill", weaponSkill));
             Raise(new CombatHitEvent(TileOf(defender), 0, false, false)); // miss — shows "0"
             return;
         }
 
-        // Crit roll — doubles damage on success. PLACEHOLDER 5 %: a Critical-Hit skill
-        // value lives on the sheet (PRTCHAR +0x8A) but the original engine's crit formula
-        // isn't fully decoded yet. The Crit Hit skill is *probably* the crit-chance %.
-        int critRoll = rng.Generate(100);
-        bool crit = DamageCalculator.RollCrit(critRoll);
-        if (crit) adjusted *= DamageCalculator.CritDamageMultiplier;
+        // 2. Equipment wear (fcn.0004f920): every swing that passes the to-hit roll wears
+        // the attacker's weapon and the defender's chest + head pieces (break-rate vs 1000).
+        RollEquipmentBreak(attacker, UAlbion.Formats.Assets.Inv.ItemSlotId.RightHand, rng);
+        RollEquipmentBreak(defender, UAlbion.Formats.Assets.Inv.ItemSlotId.Chest, rng);
+        RollEquipmentBreak(defender, UAlbion.Formats.Assets.Inv.ItemSlotId.Head, rng);
 
-        // For trace continuity with the old "baseDamage" / "variance" keys.
+        // 3. CRITICAL HIT: CriticalHit skill vs 100 → a LETHAL hit (damage = the target's
+        // current LP), not a multiplier; blocked entirely by the target's crit-immunity
+        // flag (sheet+0x0E & 0x80 — Ai's bodies, the named bosses and Kamulos).
+        int adjusted;
+        bool crit = false;
+        bool critImmune = ((defender.Effective?.UnknownE ?? 0) & 0x80) != 0;
+        int critSkill = EffectiveSkillFor(attacker, CombatBuffs.BuffKind.CritSkill, isWeaponSkill: false);
+        if (!critImmune && DamageCalculator.PercentRoll(critSkill, rng.Generate(100)))
+        {
+            crit = true;
+            adjusted = Math.Max(1, LifePoints(defender));
+        }
+        else
+        {
+            // 4. Damage roll (fcn.0004ee3b): attacker damage and defender protection varied
+            // independently by 50..100 %, then subtracted. delta == 0 is "hit but fully
+            // absorbed" (the original plays sound 451 — distinct from the to-hit miss 452).
+            // Attacker damage includes Strength/25 per fcn.0004ee3b at +0x29.
+            int atkRoll = rng.Generate(51);
+            int defRoll = rng.Generate(51);
+            int strength = (attacker.Effective?.Attributes?.Strength?.Current ?? 0)
+                           + CombatBuffs.Bonus(attacker.SheetId, CombatBuffs.BuffKind.Strength);
+            int rawAtk = DamageCalculator.TotalAttackWithStrength(a, strength)
+                         + CombatBuffs.Bonus(attacker.SheetId, CombatBuffs.BuffKind.Attack);
+            int rawDef = DamageCalculator.TotalDefense(d)
+                         + CombatBuffs.Bonus(defender.SheetId, CombatBuffs.BuffKind.Defense);
+            int variedAtk = DamageCalculator.VaryDamage(rawAtk, atkRoll);
+            int variedDef = DamageCalculator.VaryDamage(rawDef, defRoll);
+            adjusted = Math.Max(0, variedAtk - variedDef);
+
+            if (adjusted <= 0)
+            {
+                TraceLog.Emit("attack_absorbed",
+                    ("attacker", attacker.SheetId),
+                    ("defender", defender.SheetId),
+                    ("varied_atk", variedAtk),
+                    ("varied_def", variedDef));
+                Raise(new CombatHitEvent(TileOf(defender), 0, false, false)); // absorbed — shows "0"
+                return;
+            }
+        }
+
         int baseDamage = adjusted;
-        int varianceRoll = atkRoll;
 
         var amount = (ushort)Math.Min(ushort.MaxValue, adjusted);
         var current = LifePoints(defender);
@@ -837,11 +917,44 @@ public class Battle : GameComponent, IReadOnlyBattle
             ("attack",   DamageCalculator.TotalAttack(a)),
             ("defense",  DamageCalculator.TotalDefense(d)),
             ("base",     baseDamage),
-            ("variance", varianceRoll),
             ("crit",     crit ? 1 : 0),
             ("damage",   amount),
             ("hp",       next),
             ("max",      d.LifePoints.Max));
+    }
+
+    /// <summary>
+    /// Equipment wear roll, RE'd from MAIN.EXE fcn.0004f920: PercentRoll(item break-rate,
+    /// 1000) per connecting swing; on success the slot is flagged broken and the original
+    /// shows the "X is broken" message (SYSTEXTS 736). The original also morphs the item
+    /// into its broken variant via a transform table — not modelled yet (PLACEHOLDER:
+    /// Broken slot flag + message only). Party members only: monster kit isn't persistent.
+    /// </summary>
+    void RollEquipmentBreak(ICombatParticipant p, UAlbion.Formats.Assets.Inv.ItemSlotId slotId, IRandom rng)
+    {
+        if (p?.SheetId.Type != AssetType.PartySheet)
+            return;
+
+        var inv = p.Effective?.Inventory;
+        var slot = slotId switch
+        {
+            UAlbion.Formats.Assets.Inv.ItemSlotId.RightHand => inv?.RightHand,
+            UAlbion.Formats.Assets.Inv.ItemSlotId.Chest     => inv?.Chest,
+            UAlbion.Formats.Assets.Inv.ItemSlotId.Head      => inv?.Head,
+            _ => null
+        };
+        if (slot == null || slot.Item.IsNone || slot.Item.Type != AssetType.Item)
+            return;
+        if ((slot.Flags & UAlbion.Formats.Assets.Inv.ItemSlotFlags.Broken) != 0)
+            return;
+
+        var item = Assets.LoadItem(slot.Item);
+        if (item == null || !DamageCalculator.PercentRoll(item.BreakRate, rng.Generate(1000)))
+            return;
+
+        Info($"[Combat] {p.SheetId}'s {item.Id} broke (rate {item.BreakRate}/1000)");
+        TraceLog.Emit("item_broke", ("owner", p.SheetId), ("item", item.Id), ("slot", slotId));
+        Raise(new BreakInventorySlotEvent(new PartyMemberId(AssetType.PartyMember, p.SheetId.Id), slotId));
     }
 
     protected override void Subscribed()

@@ -25,6 +25,14 @@ public static class CombatBuffs
         Attack,
         /// <summary>Protection bonus (Magic Shield / Personal Protection).</summary>
         Defense,
+        /// <summary>Strength bonus (Berserk's STR x1.5, expressed additively as +STR/2).</summary>
+        Strength,
+        /// <summary>Close-combat skill bonus — feeds the melee to-hit roll (Berserk).</summary>
+        CloseCombatSkill,
+        /// <summary>Ranged-combat skill bonus — feeds the ranged to-hit roll (Berserk).</summary>
+        RangedCombatSkill,
+        /// <summary>Critical-hit skill bonus — feeds the instant-kill crit roll (Berserk).</summary>
+        CritSkill,
     }
 
     sealed class Buff

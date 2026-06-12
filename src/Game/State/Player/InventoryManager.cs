@@ -52,6 +52,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         OnAsync<ReadItemEvent>(OnReadItem);
         On<ReadSpellScrollEvent>(OnReadSpellScroll);
         On<ConsumeItemChargeEvent>(OnConsumeCharge);
+        On<BreakInventorySlotEvent>(OnBreakSlot);
 
         ItemInHand = new ReadOnlyItemSlot(_hand);
     }
@@ -689,6 +690,25 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
             Info($"[Inv] {e.MemberId} consumed one {e.ItemId} ({uncharged.Amount} left)");
             Raise(new InventoryChangedEvent(invId));
         }
+    }
+
+    void OnBreakSlot(BreakInventorySlotEvent e)
+    {
+        // Combat equipment wear (MAIN.EXE fcn.0004f920): flag the slot broken and show the
+        // "X is broken!" combat message (SYSTEXTS 736). The original also morphs the item
+        // into its broken variant via a transform table — not modelled (PLACEHOLDER:
+        // flag + message; the Broken flag already blocks selling and shows in inventory).
+        var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
+        var inv = _getInventory(invId);
+        var slot = inv?.GetSlot(e.SlotId);
+        if (slot == null || slot.Item.Type != AssetType.Item || (slot.Flags & ItemSlotFlags.Broken) != 0)
+            return;
+
+        slot.Flags |= ItemSlotFlags.Broken;
+        var item = _getItem(slot.Item);
+        var tf = Resolve<ITextFormatter>();
+        Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.CombatMsg_XIsBroken, item)));
+        Raise(new InventoryChangedEvent(invId));
     }
 
     AlbionTask OnReadItem(ReadItemEvent e)

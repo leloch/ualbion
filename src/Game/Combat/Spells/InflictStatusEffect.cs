@@ -35,6 +35,11 @@ public sealed class InflictStatusEffect : ISpellEffect
         if ((combat.Conditions & flag) != 0)
             return SpellCastOutcome.Failed;
 
+        // Universal success gate (fcn.000601a6, CONFIRMED for the zombie breezes and used
+        // by every "chance" spell): deterministic — lands iff M > target's MagicResist.
+        if (!SpellSuccessGate.Lands(context, context.Target))
+            return SpellCastOutcome.Resisted;
+
         if (context.RaiseEvent != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {
             var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);

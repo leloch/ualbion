@@ -118,12 +118,16 @@ Combat can be driven fully through HTTP: `load_game 2` → `encounter MonsterGro
 
 ## Combat (reverse-engineered from MAIN.EXE — byte-exact)
 
-`DamageCalculator.cs` + `Battle.cs` implement the real formula:
+`DamageCalculator.cs` + `Battle.cs` implement the real strike pipeline (fcn.0004eac1):
 ```
-finalDamage = max(0, RandomVary(rawAtk) - RandomVary(rawDef))
-RandomVary(v) = (rand()%51 + 50) * v / 100      // uniform 50%..100%
+1. TO-HIT: PercentRoll(attacker weapon skill, 100)  // rand()%100 <= skill; NO defender dodge
+2. equipment wear: PercentRoll(item breakRate, 1000) on attacker weapon + defender chest/head
+3. CRIT: PercentRoll(CriticalHit skill, 100) unless target crit-immune (sheet+0x0E & 0x80)
+         → INSTANT KILL (damage = target's current LP), not a multiplier
+4. else damage = max(0, RandomVary(rawAtk) - RandomVary(rawDef)); 0 = absorbed (not a miss)
+   RandomVary(v) = (rand()%51 + 50) * v / 100     // uniform 50%..100%
 ```
-**No separate hit-roll** — `delta == 0` is the miss. Watcom RNG: `seed = seed*0x41C64E6D + 0x3039; (seed>>16)&0x7FFF`. Crit/Close-Range skills are UI-only. Full detail + the action vtable, status-condition primitives, spell schools, and XP curve are in `_RE_COMBAT.md` / `_PROJECT_LOG.md §4`.
+Watcom RNG: `seed = seed*0x41C64E6D + 0x3039; (seed>>16)&0x7FFF`. Spell "chance" effects use the DETERMINISTIC gate fcn.000601a6: lands iff mastery% > target MagicResist (no roll). Full detail + the action vtable, status-condition primitives, spell schools, and XP curve are in `_RE_COMBAT.md` / `_PROJECT_LOG.md §4`.
 
 ## Known issues (as of latest session)
 
