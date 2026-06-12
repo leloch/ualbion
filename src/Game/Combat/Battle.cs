@@ -37,6 +37,10 @@ public class Battle : GameComponent, IReadOnlyBattle
     // Damage traps placed by trap/mine spells, keyed by tile index. Triggered when a
     // combatant moves onto the tile (MoveCombatant); single-use like the original's.
     readonly Dictionary<int, int> _traps = [];
+    // SP shadow for MONSTERS (transient clones DataChangeEvent can't reach) — party
+    // members read/write their persistent sheets via Mana events instead. Without this,
+    // monster casts never drained SP and repeated casts were free.
+    readonly Dictionary<SheetId, int> _liveSp = [];
 
     // XP pool: each kill adds the monster sheet's ExperienceReward (offset 0x20); on
     // victory every LIVING party member receives max(1, total/livingCount) — RE'd from
@@ -622,8 +626,7 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// <summary>
     /// Monster AI magic commit: cast the first affordable known spell at the nearest live
     /// enemy. Returns false (clearing the Magic bit for this turn) when nothing is castable.
-    /// Monster SP isn't shadow-tracked yet, so repeated casts don't drain it — PLACEHOLDER
-    /// until monster SP joins the battle shadow like _liveHp.
+    /// SP comes from the battle shadow, so repeated casts drain the monster's pool.
     /// </summary>
     bool TryMonsterCast(ICombatParticipant caster)
     {
@@ -631,7 +634,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (spells == null || spells.Count == 0)
             return false;
 
-        int sp = caster.Effective?.Magic?.SpellPoints?.Current ?? 0;
+        int sp = SpellPoints(caster);
         foreach (var spellId in spells)
         {
             var spell = Assets.LoadSpell(spellId);
@@ -659,7 +662,7 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         var spell = Assets.LoadSpell(spellId);
         int cost = spell?.Cost ?? 0;
-        int sp = caster.Effective?.Magic?.SpellPoints?.Current ?? 0;
+        int sp = SpellPoints(caster);
         if (cost > 0 && sp < cost)
         {
             Info($"[Combat] {caster.SheetId} lacks SP for {spellId} ({sp}/{cost})");
@@ -724,6 +727,8 @@ public class Battle : GameComponent, IReadOnlyBattle
             var casterTarget = TryToTarget(caster);
             if (casterTarget != null)
                 Raise(new DataChangeEvent(casterTarget.Value, ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
+            else
+                _liveSp[caster.SheetId] = Math.Max(0, SpellPoints(caster) - cost); // monster SP shadow
         }
     }
 
@@ -791,6 +796,10 @@ public class Battle : GameComponent, IReadOnlyBattle
             return false;
         if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.Paralysed) != 0)
             return false;
+        // Frost-line freeze (the original's kind-1 round-timed buff sets Paralysed and
+        // clears it at expiry; we model it directly as a timed turn-skip).
+        if (p != null && CombatBuffs.IsFrozen(p.SheetId))
+            return false;
         return true;
     }
 
@@ -802,6 +811,22 @@ public class Battle : GameComponent, IReadOnlyBattle
         // Lazy seed from Effective on first read; subsequent damage updates the shadow.
         var initial = p.Effective?.Combat?.LifePoints?.Current ?? 0;
         _liveHp[p.SheetId] = initial;
+        return initial;
+    }
+
+    /// <summary>
+    /// Current SP: party members read their live sheet (Mana events keep it current);
+    /// monsters use the battle-scoped shadow so casts actually drain their pool.
+    /// </summary>
+    int SpellPoints(ICombatParticipant p)
+    {
+        if (p == null) return 0;
+        if (p.SheetId.Type == AssetType.PartySheet)
+            return p.Effective?.Magic?.SpellPoints?.Current ?? 0;
+        if (_liveSp.TryGetValue(p.SheetId, out var sp))
+            return sp;
+        var initial = p.Effective?.Magic?.SpellPoints?.Current ?? 0;
+        _liveSp[p.SheetId] = initial;
         return initial;
     }
 
@@ -1012,4 +1037,6 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     public ICombatParticipant GetTile(int tileIndex)
         => tileIndex < 0 || tileIndex >= _tiles.Length ? null : _tiles[tileIndex];
+
+    public int GetLifePoints(ICombatParticipant participant) => LifePoints(participant);
 }

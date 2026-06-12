@@ -22,6 +22,7 @@ public class VisualCombatTile : UiElement
     readonly UiSpriteElement _sprite;
     readonly Button _button;
     readonly SimpleText _feedback;
+    readonly SimpleText _hpText;
 
     public SpriteId Icon
     {
@@ -60,6 +61,7 @@ public class VisualCombatTile : UiElement
         _battle = battle ?? throw new ArgumentNullException(nameof(battle));
         _sprite = new UiSpriteElement(SpriteId.None) { IsActive = false, Flags = SpriteFlags.BottomAligned };
         _feedback = new SimpleText(string.Empty);
+        _hpText = new SimpleText(string.Empty);
 
         var stack =
             new VerticalStacker(
@@ -70,8 +72,9 @@ public class VisualCombatTile : UiElement
                 Greedy = false
             };
 
-        // Damage/heal numbers overlay the tile contents during round playback.
-        var layers = new LayerStacker(stack, _feedback);
+        // Damage/heal numbers overlay the tile contents during round playback;
+        // the View of Life LP readout stacks above them.
+        var layers = new LayerStacker(stack, _feedback, _hpText);
 
         _button = new Button(layers) { Margin = 0 }
             .OnHover(() => Hover?.Invoke())
@@ -92,6 +95,14 @@ public class VisualCombatTile : UiElement
     {
         ICombatParticipant mob = _battle.GetTile(_tileIndex);
         Icon = mob == null ? SpriteId.None : mob.Effective.TacticalGfx;
+
+        // View of Life: show monster LP on the grid while the spell is active.
+        _hpText.Text =
+            CombatBuffs.ViewOfLife
+            && mob != null
+            && mob.SheetId.Type == UAlbion.Config.AssetType.MonsterSheet
+                ? _battle.GetLifePoints(mob).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : string.Empty;
 
         if (_sprite.Id.IsNone || ++_frameCounter % FramesPerAnimStep != 0)
             return;

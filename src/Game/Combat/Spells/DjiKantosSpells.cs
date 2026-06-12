@@ -37,6 +37,7 @@ public static class DjiKantosSpells
             () => new UAlbion.Game.Entities.Map3D.RevealAutomapEvent(),
             () => new UAlbion.Game.Entities.Map3D.ShowAutomapEvent()));
         SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Teleporter, "open the teleporter destination picker (needs the Goto-marker map list UI)"));
-        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Levitation, "float over pit tiles in 3D maps (needs pit-tile collision exemption)"));
+        // Levitation: the party floats over pit (no-floor) tiles until the map changes.
+        SpellEffectRegistry.Register(new LevitationEffect(Base.Spell.Levitation));
     }
 }

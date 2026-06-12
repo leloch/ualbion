@@ -19,10 +19,18 @@ public sealed class DamageSpellEffect : ISpellEffect
     /// <summary>Damage at 100 % mastery (the per-spell K constant).</summary>
     public int K { get; }
 
-    public DamageSpellEffect(SpellId spellId, int k)
+    /// <summary>
+    /// Freeze rider base duration (fcn.0004b8a1 kind 1, base 3 for the frost line):
+    /// on a successful hit the target also skips its turns for max(1, M·base/100)+1
+    /// rounds (2-4 in practice). 0 = no rider.
+    /// </summary>
+    public int FreezeBase { get; }
+
+    public DamageSpellEffect(SpellId spellId, int k, int freezeBase = 0)
     {
         SpellId = spellId;
         K = k;
+        FreezeBase = freezeBase;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
@@ -47,6 +55,13 @@ public sealed class DamageSpellEffect : ISpellEffect
             var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);
             context.RaiseEvent(new DataChangeEvent(targetId, ChangeProperty.Health, NumericOperation.SubtractAmount, amount));
         }
+
+        if (FreezeBase > 0)
+        {
+            int rounds = Math.Max(1, context.MasteryMultiplier * FreezeBase / 100) + 1;
+            CombatBuffs.Add(context.Target.SheetId, CombatBuffs.BuffKind.Freeze, 0, rounds);
+        }
+
         return SpellCastOutcome.Hit;
     }
 }

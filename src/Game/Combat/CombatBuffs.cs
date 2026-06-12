@@ -33,6 +33,17 @@ public static class CombatBuffs
         RangedCombatSkill,
         /// <summary>Critical-hit skill bonus — feeds the instant-kill crit roll (Berserk).</summary>
         CritSkill,
+        /// <summary>
+        /// MagicShield/PersonalProtection's active-spell TYPE-2 percentage: boosts the
+        /// bearer's Magic Resistance in the spell success gate by resist·pct/100
+        /// (the original's 0x153b3e table, percent = max over casts of M).
+        /// </summary>
+        ShieldResistPct,
+        /// <summary>
+        /// Frost-line freeze (the original's buff kind 1, base 3): the target skips its
+        /// turns until the duration expires. Battle's turn gate checks IsFrozen.
+        /// </summary>
+        Freeze,
     }
 
     sealed class Buff
@@ -44,7 +55,17 @@ public static class CombatBuffs
 
     static readonly Dictionary<SheetId, List<Buff>> Active = [];
 
-    public static void Clear() => Active.Clear();
+    /// <summary>
+    /// View of Life (Dji-Kas spell 30): when active, the combat grid shows every
+    /// monster's current LP. Battle-scoped like the buffs.
+    /// </summary>
+    public static bool ViewOfLife { get; set; }
+
+    public static void Clear()
+    {
+        Active.Clear();
+        ViewOfLife = false;
+    }
 
     public static void Add(SheetId target, BuffKind kind, int amount, int rounds)
     {
@@ -78,6 +99,9 @@ public static class CombatBuffs
 
     public static bool IsBerserk(SheetId target)
         => Active.TryGetValue(target, out var list) && list.Exists(b => b.Kind == BuffKind.Berserk);
+
+    public static bool IsFrozen(SheetId target)
+        => Active.TryGetValue(target, out var list) && list.Exists(b => b.Kind == BuffKind.Freeze);
 
     /// <summary>Decrement all buff durations; called by Battle at the end of each round.</summary>
     public static void TickRound()
