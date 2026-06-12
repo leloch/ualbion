@@ -184,12 +184,12 @@ public class Conversation : GameComponent
                     return true;
                 }
 
-            default: // TODO
+            default:
                 {
-                    //await TriggerAction(
-                    //    ActionType.DialogueLine,
-                    //    (byte)blockId,
-                    //    new AssetId(AssetType.PromptNumber, textId));
+                    // All four real block ids (Profession/QueryWord/QueryItem/Farewell)
+                    // are handled above; MainText (-1) is a UiText filtering pseudo-id
+                    // never dispatched here. Anything else is malformed data.
+                    Warn($"Conversation: unhandled block id {blockId}");
                     break;
                 }
         }
