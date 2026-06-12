@@ -27,6 +27,13 @@ sealed class WindowHolder : Component, IDisposable
         On<ShowHardwareCursorEvent>(e   => { if (_window != null) _window.CursorVisible = e.Show; });
         On<ToggleResizableEvent>(_      => { if (_window != null) _window.Resizable = !_window.Resizable; });
         On<ToggleVisibleBorderEvent>(_  => { if (_window != null) _window.BorderVisible = !_window.BorderVisible; });
+        On<SetWindowSizeEvent>(e =>
+        {
+            if (_window == null || e.Width < 1 || e.Height < 1) return;
+            _window.WindowState = WindowState.Normal; // size is meaningless while fullscreen
+            _window.Width = e.Width;
+            _window.Height = e.Height;
+        });
         On<ConfineMouseToWindowEvent>(e => { if (_window != null) Sdl2Native.SDL_SetWindowGrab(_window.SdlWindowHandle, e.Enabled); });
         On<RenderSystemChangedEvent>(_  => { if (_window != null) Raise(new WindowResizedEvent(_window.Width, _window.Height)); });
         On<SetRelativeMouseModeEvent>(e =>

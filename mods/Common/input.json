@@ -13,6 +13,10 @@
     "Space": "dismiss_message",
     "Period": "dismiss_message",
 
+    // QoL: quicksave/quickload (slot 99; slot 98 is the map-entry autosave)
+    "Ctrl+F5": "save_game 99 Quicksave",
+    "Ctrl+F9": "load_game 99",
+
     // Debugging
     "Tilde": "focus_console",
     "Ctrl+Shift+V": "push_mouse_mode DebugPick",

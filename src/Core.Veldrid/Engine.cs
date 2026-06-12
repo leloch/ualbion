@@ -153,6 +153,12 @@ public sealed class Engine : ServiceComponent<IVeldridEngine, IEngine>, IVeldrid
             using (PerfTracker.FrameEvent("Processing window events"))
                 _windowHolder.PumpEvents(deltaSeconds);
 
+            // The window may have closed during event pumping (X button / Alt+F4), which
+            // sets _done via WindowClosedEvent. Rendering this frame would present to a
+            // lost surface (Vulkan: "The Swapchain's underlying surface has been lost").
+            if (_done)
+                break;
+
             using (PerfTracker.FrameEvent("Performing update"))
             {
                 engineUpdateEvent.DeltaSeconds = (float)deltaSeconds;
