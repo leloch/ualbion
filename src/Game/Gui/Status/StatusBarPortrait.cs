@@ -78,7 +78,7 @@ public class StatusBarPortrait : UiElement
         {
             options.Add(new ContextMenuOption(
                 S(Base.SystemText.PartyPopup_UseMagic),
-                null,
+                new Magic.ShowMagicMenuEvent(member.Id),
                 ContextMenuGroup.Actions));
         }
 

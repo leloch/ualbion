@@ -19,6 +19,11 @@ public class CombatAudio : Component
 {
     static readonly Dictionary<SpellId, Base.Sample[]> CastSamples = BuildCastTable();
 
+    /// <summary>The RE'd per-spell cast sample sequence (empty when the spell has none) —
+    /// shared with the out-of-combat cast path (PartyMagicMenu).</summary>
+    public static IReadOnlyList<Base.Sample> GetCastSamples(SpellId id)
+        => CastSamples.TryGetValue(id, out var samples) ? samples : [];
+
     static Dictionary<SpellId, Base.Sample[]> BuildCastTable()
     {
         var t = new Dictionary<SpellId, Base.Sample[]>();

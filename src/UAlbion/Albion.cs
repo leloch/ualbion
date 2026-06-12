@@ -182,6 +182,7 @@ static class Albion
             new MeshManager(LoadMesh),
             new GameState(),
             new Autosaver(),
+            new UAlbion.Game.Magic.PartyMagicMenu(),
             new GameClock(),
             new IdleClock(),
             new SlowClock(),
