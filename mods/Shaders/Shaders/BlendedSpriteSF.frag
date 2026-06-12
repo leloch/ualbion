@@ -64,6 +64,15 @@ void main()
         color = DEPTH_COLOR(depth);
 #endif
 
+    // Keep-alive: reference the set-0 palette resources so glslang doesn't strip
+    // their declarations. Without this the sprite textures shift down to the
+    // palette's registers on D3D11 (Veldrid binds by full layout, Veldrid.SPIRV
+    // numbers only surviving declarations) and 2D map day/night layers rendered
+    // the palette as rainbow stripes / discarded to black. Never true at runtime.
+    if ((uEngineFlags & 0x40000000U) != 0)
+        color += texture(sampler2D(uDayPalette, uPaletteSampler), vec2(0.5))
+               + texture(sampler2D(uNightPalette, uPaletteSampler), vec2(0.5));
+
     oColor = color;
     gl_FragDepth = ((uEngineFlags & EF_FLIP_DEPTH_RANGE) != 0) ? 1.0f - depth : depth;
 }

@@ -52,6 +52,17 @@ void main()
 	color = Pal(color[0]); //! {}
 #endif
 
+	// Keep-alive: reference the set-0 palette resources so glslang doesn't strip
+	// their declarations from the SPIR-V module. Veldrid.SPIRV assigns D3D11
+	// registers from the surviving declarations only, while Veldrid binds by the
+	// full resource-set layout — when these were stripped every later texture
+	// shifted down a slot and the dungeon sampled the palette textures instead of
+	// the wall/floor atlases (the "striped walls" bug). The flag bit is never set
+	// at runtime so this contributes nothing to the image.
+	if ((uEngineFlags & 0x40000000U) != 0)
+		color += texture(sampler2D(uDayPalette, uPaletteSampler), vec2(0.5))
+		       + texture(sampler2D(uNightPalette, uPaletteSampler), vec2(0.5));
+
 	float depth = (color.w == 0.0f) ?  1.0f : gl_FragCoord.z;
 
 	if ((iFlags & TF_HIGHLIGHT)  != 0) color = color * 1.2; // Highlight

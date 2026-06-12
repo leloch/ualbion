@@ -157,8 +157,10 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /labyrinth":       WriteJson(ctx, BuildLabyrinthDump()); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
-            case "GET /wallpixels":      WriteJson(ctx, BuildWallPixelsDump(ctx, useWalls: true)); break;
-            case "GET /floorpixels":     WriteJson(ctx, BuildWallPixelsDump(ctx, useWalls: false)); break;
+            case "GET /wallpixels":      HandlePixelDump(ctx, useWalls: true); break;
+            case "GET /floorpixels":     HandlePixelDump(ctx, useWalls: false); break;
+            case "GET /gpuwallpixels":   WriteGpuLayerPng(ctx, useWalls: true); break;
+            case "GET /gpufloorpixels":  WriteGpuLayerPng(ctx, useWalls: false); break;
             case "POST /event/raw":      HandleEventRaw(ctx); break;
             case "POST /event":          HandleEventJson(ctx); break;
             case "POST /click":          HandleClickById(ctx); break;
@@ -381,6 +383,122 @@ public sealed class HarnessHttpServer : Component, IDisposable
     /// asset-loading path. Query string: ?layer=N&amp;w=8&amp;h=8 (defaults: layer=1, 8×8).
     /// Returns hex-encoded ARGB pixels in row-major order plus column/row statistics.
     /// </summary>
+    void HandlePixelDump(HttpListenerContext ctx, bool useWalls)
+    {
+        // ?format=png returns the full layer as an image so a human (or agent with
+        // vision) can see the actual CPU-side atlas content rather than statistics.
+        if (ctx.Request.QueryString["format"] == "png")
+            WriteLayerPng(ctx, useWalls);
+        else
+            WriteJson(ctx, BuildWallPixelsDump(ctx, useWalls));
+    }
+
+    void WriteLayerPng(HttpListenerContext ctx, bool useWalls)
+    {
+        int wantLayer = int.TryParse(ctx.Request.QueryString["layer"], out var lv) && lv >= 0 ? lv : 1;
+
+        var tilemap = FindActiveTilemap();
+        if (tilemap == null) { TryWriteError(ctx, HttpStatusCode.ServiceUnavailable, "no active ExtrudedTilemap"); return; }
+
+        var atlas = useWalls ? tilemap.DayWalls : tilemap.DayFloors;
+        if (atlas == null) { TryWriteError(ctx, HttpStatusCode.NotFound, useWalls ? "no DayWalls" : "no DayFloors"); return; }
+        if (wantLayer >= atlas.ArrayLayers) { TryWriteError(ctx, HttpStatusCode.NotFound, $"layer {wantLayer} out of range (max {atlas.ArrayLayers - 1})"); return; }
+
+        var buffer = atlas.GetLayerBuffer(wantLayer);
+        using var image = new Image<Rgba32>(buffer.Width, buffer.Height);
+        for (int y = 0; y < buffer.Height; y++)
+        {
+            for (int x = 0; x < buffer.Width; x++)
+            {
+                int idx = y * buffer.Stride + x;
+                uint p = idx < buffer.Buffer.Length ? buffer.Buffer[idx] : 0;
+                image[x, y] = new Rgba32((byte)(p & 0xff), (byte)((p >> 8) & 0xff), (byte)((p >> 16) & 0xff), (byte)((p >> 24) & 0xff));
+            }
+        }
+
+        using var ms = new MemoryStream();
+        image.SaveAsPng(ms);
+        var bytes = ms.ToArray();
+        ctx.Response.StatusCode = (int)HttpStatusCode.OK;
+        ctx.Response.ContentType = "image/png";
+        ctx.Response.ContentLength64 = bytes.Length;
+        ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+    }
+
+    // Reads back a single layer of the LIVE GPU-side wall/floor array texture so it can be
+    // compared against the CPU-side atlas (/wallpixels?format=png). If they differ, the
+    // CPU->GPU upload is garbling data.
+    unsafe void WriteGpuLayerPng(HttpListenerContext ctx, bool useWalls)
+    {
+        int wantLayer = int.TryParse(ctx.Request.QueryString["layer"], out var lv) && lv >= 0 ? lv : 1;
+
+        var tilemap = FindActiveTilemap();
+        if (tilemap == null) { TryWriteError(ctx, HttpStatusCode.ServiceUnavailable, "no active ExtrudedTilemap"); return; }
+
+        var atlas = useWalls ? tilemap.DayWalls : tilemap.DayFloors;
+        if (atlas == null) { TryWriteError(ctx, HttpStatusCode.NotFound, "no atlas"); return; }
+
+        var engine = TryResolve<UAlbion.Core.Veldrid.IVeldridEngine>();
+        var textureSource = TryResolve<UAlbion.Core.Veldrid.Textures.ITextureSource>();
+        if (engine?.Device == null || textureSource == null) { TryWriteError(ctx, HttpStatusCode.ServiceUnavailable, "no engine/texture source"); return; }
+
+        var holder = textureSource.GetArrayTexture(atlas);
+        var tex = holder?.DeviceTexture;
+        if (tex == null) { TryWriteError(ctx, HttpStatusCode.ServiceUnavailable, "no device texture"); return; }
+        if (wantLayer >= tex.ArrayLayers) { TryWriteError(ctx, HttpStatusCode.NotFound, $"layer {wantLayer} out of range (GPU tex has {tex.ArrayLayers})"); return; }
+
+        var device = engine.Device;
+        var stagingDesc = new TextureDescription(tex.Width, tex.Height, 1, 1, 1, tex.Format, TextureUsage.Staging, TextureType.Texture2D);
+        using var staging = device.ResourceFactory.CreateTexture(in stagingDesc);
+        using var cl = device.ResourceFactory.CreateCommandList();
+        cl.Begin();
+        cl.CopyTexture(tex, 0, 0, 0, 0, (uint)wantLayer, staging, 0, 0, 0, 0, 0, tex.Width, tex.Height, 1, 1);
+        cl.End();
+        device.SubmitCommands(cl);
+        device.WaitForIdle();
+
+        var mapped = device.Map(staging, MapMode.Read);
+        try
+        {
+            using var image = new Image<Rgba32>((int)tex.Width, (int)tex.Height);
+            var src = new Span<uint>(mapped.Data.ToPointer(), (int)(mapped.SizeInBytes / sizeof(uint)));
+            int stride = (int)(mapped.RowPitch / sizeof(uint));
+            for (int y = 0; y < tex.Height; y++)
+            {
+                for (int x = 0; x < tex.Width; x++)
+                {
+                    uint p = src[y * stride + x];
+                    image[x, y] = new Rgba32((byte)(p & 0xff), (byte)((p >> 8) & 0xff), (byte)((p >> 16) & 0xff), (byte)((p >> 24) & 0xff));
+                }
+            }
+
+            using var ms = new MemoryStream();
+            image.SaveAsPng(ms);
+            var bytes = ms.ToArray();
+            ctx.Response.StatusCode = (int)HttpStatusCode.OK;
+            ctx.Response.ContentType = "image/png";
+            ctx.Response.ContentLength64 = bytes.Length;
+            ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+        }
+        finally { device.Unmap(staging); }
+    }
+
+    UAlbion.Core.Veldrid.Etm.ExtrudedTilemap FindActiveTilemap()
+    {
+        var etmMgr = TryResolve<UAlbion.Core.Visual.IEtmManager>();
+        if (etmMgr == null) return null;
+
+        var childrenField = typeof(UAlbion.Api.Eventing.Component).GetField("_children",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        if (childrenField?.GetValue(etmMgr) is not System.Collections.IEnumerable children)
+            return null;
+
+        foreach (var c in children)
+            if (c is UAlbion.Core.Veldrid.Etm.ExtrudedTilemap tm)
+                return tm;
+        return null;
+    }
+
     string BuildWallPixelsDump(HttpListenerContext ctx, bool useWalls)
     {
         var query = ctx.Request.QueryString;
@@ -494,7 +612,10 @@ public sealed class HarnessHttpServer : Component, IDisposable
 
     string BuildCameraDump()
     {
-        var camera = TryResolve<UAlbion.Core.Visual.ICamera>();
+        // Cameras live on the active scene, not as a global ICamera service — go via
+        // the camera provider so this works for both 2D (orthographic) and 3D scenes.
+        var camera = TryResolve<UAlbion.Core.Visual.ICamera>()
+                     ?? TryResolve<UAlbion.Core.Visual.ICameraProvider>()?.Camera;
         if (camera == null) return "{\"camera\":null}";
 
         var pos = camera.Position;

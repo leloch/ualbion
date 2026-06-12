@@ -16,6 +16,7 @@ public class LogExchange : ILogExchange
     EventExchange _exchange;
 
     public bool IsActive { get; set; } // Dummy implementation, value not currently used.
+    public bool IsSubscribed => _exchange != null;
     public int ComponentId => -1;
     public void EnqueueEvent(IEvent e) => _queuedEvents.Enqueue(e);
     public event EventHandler<LogEventArgs> Log;
