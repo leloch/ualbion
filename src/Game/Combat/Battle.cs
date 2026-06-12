@@ -709,6 +709,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             return occupant == null || LifePoints(occupant) <= 0;
         }
 
+        var waypoints = new List<int>();
         for (int s = 0; s < steps; s++)
         {
             int nr = row + towardRow;
@@ -716,26 +717,28 @@ public class Battle : GameComponent, IReadOnlyBattle
                 ? Math.Sign(targetCol - col) is int sign && sign != 0 ? sign : (rng.Generate(2) == 0 ? -1 : 1)
                 : (rng.Generate(2) == 0 ? -1 : 1);
 
-            if (nr >= 0 && nr < SavedGame.CombatRows && Free(col, nr)) { row = nr; continue; }
-            if (nr >= 0 && nr < SavedGame.CombatRows && Free(col + sideFirst, nr)) { col += sideFirst; row = nr; continue; }
-            if (nr >= 0 && nr < SavedGame.CombatRows && Free(col - sideFirst, nr)) { col -= sideFirst; row = nr; continue; }
-            if (targetCol >= 0 && col != targetCol && Free(col + sideFirst, row)) { col += sideFirst; continue; }
-            break; // stuck — partial path kept
+            if (nr >= 0 && nr < SavedGame.CombatRows && Free(col, nr)) { row = nr; }
+            else if (nr >= 0 && nr < SavedGame.CombatRows && Free(col + sideFirst, nr)) { col += sideFirst; row = nr; }
+            else if (nr >= 0 && nr < SavedGame.CombatRows && Free(col - sideFirst, nr)) { col -= sideFirst; row = nr; }
+            else if (targetCol >= 0 && col != targetCol && Free(col + sideFirst, row)) { col += sideFirst; }
+            else break; // stuck — partial path kept
+            waypoints.Add(row * SavedGame.CombatColumns + col);
         }
 
         int dest = row * SavedGame.CombatColumns + col;
         if (dest != tile)
-            MoveCombatantDirect(mover, tile, dest);
+            MoveCombatantDirect(mover, tile, dest, waypoints);
     }
 
     /// <summary>Commit a validated move (grid swap + message + trap trigger) without range checks.</summary>
-    void MoveCombatantDirect(ICombatParticipant mover, int fromTile, int toTile)
+    void MoveCombatantDirect(ICombatParticipant mover, int fromTile, int toTile, IReadOnlyList<int> waypoints = null)
     {
         _tiles[fromTile] = null;
         _tiles[toTile] = mover;
         ShowCombatMessage(Base.SystemText.CombatMsg_XIsMoving, mover); // SYSTEXTS 444
         Info($"[Combat] {mover.SheetId} moves from tile {fromTile} to {toTile}");
         TraceLog.Emit("combat_move", ("actor", mover.SheetId), ("from", fromTile), ("to", toTile));
+        Raise(new CombatWalkEvent(fromTile, waypoints ?? [toTile])); // view lerps along the path
 
         if (_traps.TryGetValue(toTile, out var trapDamage))
         {
@@ -985,11 +988,14 @@ public class Battle : GameComponent, IReadOnlyBattle
         }
 
         if (oldTile >= 0)
+        {
             _tiles[oldTile] = null;
-        _tiles[targetTile] = mover;
-        ShowCombatMessage(Base.SystemText.CombatMsg_XIsMoving, mover); // SYSTEXTS 444
-        Info($"[Combat] {mover.SheetId} moves from tile {oldTile} to {targetTile}");
-        TraceLog.Emit("combat_move", ("actor", mover.SheetId), ("from", oldTile), ("to", targetTile));
+            _tiles[targetTile] = mover;
+            ShowCombatMessage(Base.SystemText.CombatMsg_XIsMoving, mover); // SYSTEXTS 444
+            Info($"[Combat] {mover.SheetId} moves from tile {oldTile} to {targetTile}");
+            TraceLog.Emit("combat_move", ("actor", mover.SheetId), ("from", oldTile), ("to", targetTile));
+            Raise(new CombatWalkEvent(oldTile, [targetTile]));
+        }
 
         if (_traps.TryGetValue(targetTile, out var trapDamage))
         {

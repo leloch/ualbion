@@ -20,3 +20,11 @@ public record CombatHitEvent(int TileIndex, int Amount, bool Killed, bool Heal) 
 /// CombatAudio maps the spell to its RE'd sample sequence.
 /// </summary>
 public record CombatCastEvent(UAlbion.Formats.Ids.SpellId SpellId) : EventRecord, IVerboseEvent;
+
+/// <summary>
+/// Round-playback presentation: a combatant walks a (possibly multi-tile) path.
+/// The battle state has already committed the final tile; the view lerps the sprite
+/// along the waypoints (RE 5A: N engine frames per tile, N = Move anim length, with
+/// the Move animation stepping every engine frame — vtable_2 sub 3 WalkPath 0x52019).
+/// </summary>
+public record CombatWalkEvent(int FromTile, System.Collections.Generic.IReadOnlyList<int> Waypoints) : EventRecord, IVerboseEvent;
