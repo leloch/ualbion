@@ -41,7 +41,7 @@ public class ConversationManager : GameServiceComponent<IConversationManager>, I
             if (setId.IsNone) continue;
             var set = Assets.LoadEventSet(setId);
             if (set == null) { Warn($"[DumpEventSet] {setId} failed to load"); continue; }
-            Info($"[DumpEventSet] {setId}: {set.Chains.Count} chains");
+            Info($"[DumpEventSet] {setId}: {set.Chains.Count} chains, {set.Events.Count} events");
             foreach (var chainStart in set.Chains)
             {
                 var evt = set.Events[chainStart].Event;
@@ -50,6 +50,10 @@ public class ConversationManager : GameServiceComponent<IConversationManager>, I
                 else
                     Info($"  chain@{chainStart}: {evt?.GetType().Name}");
             }
+
+            for (int i = 0; i < set.Events.Count; i++)
+                if (set.Events[i].Event is PlaceActionEvent pa)
+                    Info($"  event@{i}: PlaceAction {pa.Type} unk2={pa.Unk2} unk3={pa.Unk3} unk4={pa.Unk4} unk5={pa.Unk5} unk6={pa.Unk6} unk8={pa.Unk8}");
         }
     }
 

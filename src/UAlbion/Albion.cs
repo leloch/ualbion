@@ -183,6 +183,7 @@ static class Albion
             new GameState(),
             new Autosaver(),
             new UAlbion.Game.Magic.PartyMagicMenu(),
+            new PlaceActionManager(),
             new GameClock(),
             new IdleClock(),
             new SlowClock(),
