@@ -147,18 +147,89 @@ public class SheetApplier : Component
     static void ApplyStatus(CharacterSheet sheet, ChangeStatusEvent statusEvent)
     {
         var condition = statusEvent.Status.ToFlag();
+        var before = sheet.Combat.Conditions;
         // A condition is a single flag, so the amount-based operations collapse to
         // set/clear. Previously Add/SubtractAmount fell through to a silent no-op,
         // which made every condition-cure (and several inflictions) do nothing.
         sheet.Combat.Conditions = statusEvent.Operation switch
         {
-            NumericOperation.SetToMaximum  => sheet.Combat.Conditions | condition,
-            NumericOperation.AddAmount     => sheet.Combat.Conditions | condition,
-            NumericOperation.SetToMinimum  => sheet.Combat.Conditions & ~condition,
-            NumericOperation.SubtractAmount => sheet.Combat.Conditions & ~condition,
-            NumericOperation.Toggle => sheet.Combat.Conditions ^ condition,
-            _ => sheet.Combat.Conditions
+            NumericOperation.SetToMaximum  => before | condition,
+            NumericOperation.AddAmount     => before | condition,
+            NumericOperation.SetToMinimum  => before & ~condition,
+            NumericOperation.SubtractAmount => before & ~condition,
+            NumericOperation.Toggle => before ^ condition,
+            _ => before
         };
+
+        // Exhaustion carries stat penalties that apply on set and revert on cure —
+        // hooked here so every path (48 h fatigue, rest, Recuperation) gets them.
+        if (statusEvent.Status == PlayerCondition.Exhausted)
+        {
+            bool was = (before & PlayerConditions.Exhausted) != 0;
+            bool now = (sheet.Combat.Conditions & PlayerConditions.Exhausted) != 0;
+            if (!was && now)
+                ApplyExhaustionPenalties(sheet);
+            else if (was && !now)
+                RestoreExhaustionBackups(sheet);
+        }
+    }
+
+    /// <summary>
+    /// Exhaustion penalties, RE'd from MAIN.EXE fcn.00039362 (the odd-hour fatigue check):
+    /// the current attribute/skill values are backed up (the stat record's +6 word — the
+    /// CharacterAttribute.Backup field) and then reduced: Strength ×3/4, every other
+    /// attribute ×1/2, all four skills ×1/2.
+    /// </summary>
+    static void ApplyExhaustionPenalties(CharacterSheet sheet)
+    {
+        static void Penalise(CharacterAttribute attr, int num, int den)
+        {
+            if (attr == null || attr.Backup != 0)
+                return; // already penalised — don't stack
+            attr.Backup = attr.Current;
+            attr.Current = (ushort)(attr.Current * num / den);
+        }
+
+        Penalise(sheet.Attributes.Strength, 3, 4);
+        Penalise(sheet.Attributes.Intelligence, 1, 2);
+        Penalise(sheet.Attributes.Dexterity, 1, 2);
+        Penalise(sheet.Attributes.Speed, 1, 2);
+        Penalise(sheet.Attributes.Stamina, 1, 2);
+        Penalise(sheet.Attributes.Luck, 1, 2);
+        Penalise(sheet.Attributes.MagicResistance, 1, 2);
+        Penalise(sheet.Attributes.MagicTalent, 1, 2);
+        Penalise(sheet.Skills.CloseCombat, 1, 2);
+        Penalise(sheet.Skills.RangedCombat, 1, 2);
+        Penalise(sheet.Skills.CriticalChance, 1, 2);
+        Penalise(sheet.Skills.LockPicking, 1, 2);
+    }
+
+    /// <summary>
+    /// Cure-side restore, RE'd from MAIN.EXE fcn.00037958: attribute/skill currents come
+    /// back from the +6 backups (rest and Recuperation both route through here).
+    /// </summary>
+    static void RestoreExhaustionBackups(CharacterSheet sheet)
+    {
+        static void Restore(CharacterAttribute attr)
+        {
+            if (attr == null || attr.Backup == 0)
+                return;
+            attr.Current = attr.Backup;
+            attr.Backup = 0;
+        }
+
+        Restore(sheet.Attributes.Strength);
+        Restore(sheet.Attributes.Intelligence);
+        Restore(sheet.Attributes.Dexterity);
+        Restore(sheet.Attributes.Speed);
+        Restore(sheet.Attributes.Stamina);
+        Restore(sheet.Attributes.Luck);
+        Restore(sheet.Attributes.MagicResistance);
+        Restore(sheet.Attributes.MagicTalent);
+        Restore(sheet.Skills.CloseCombat);
+        Restore(sheet.Skills.RangedCombat);
+        Restore(sheet.Skills.CriticalChance);
+        Restore(sheet.Skills.LockPicking);
     }
 
     static void ApplyLanguage(CharacterSheet sheet, ChangeLanguageEvent languageEvent)

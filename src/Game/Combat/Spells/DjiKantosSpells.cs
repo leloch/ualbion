@@ -12,15 +12,15 @@ public static class DjiKantosSpells
 {
     public static void RegisterAll()
     {
-        // Healing line — CONFIRMED by RE: HealingDC = 40 % of max LP; Recuperation is a
-        // FULL restore (the original additionally requires the target to have been awake
-        // >8 hours — gate not modelled, PLACEHOLDER); Regeneration and Lifebringer are
-        // IDENTICAL in the original: clear 9 conditions + heal max(1, MaxLP·M/100)
-        // (the condition-cleanse part needs a combined effect — PLACEHOLDER: heal only).
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.HealingDC,     k: 40));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Recuperation,  k: 100));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Regeneration,  k: 100));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Lifebringer,   k: 100));
+        // Healing line — all CONFIRMED by RE: HealingDC = 40 % of max LP; Recuperation
+        // (handler 0x6470b) is a magical full rest — whole party restored, Exhausted
+        // cured, fatigue counter reset, gated on >8 hours awake; Regeneration and
+        // Lifebringer are IDENTICAL in the original (shared continuation 0x643fa):
+        // clear 9 conditions + heal max(1, MaxLP·M/100).
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.HealingDC, k: 40));
+        SpellEffectRegistry.Register(new RecuperationEffect(Base.Spell.Recuperation));
+        SpellEffectRegistry.Register(new CleanseHealEffect(Base.Spell.Regeneration));
+        SpellEffectRegistry.Register(new CleanseHealEffect(Base.Spell.Lifebringer));
 
         // Goddess' Wrath — CONFIRMED (handler 0xa1134): not a damage spell at all; it
         // kills max(1, living·M/100) randomly-chosen monsters outright, each gated by

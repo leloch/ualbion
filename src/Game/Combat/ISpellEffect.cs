@@ -82,6 +82,18 @@ public sealed class SpellCastContext
     /// Null outside combat.
     /// </summary>
     public System.Action<ICombatParticipant> InstantKill { get; init; }
+
+    /// <summary>
+    /// All combatants on the CASTER's side (in combat) or the whole party (outside) —
+    /// used by party-wide spells (Recuperation). Null when unavailable.
+    /// </summary>
+    public System.Func<System.Collections.Generic.IReadOnlyList<ICombatParticipant>> GetAllies { get; init; }
+
+    /// <summary>
+    /// The party's hours-awake counter (MAIN.EXE 0x153cd2) — gates Recuperation (&gt; 8 h).
+    /// Null when unavailable.
+    /// </summary>
+    public System.Func<int> HoursAwake { get; init; }
 }
 
 public enum SpellCastOutcome

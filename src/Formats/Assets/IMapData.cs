@@ -7,6 +7,7 @@ namespace UAlbion.Formats.Assets;
 public interface IMapData : IEventSet
 {
     MapFlags Flags { get; }
+    RestMode RestMode { get; } // (Flags & 0xC) >> 2 — gates the map-menu Rest/Wait options
     MapType MapType { get; }
     SongId SongId { get; }
     int Width { get;  }

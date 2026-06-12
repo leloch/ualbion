@@ -93,7 +93,9 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyHoursEvent>(OnModifyHours);
         On<ModifyMTicksEvent>(OnModifyMTicks);
         On<RestEvent>(OnRest);
+        OnAsync<PartyWaitEvent>(OnWait);
         On<HourElapsedEvent>(_ => { if (_game != null && _game.HoursSinceResting < ushort.MaxValue) _game.HoursSinceResting++; }); // fatigue clock (rest resets it)
+        On<ResetFatigueEvent>(_ => { if (_game != null) _game.HoursSinceResting = 0; }); // Recuperation = magical full rest
         On<SetSpecialItemActiveEvent>(ActivateItem);
         On<EventChainOffEvent>(e => _game.SetChainDisabled(e.Map, e.ChainNumber, SetFlag(e.Operation, _game.IsChainDisabled(e.Map, e.ChainNumber))));
         On<ModifyNpcOffEvent>(e => _game.SetNpcDisabled(e.Map, e.NpcNum, SetFlag(e.Operation, _game.IsNpcDisabled(e.Map, e.NpcNum))));
@@ -393,27 +395,82 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         return InitialiseGame();
     }
 
+    /// <summary>
+    /// Any active hostile monster party on the current map blocks resting and waiting
+    /// (the original's global 0x15cc5a, "It's too dangerous here", SYSTEXTS 601).
+    /// </summary>
+    bool HostileMonstersOnMap()
+    {
+        if (_game?.Npcs == null)
+            return false;
+        for (int i = 0; i < _game.Npcs.Length; i++)
+        {
+            var npc = _game.Npcs[i];
+            if (npc == null || npc.Id.Type != AssetType.MonsterGroup)
+                continue;
+            if (_game.IsNpcDisabled(MapId.None, (byte)i))
+                continue;
+            return true;
+        }
+        return false;
+    }
+
     void OnRest(RestEvent e)
     {
         if (_game == null || _party == null)
             return;
 
-        // RE'd rest semantics (_RE_COMBAT.md "Placeholder formulas" item 4): recovery is
-        // a ONE-SHOT restore, not per-hour — each member regains 50 % of max LP plus
-        // Stamina/15 and 50 % of max SP plus MagicTalent/15, costs 2 rations (no food →
-        // no recovery, SYSTEXTS 606), and Exhausted is cured. "Nobody is tired" blocks
-        // resting again within 3 hours. (The 6-condition clear previously done here came
-        // from a mislabelled function — those conditions clear at combat end instead.)
+        var tf = Resolve<ITextFormatter>();
+
+        // RE'd rest gating (_RE_COMBAT.md "Placeholder formulas" item 3, popup builder
+        // 0x2204e + executor 0x68b05): map RestMode (mapFlags & 0xC) — city(0) gets Wait
+        // instead, interior(3) has no rest at all; active hostile monsters block with
+        // "too dangerous" (601); awake < 3 hours blocks with "nobody is tired" (603).
+        var restMode = TryResolve<IMapManager>()?.Current?.MapData?.RestMode
+                       ?? UAlbion.Formats.Assets.Maps.RestMode.RestEightHours;
+        bool explicitHours = e.Hours > 0; // inn rest (SleepInRoom) bypasses the map gate
+        if (!explicitHours
+            && restMode is UAlbion.Formats.Assets.Maps.RestMode.Wait
+                        or UAlbion.Formats.Assets.Maps.RestMode.NoResting)
+        {
+            Info($"Resting is not available here (RestMode {restMode})");
+            return;
+        }
+
+        if (HostileMonstersOnMap())
+        {
+            Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.MapPopup_ItsTooDangerousHere)));
+            return;
+        }
+
         if (_game.HoursSinceResting < 3)
         {
-            var tf = Resolve<ITextFormatter>();
             Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_NobodyInThePartyIsTired)));
             return;
         }
 
+        // Duration (executor 0x68b05): dungeons — and daytime hours [4, 19) anywhere —
+        // rest a flat 8 hours (msg 605); otherwise rest till dawn, landing on 07:00
+        // (msg 604). An explicit hour count (inn) is used as-is.
+        int hours = e.Hours;
+        if (!explicitHours)
+        {
+            int hour = Time.Hour;
+            if (restMode == UAlbion.Formats.Assets.Maps.RestMode.RestEightHours || (hour >= 4 && hour < 19))
+            {
+                hours = 8;
+                Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_ThePartyRestsForEightHours)));
+            }
+            else
+            {
+                hours = hour < 4 ? 7 - hour : 31 - hour;
+                Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_ThePartyRestsTillDawn)));
+            }
+        }
+
         // NOTE: handler methods are called directly rather than Raise() — the exchange
         // skips a sender's own subscriptions, and GameState owns all of them.
-        OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)e.Hours));
+        OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)hours));
         _game.HoursSinceResting = 0;
 
         foreach (var member in _party.StatusBarOrder)
@@ -423,10 +480,13 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             var sheet = GetSheet(member.Id.ToSheet());
             if (sheet == null) continue;
 
+            // Exhaustion cured FIRST (executor order) so the recovery below uses the
+            // restored Stamina/MagicTalent values, like the original.
+            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Exhausted, NumericOperation.SetToMinimum));
+
             // 2 rations per member; a member with no food doesn't recover.
             if (sheet.Inventory?.Rations == null || sheet.Inventory.Rations.Amount < 2)
             {
-                var tf = Resolve<ITextFormatter>();
                 Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_XCannotRecuperateHeHasNoFoodLeft, sheet.GetName(ReadVar(V.User.Gameplay.Language)))));
                 continue;
             }
@@ -439,11 +499,34 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
                 OnDataChange(new DataChangeEvent(target, ChangeProperty.Health, NumericOperation.AddAmount, (ushort)Math.Min(ushort.MaxValue, lpGain)));
             if (spGain > 0)
                 OnDataChange(new DataChangeEvent(target, ChangeProperty.Mana, NumericOperation.AddAmount, (ushort)Math.Min(ushort.MaxValue, spGain)));
-
-            OnDataChange(new ChangeStatusEvent(target, PlayerCondition.Exhausted, NumericOperation.SetToMinimum));
         }
 
-        Info($"The party rests for {e.Hours} hours.");
+        Info($"The party rests for {hours} hours.");
+    }
+
+    /// <summary>
+    /// City "Wait" (RestMode 0): prompt for an hour count (SYSTEXTS 724) and advance the
+    /// clock — no recovery, no ration cost. Blocked by active hostile monsters, the same
+    /// flag that gates Rest (popup builder 0x2204e).
+    /// </summary>
+    async AlbionTask OnWait(PartyWaitEvent _)
+    {
+        if (_game == null)
+            return;
+
+        if (HostileMonstersOnMap())
+        {
+            var tf = Resolve<ITextFormatter>();
+            Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.MapPopup_ItsTooDangerousHere)));
+            return;
+        }
+
+        int hours = await RaiseQueryA(new NumericPromptEvent(Base.SystemText.MapPopup_WaitForHowManyHours, 0, 23));
+        if (hours <= 0 || _game == null)
+            return;
+
+        OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)hours));
+        Info($"The party waits for {hours} hours.");
     }
 
     void SaveGame(ushort id, string name)

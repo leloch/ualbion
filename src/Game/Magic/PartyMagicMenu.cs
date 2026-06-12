@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UAlbion.Api.Eventing;
 using UAlbion.Config;
 using UAlbion.Formats.Assets;
@@ -154,6 +155,8 @@ public class PartyMagicMenu : GameComponent
             RaiseEvent = Raise,
             ApplyDamage = (p, amount) => ChangeHealth(p, amount, NumericOperation.SubtractAmount),
             ApplyHeal = (p, amount) => ChangeHealth(p, amount, NumericOperation.AddAmount),
+            GetAllies = () => party.StatusBarOrder.Cast<ICombatParticipant>().ToList(),
+            HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
         };
 
         var outcome = SpellEffectRegistry.Cast(e.SpellId, context);
