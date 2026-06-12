@@ -9,6 +9,7 @@ using UAlbion.Core.Visual;
 using UAlbion.Formats.Assets.Save;
 using UAlbion.Formats.Ids;
 using UAlbion.Formats.MapEvents;
+using UAlbion.Game.Events;
 using UAlbion.Game.Gui.Combat;
 using UAlbion.Game.Gui.Dialogs;
 using UAlbion.Game.State;
@@ -95,49 +96,85 @@ public class Battle : GameComponent, IReadOnlyBattle
         return DefaultAction;
     }
 
-    AlbionTask BeginRoundAsync(BeginCombatRoundEvent _)
+    // Playback pacing: how long the active-combatant highlight shows before the action
+    // resolves, and how long the result (damage flash / number) stays before the next turn.
+    const float TurnDelaySeconds = 0.3f;
+    const float TurnResultDelaySeconds = 0.5f;
+
+    async AlbionTask BeginRoundAsync(BeginCombatRoundEvent _)
     {
-        // Auto-resolve loop. Per-round, combatants are processed in initiative order
-        // (highest Speed first) — matches the original engine's fcn.0004c3f5 builder which
-        // sorts the combatant table descending by sheet attribute #3 (Speed). MaxRounds caps
-        // the loop on degenerate stats so it can't hang.
-        const int MaxRounds = 100;
-        for (int i = 0; i < MaxRounds; i++)
+        // Resolve exactly ONE round per invocation — the original runs a single round each
+        // time the player confirms, then returns to the planning grid. Combatants act in
+        // initiative order (highest Speed first) — matches the original engine's
+        // fcn.0004c3f5 builder which sorts the combatant table descending by sheet
+        // attribute #3 (Speed).
+        var partyAlive = LiveParticipants(forParty: true).ToList();
+        var mobsAlive  = LiveParticipants(forParty: false).ToList();
+        if (CheckBattleOver(partyAlive.Count, mobsAlive.Count))
+            return;
+
+        foreach (var (attacker, isParty) in OrderByInitiative(partyAlive, mobsAlive))
         {
-            var partyAlive = LiveParticipants(forParty: true).ToList();
-            var mobsAlive  = LiveParticipants(forParty: false).ToList();
+            if (LifePoints(attacker) <= 0) continue; // killed earlier this round
+            if (!CanAct(attacker)) continue;
 
-            if (partyAlive.Count == 0)
-            {
-                Raise(new EndCombatEvent(CombatResult.PartyKilled));
-                return AlbionTask.CompletedTask;
-            }
-            if (mobsAlive.Count == 0)
-            {
-                Raise(new EndCombatEvent(CombatResult.Victory));
-                return AlbionTask.CompletedTask;
-            }
+            // Playback: highlight whose turn it is, give the player a beat to register it,
+            // resolve the action (which raises CombatHitEvents), then pause on the result.
+            Raise(new CombatTurnHighlightEvent(TileOf(attacker)));
+            await RaiseA(new WallClockTimerEvent(TurnDelaySeconds));
+            TakeTurn(attacker, forParty: isParty);
+            await RaiseA(new WallClockTimerEvent(TurnResultDelaySeconds));
 
-            foreach (var (attacker, isParty) in OrderByInitiative(partyAlive, mobsAlive))
-            {
-                if (!CanAct(attacker)) continue;
-                TakeTurn(attacker, forParty: isParty);
-            }
-
-            // End-of-round status decay. Only handles transient combat conditions whose
-            // duration semantics are unambiguous: Asleep wakes up after a round of taking
-            // hits (we always clear here rather than gating on damage, because nothing
-            // wakes a sleeping target if no-one attacks them in a 1v1 stunlock). Permanent
-            // conditions (Unconscious, Poisoned, Paralysed, etc.) are deliberately left
-            // alone — clearing them speculatively would corrupt the original engine's
-            // pacing. See _RE_COMBAT.md Phase 2.6 for the full per-condition tick table.
-            DecaySleepOnAllCombatants();
-            CombatBuffs.TickRound();
+            if (!LiveParticipants(forParty: true).Any() || !LiveParticipants(forParty: false).Any())
+                break;
         }
 
-        // Safety: if both sides somehow still standing after the cap, fall through as Retreat.
-        Raise(new EndCombatEvent(CombatResult.Retreat));
-        return AlbionTask.CompletedTask;
+        Raise(new CombatTurnHighlightEvent(-1));
+
+        // End-of-round status decay. Only handles transient combat conditions whose
+        // duration semantics are unambiguous: Asleep wakes up after a round of taking
+        // hits (we always clear here rather than gating on damage, because nothing
+        // wakes a sleeping target if no-one attacks them in a 1v1 stunlock). Permanent
+        // conditions (Unconscious, Poisoned, Paralysed, etc.) are deliberately left
+        // alone — clearing them speculatively would corrupt the original engine's
+        // pacing. See _RE_COMBAT.md Phase 2.6 for the full per-condition tick table.
+        DecaySleepOnAllCombatants();
+        CombatBuffs.TickRound();
+
+        CheckBattleOver(
+            LiveParticipants(forParty: true).Count(),
+            LiveParticipants(forParty: false).Count());
+    }
+
+    bool CheckBattleOver(int partyAlive, int mobsAlive)
+    {
+        if (partyAlive == 0)
+        {
+            Raise(new EndCombatEvent(CombatResult.PartyKilled));
+            return true;
+        }
+        if (mobsAlive == 0)
+        {
+            Raise(new EndCombatEvent(CombatResult.Victory));
+            return true;
+        }
+        return false;
+    }
+
+    int TileOf(ICombatParticipant p) => p == null ? -1 : Array.IndexOf(_tiles, p);
+
+    /// <summary>
+    /// Monsters leave the grid when killed (the original plays a death animation then
+    /// clears the cell). Party members stay — unconscious bodies remain visible.
+    /// </summary>
+    void RemoveMonsterCorpse(ICombatParticipant p)
+    {
+        if (p == null || p.SheetId.Type == AssetType.PartySheet)
+            return;
+        int tile = TileOf(p);
+        if (tile >= 0)
+            _tiles[tile] = null;
+        _corpses.Add(p);
     }
 
     /// <summary>
@@ -373,6 +410,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             Raise(new DataChangeEvent(targetId.Value, ChangeProperty.Health, NumericOperation.SubtractAmount, clamped));
 
         Info($"[Combat] {target.SheetId} takes {clamped} damage (HP {next})");
+        Raise(new CombatHitEvent(TileOf(target), clamped, next == 0, false));
+        if (next == 0)
+            RemoveMonsterCorpse(target);
     }
 
     void ApplyDirectHeal(ICombatParticipant target, int amount)
@@ -388,6 +428,8 @@ public class Battle : GameComponent, IReadOnlyBattle
         var targetId = TryToTarget(target);
         if (targetId != null)
             Raise(new DataChangeEvent(targetId.Value, ChangeProperty.Health, NumericOperation.AddAmount, clamped));
+
+        Raise(new CombatHitEvent(TileOf(target), clamped, false, true));
     }
 
     /// <summary>
@@ -547,6 +589,7 @@ public class Battle : GameComponent, IReadOnlyBattle
                 ("defender", defender.SheetId),
                 ("varied_atk", variedAtk),
                 ("varied_def", variedDef));
+            Raise(new CombatHitEvent(TileOf(defender), 0, false, false)); // miss — shows "0"
             return;
         }
 
@@ -575,6 +618,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             Raise(new DataChangeEvent(target.Value, ChangeProperty.Health, NumericOperation.SubtractAmount, amount));
 
         Info($"{attacker.SheetId} hits {defender.SheetId} for {amount} damage (HP {next}/{d.LifePoints.Max})");
+        Raise(new CombatHitEvent(TileOf(defender), amount, next == 0, false));
+        if (next == 0)
+            RemoveMonsterCorpse(defender);
 
         TraceLog.Emit("attack_hit",
             ("attacker", attacker.SheetId),
