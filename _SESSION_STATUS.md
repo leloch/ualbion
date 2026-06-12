@@ -1,6 +1,43 @@
 ﻿# UAlbion — Iteration Session Status
 
-> Rolling status. Updated 2026-06-12 (fifth pass) after the **battle-view + formula-fidelity session**.
+> Rolling status. Updated 2026-06-13 after the **RE batch-5 sweep** (the work ledger is
+> `_TODO_1TO1.md` — check it first).
+
+## 2026-06-13 — the four-cluster RE sweep, decoded AND applied (~20 commits)
+
+Four parallel radare2 agents decoded every remaining unknown; all findings applied
+same-day (details per cluster in `_RE_5A.md`..`_RE_5D.md`, ledger updated):
+
+- **5A combat executors** (`f0015333`): melee Chebyshev reach + greedy approach-moves,
+  multi-strike (stop on death/ammo, NOT on hit), real ammo (per-strike, misses burn),
+  panic/insane autopilot, fleeing leaves battle (+XP, "party escaped"), morale flight
+  ((deadPct+lostLP%)/2 ≥ Morale + variants), sine hover bob, "Summon" = dead code.
+- **5B spell data** (`9212f855`): row/all target areas (per-target gates, fizzle 698
+  without consuming the action), Big traps = whole row, exact wrath picker, item casts
+  M=50 + charge flags, LightningStrike UNGATED, **shields = hour-duration entries in
+  SavedGame.ActiveSpells** (persist + decay hourly, no refresh), schools 4/6 dead.
+- **5C world tick** (`fe822d22`): **the real Light system** (accumulating ambient
+  entry; dungeon light = min(100, max(spellPct, torch items)) + Iskai bonus; recompute
+  on cast/hour/inventory), the lockpicking formula, the four unknown query opcodes
+  (facing/language/schedule-tick/light-check), rest heals before the clock advance.
+  Levitation (37) confirmed dead in the original.
+- **5D NPC constants** (`c9fd77a9`): collision margin = MAX(tile/4,50) (**bug fix** —
+  quarter tile, min() was inverted), detection 10 Euclidean 2D / Bresenham LOS 3D /
+  unlimited cities, binary MonsterEye, walk speed 0.7 tiles/s, PlaceAction Unk2 =
+  intro text (shown), sheet+0x1C = removed-NPC index.
+
+Also landed: battle-view WalkPath lerp (`6927f129`), ghost translucency, random AI
+spell pick, carry-weight cap, vital-item discard guard (`78c13390`), 3D NPC morphs,
+conversation default-block resolution. All gated on 493/493 tests + 13/13 smoke.
+
+**Remaining** (see `_TODO_1TO1.md` sections 3-7): ambient NPC sound loops (table
+contents need extraction), Selection3D ray refinement, Damage-token verify, animated
+3D meshes, z-fighting, NpcFlags class mapping, the QoL wishlist, and the six-item
+live verification-debt checklist.
+
+---
+
+> Previous update: 2026-06-12 (fifth pass) after the **battle-view + formula-fidelity session**.
 
 ## 2026-06-12 fifth pass — battle view shipped, the real combat formulas, fatigue system
 

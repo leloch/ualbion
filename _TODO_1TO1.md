@@ -55,13 +55,14 @@ PlaceAction Unk2 = intro text (shown); SetPartyLeader unk2/3 ignored; sheet+0x1C
 removed-NPC index.
 
 ## 3. Remaining implementation leftovers from the clusters
-- Battle-view WALK lerp for multi-tile monster moves (state side done; view needs a
-  CombatMoveEvent → per-tile lerp at Move-anim-length engine frames).
+- ~~Battle-view WALK lerp~~ DONE `6927f129` — combatants glide along their waypoints
+  (Move-anim-length frames per tile, anim stepping every frame; CombatWalkEvent).
 - ~~Fizzle SP timing~~ VERIFIED CORRECT `57bc62e5` (the fizzle return precedes the
   SP charge — zero-target casts cost nothing).
 - 5D extras not yet wired: MapNpc V2 byte1 = ambient sound-set index (positional loop
-  samples, table 13×0x28 @0x13db10); NpcState ActiveSfx0-3 = the sample handles;
-  MapNpc flag 0x40 = collision class 1; NoClip is really a collision-class selector.
+  samples, table 13×0x28 @0x13db10 — needs the table CONTENTS extracted from the
+  binary before wiring); NpcState ActiveSfx0-3 = the sample handles; MapNpc flag
+  0x40 = collision class 1; NoClip is really a collision-class selector.
 
 ## 4. Implementation possible NOW (no RE needed)
 
@@ -73,7 +74,7 @@ removed-NPC index.
 | ~~VideoManager positioned pics~~ | `VideoManager.cs` | DONE `9212f855` — non-zero x/y draws at native size at UI coords |
 | Selection3D per-tile picking | `Selection3D.cs:22` | Ground-plane intersection only; wall-face ray refinement |
 | ~~Conversation default block~~ | `Conversation.cs` | RESOLVED `57bc62e5` — all four real BlockIds handled; default now warns on malformed data |
-| Goddess' amulet activation | `InventoryManager.cs:223` | Special-item activation chain ("TODO: Goddess' amulet etc"); story-critical late-game item |
+| ~~Goddess' amulet / vital items~~ | `InventoryManager.cs` | DONE `78c13390` — PlotItem-flagged items can't be discarded (InvMsg 193) |
 | TextFormatter Damage token | `TextFormatter.cs:40` | Guessed semantics; scan game texts for actual usage to confirm |
 | Animated 3D meshes | `MapObject.cs:102` | 3D map objects don't animate |
 | Z-fighting hack | `MapObject.cs:178` | "still happens sometimes" |
