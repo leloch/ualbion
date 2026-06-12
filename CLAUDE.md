@@ -131,6 +131,8 @@ All three legacy rendering issues were **FIXED 2026-06-12** (commit `0dc83ac3`) 
 
 `/screenshot` works again via the resize-aware `FB_Render` offscreen mirror. New diagnostics: `/wallpixels?format=png` (CPU atlas layer as PNG), `/gpuwallpixels?layer=N` (GPU texture readback). Note the original 2D-black-screen suspicion of the offscreen mirror was wrong — it was the shader bug all along.
 
+Combat presentation gotchas (2026-06-12): the combat backdrop MUST render through the UI sprite path (`UiFixedPositionElement`) — a world-space `Sprite` at any DrawLayer is covered by the map render passes, and `ShowMapEvent(false→true)` does not restore the map cleanly. UI integer scale is `floor(min(w/360, h/240))`: a 720×**479** window renders the UI at 1× — use `e:window_size 720 480`. Chasing MonsterGroup NPCs trigger contact combat on reaching the party (2D + 3D); save 2 auto-starts its Warniak fight on load — don't mistake point-blank monster billboards for texture corruption (they look like giant pixel blobs).
+
 Map-type correction: Jirinaar (110) and HunterClanCellar (123) are **3D** maps (Albion cities/dungeons are first-person); only Nakiridaani (200), Winion (132), JirinaarTownHall (113), SnirdArmoury (118) of the user's saves are true 2D.
 
 ## Where things live
