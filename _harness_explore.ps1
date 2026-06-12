@@ -40,17 +40,17 @@ function Run-Save($save) {
     # 1. Load
     $resp = Try-Post '/event/raw' "load_game $save"
     if (-not $resp.ok) {
-        $report += "$save`tload`tFALSE`t$($resp.error)"
+        $script:report += "$save`tload`tFALSE`t$($resp.error)"
         return
     }
     Start-Sleep -Seconds 2
 
     $state = Try-Get '/state'
     if (-not $state.loaded) {
-        $report += "$save`tload`tFALSE`tstate.loaded=false after load"
+        $script:report += "$save`tload`tFALSE`tstate.loaded=false after load"
         return
     }
-    $report += "$save`tload`tTRUE`tmap=$($state.map) party=$($state.party.Count) tick=$($state.tickCount)"
+    $script:report += "$save`tload`tTRUE`tmap=$($state.map) party=$($state.party.Count) tick=$($state.tickCount)"
     Write-Host "  loaded: $($state.map), party=$($state.party.Count)"
 
     # 2. Advance time 24h to fire HourElapsed many times (tests StatusConditionTicker)
@@ -58,10 +58,10 @@ function Run-Save($save) {
     Start-Sleep -Seconds 3
     $hp = Try-Get '/healthz'
     if ($hp.lastError) {
-        $report += "$save`ttime24h`tFALSE`tlastError=$($hp.lastError)"
+        $script:report += "$save`ttime24h`tFALSE`tlastError=$($hp.lastError)"
         Write-Host "  TIME-ADVANCE ERROR: $($hp.lastError)" -ForegroundColor Red
     } else {
-        $report += "$save`ttime24h`tTRUE`tcmds=$($hp.commandsProcessed)"
+        $script:report += "$save`ttime24h`tTRUE`tcmds=$($hp.commandsProcessed)"
     }
 
     # 3. Encounter and combat (only for maps where this makes sense)
@@ -70,10 +70,10 @@ function Run-Save($save) {
         Start-Sleep -Seconds 3
         $hp = Try-Get '/healthz'
         if ($hp.lastError) {
-            $report += "$save`tencounter`tFALSE`t$($hp.lastError)"
+            $script:report += "$save`tencounter`tFALSE`t$($hp.lastError)"
             Write-Host "  ENCOUNTER ERROR: $($hp.lastError)" -ForegroundColor Red
         } else {
-            $report += "$save`tencounter`tTRUE`t"
+            $script:report += "$save`tencounter`tTRUE`t"
 
             # Try 3 combat rounds — first member of party attacks
             $leader = $state.leader.id -replace 'PartyMember\.', 'PartySheet.'
@@ -83,13 +83,13 @@ function Run-Save($save) {
                 Start-Sleep -Seconds 2
                 $hp = Try-Get '/healthz'
                 if ($hp.lastError) {
-                    $report += "$save`tround$r`tFALSE`t$($hp.lastError)"
+                    $script:report += "$save`tround$r`tFALSE`t$($hp.lastError)"
                     Write-Host "  ROUND $r ERROR: $($hp.lastError)" -ForegroundColor Red
                     break
                 }
             }
             if (-not $hp.lastError) {
-                $report += "$save`tcombat`tTRUE`t3 rounds clean"
+                $script:report += "$save`tcombat`tTRUE`t3 rounds clean"
             }
         }
     }
@@ -97,7 +97,7 @@ function Run-Save($save) {
     # 4. Final state
     $finalState = Try-Get '/state'
     if ($finalState) {
-        $report += "$save`tfinal`tTRUE`thp=$($finalState.party[0].hp)/$($finalState.party[0].hpMax) cmds=$($finalState.commandsProcessed)"
+        $script:report += "$save`tfinal`tTRUE`thp=$($finalState.party[0].hp)/$($finalState.party[0].hpMax) cmds=$($finalState.commandsProcessed)"
     }
 }
 
