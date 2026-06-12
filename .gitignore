@@ -37,6 +37,10 @@ mods/*
 !mods/Common/
 !mods/ExportPalettes/
 mods/ExportPalettes/Palettes/*
+!mods/HD/
+mods/HD/CombatBackgrounds/*.png
+mods/HD/DungeonBackgrounds/*.png
+mods/HD/Pictures/*.png
 !mods/Shaders/
 !mods/Test/
 !mods/Repacked/
