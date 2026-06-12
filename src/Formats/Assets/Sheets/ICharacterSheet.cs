@@ -26,6 +26,8 @@ public interface ICharacterSheet
     EventSetId WordSetId { get; } // Base set of conversation topics
     PlayerLanguages Languages { get; }
 
+    MonsterData Monster { get; } // Monster-only data (combat gfx animations, scaling); null for party/NPC sheets
+
     // Grouped
     IMagicSkills Magic { get; }
     IInventory Inventory { get; }
