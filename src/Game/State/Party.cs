@@ -66,6 +66,7 @@ public class Party : ServiceComponent<IParty>, IParty
     public IReadOnlyList<IPlayer> StatusBarOrder => _readOnlyStatusBarOrder;
     public IReadOnlyList<IPlayer> WalkOrder => _readOnlyWalkOrder;
     public int TotalGold => _statusBarOrder.Sum(x => x.Effective.Inventory.Gold.Amount);
+    public int TotalRations => _statusBarOrder.Sum(x => x.Effective.Inventory.Rations.Amount);
     public int GetItemCount(ItemId item) =>
         _statusBarOrder
             .SelectMany(x => x.Effective.Inventory.EnumerateAll())

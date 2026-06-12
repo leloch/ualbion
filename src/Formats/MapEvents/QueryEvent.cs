@@ -28,7 +28,7 @@ public abstract class QueryEvent : MapEvent, IBranchingEvent
             QueryType.UnkC => QueryUnkCEvent.Serdes((QueryUnkCEvent)e, s),
             QueryType.NpcActive => QueryNpcActiveEvent.Serdes((QueryNpcActiveEvent)e, mapping, s),
             QueryType.Gold => QueryGoldEvent.Serdes((QueryGoldEvent)e, s),
-            // QueryType.Rations => TODO
+            QueryType.Rations => QueryRationsEvent.Serdes((QueryRationsEvent)e, s),
             QueryType.RandomChance => QueryRandomChanceEvent.Serdes((QueryRandomChanceEvent)e, s),
             QueryType.Hour => QueryHourEvent.Serdes((QueryHourEvent)e, s),
             QueryType.ChosenVerb => QueryVerbEvent.Serdes((QueryVerbEvent)e, s),

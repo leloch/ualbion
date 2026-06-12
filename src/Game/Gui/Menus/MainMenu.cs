@@ -94,14 +94,29 @@ public class MainMenu : Dialog
     {
         var menu = new PickSaveSlotMenu(true, Base.SystemText.MainMenu_SaveOnWhichPosition, 1);
         var exchange = Exchange;
-        menu.Closed += (_, _) =>
+        menu.Closed += (_, id) =>
         {
             Attach(exchange);
-            // TODO: Prompt user for new save name
-            // Raise(new SaveGameEvent(filename, name));
+            if (id.HasValue)
+                _ = SaveWithName(id.Value); // fire-and-forget: prompts for a name then saves
         };
         Exchange.Attach(menu);
         Detach();
+    }
+
+    async AlbionTask SaveWithName(ushort slot)
+    {
+        // Prompt for the save name (the same text-entry prompt conversations use);
+        // an empty entry falls back to a default name. The exchange is captured because
+        // closing the prompt can also close/detach this menu before the await resumes —
+        // the save must fire regardless.
+        var exchange = Exchange;
+        var name = await RaiseQueryA(new TextPromptEvent());
+        if (string.IsNullOrWhiteSpace(name))
+            name = $"Save {slot}";
+
+        exchange.Raise(new SaveGameEvent(slot, name), this);
+        exchange.Raise(new PopSceneEvent(), this); // back to the game after saving
     }
 
     void Options()

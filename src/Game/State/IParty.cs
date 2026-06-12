@@ -7,6 +7,7 @@ namespace UAlbion.Game.State;
 public interface IParty
 {
     int TotalGold { get; }
+    int TotalRations { get; }
 
     int GetItemCount(ItemId item);
     IReadOnlyList<IPlayer> StatusBarOrder { get; } // Max of 6

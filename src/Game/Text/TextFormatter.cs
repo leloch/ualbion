@@ -35,8 +35,19 @@ public class TextFormatter : GameServiceComponent<ITextFormatter>, ITextFormatte
         {
             switch(token)
             {
-                case Token.Damage: throw new NotImplementedException();
-                case Token.Me: throw new NotImplementedException();
+                // Defensive substitutions — these tokens appear in a handful of templates
+                // and previously threw NotImplementedException, crashing any text that
+                // used them. PLACEHOLDER semantics: Damage takes the next numeric arg
+                // (or "?" when absent); Me names the active character (or the leader).
+                case Token.Damage:
+                    yield return (Token.Text, argNumber < args.Length
+                        ? args[argNumber++]?.ToString() ?? "?"
+                        : "?");
+                    break;
+
+                case Token.Me:
+                    yield return SubstituteName(active ?? TryResolve<IParty>()?.Leader?.Effective);
+                    break;
 
                 case Token.Class:
                     foreach (var valueTuple in SubstituteClass(assets, active))

@@ -19,6 +19,7 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
     {
         OnQuery<          QueryVerbEvent, bool>(q => ((EventContext)Context).Source.Trigger == q.TriggerType);
         OnQuery<          QueryGoldEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().Party.TotalGold, q.Argument));
+        OnQuery<       QueryRationsEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().Party.TotalRations, q.Argument));
         OnQuery<       QueryHasItemEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().Party.GetItemCount(q.ItemId), q.Immediate));
         OnQuery<QueryHasPartyMemberEvent, bool>(q => Resolve<IGameState>().Party.StatusBarOrder.Any(x => x.Id == q.PartyMemberId));
         OnQuery<          QueryHourEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().Time.Hour, q.Argument));
