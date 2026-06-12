@@ -715,7 +715,14 @@ public class Battle : GameComponent, IReadOnlyBattle
         TraceLog.Emit("combat_use_item", ("actor", user.SheetId), ("item", pending.Item), ("spell", pending.Spell), ("outcome", outcome));
 
         if (outcome != SpellCastOutcome.Failed)
+        {
             Raise(new CombatCastEvent(pending.Spell)); // cast SFX (CombatAudio)
+
+            // Consume a charge from the item that was used (party members only —
+            // monster items aren't tracked in inventories).
+            if (user.SheetId.Type == AssetType.PartySheet && !pending.Item.IsNone)
+                Raise(new ConsumeItemChargeEvent(new PartyMemberId(AssetType.PartyMember, user.SheetId.Id), pending.Item));
+        }
     }
 
     /// <summary>
