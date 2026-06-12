@@ -6,11 +6,12 @@ using UAlbion.Formats.MapEvents;
 namespace UAlbion.Game.Combat.Spells;
 
 /// <summary>
-/// Direct-damage spell. RE'd formula (MAIN.EXE fcn.0005fdf7 → per-spell handlers, see
-/// _RE_COMBAT.md "Punch-list RE" item 1): damage = max(1, M*K/100) where M is the caster's
-/// mastery multiplier (max(1, (mastery+50)/100), mastery 0..10000 grown by MagicTalent per
-/// cast) and K is the per-spell constant — the damage dealt at 100 % mastery. No variance
-/// roll and no caster-attribute term.
+/// Direct-damage spell. RE'd formula (MAIN.EXE fcn.0005fdf7 → per-spell handlers; margin
+/// scaling corrected in _RE_COMBAT.md "RE batch 4"): the handler first runs the success
+/// gate fcn.000601a6 — resisted outright when mastery% &lt;= target MagicResist — and the
+/// damage scales on the gate MARGIN: damage = max(1, (M − resist) * K/100). Verified for
+/// the frost line, SmallFireball and Fungification; applied uniformly to the per-spell-
+/// handler damage school. No variance roll and no caster-attribute term.
 /// </summary>
 public sealed class DamageSpellEffect : ISpellEffect
 {
@@ -40,7 +41,11 @@ public sealed class DamageSpellEffect : ISpellEffect
         if (combat?.LifePoints == null) return SpellCastOutcome.Failed;
         if (combat.LifePoints.Current <= 0) return SpellCastOutcome.Failed;
 
-        int damage = Math.Max(1, context.MasteryMultiplier * K / 100);
+        int margin = SpellSuccessGate.Margin(context, context.Target);
+        if (margin <= 0)
+            return SpellCastOutcome.Resisted;
+
+        int damage = Math.Max(1, margin * K / 100);
         var amount = (ushort)Math.Min(ushort.MaxValue, damage);
 
         if (context.ApplyDamage != null)
@@ -58,7 +63,8 @@ public sealed class DamageSpellEffect : ISpellEffect
 
         if (FreezeBase > 0)
         {
-            int rounds = Math.Max(1, context.MasteryMultiplier * FreezeBase / 100) + 1;
+            // Duration scales on the gate margin too (fcn.0004b8a1 receives the margin).
+            int rounds = Math.Max(1, margin * FreezeBase / 100) + 1;
             CombatBuffs.Add(context.Target.SheetId, CombatBuffs.BuffKind.Freeze, 0, rounds);
         }
 

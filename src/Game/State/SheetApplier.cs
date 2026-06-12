@@ -107,10 +107,15 @@ public class SheetApplier : Component
                 break;
             case false when spellsEvent.Operation is NumericOperation.SetToMaximum or NumericOperation.Toggle:
                 sheet.Magic.KnownSpells.Add(spellId);
+                // Learning seeds the spell's mastery at 4 × MagicTalent (RE batch 4,
+                // the LearnSpells service handler) when no strength exists yet.
+                if (!sheet.Magic.SpellStrengths.ContainsKey(spellId))
+                {
+                    int talent = sheet.Attributes?.MagicTalent?.Current ?? 0;
+                    sheet.Magic.SpellStrengths[spellId] = (ushort)Math.Min(ushort.MaxValue, 4 * talent);
+                }
                 break;
         }
-
-        // TODO: Verify if this event changes spell strengths, or just known spells
     }
 
     void ApplyItem(CharacterSheet sheet, ChangeItemEvent itemEvent)

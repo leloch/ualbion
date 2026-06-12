@@ -953,11 +953,13 @@ public class Battle : GameComponent, IReadOnlyBattle
     }
 
     /// <summary>
-    /// Equipment wear roll, RE'd from MAIN.EXE fcn.0004f920: PercentRoll(item break-rate,
-    /// 1000) per connecting swing; on success the slot is flagged broken and the original
-    /// shows the "X is broken" message (SYSTEXTS 736). The original also morphs the item
-    /// into its broken variant via a transform table — not modelled yet (PLACEHOLDER:
-    /// Broken slot flag + message only). Party members only: monster kit isn't persistent.
+    /// Equipment wear roll, RE'd from MAIN.EXE fcn.0004f920 (corrected by RE batch 4 —
+    /// there is NO item morph): PercentRoll(item break-rate, 1000) per connecting swing;
+    /// on success the slot is flagged broken (item id unchanged) and the message shown.
+    /// The original then moves the broken item to the post-combat LOOT LIST
+    /// (fcn.000665ce = AppendSlotToLootList) and empties the slot; we keep it equipped
+    /// with the Broken flag instead — PLACEHOLDER until the battle-loot window exists.
+    /// Party members only: monster kit isn't persistent.
     /// </summary>
     void RollEquipmentBreak(ICombatParticipant p, UAlbion.Formats.Assets.Inv.ItemSlotId slotId, IRandom rng)
     {

@@ -29,11 +29,11 @@ public static class DjiKasSpells
         SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.LightHealing, k: 25)); // 25 % of max LP at full mastery (RE'd K)
 
         // --- Frost damage line — K constants CONFIRMED from the per-spell handlers ---
-        // FrostSplinter's freeze rider: kind-1 buff base 3 (fcn.0004b8a1) — the target
-        // skips max(1, M·3/100)+1 rounds (2-4). Crystal/Avalanche riders pending RE.
+        // ALL THREE freeze (RE batch 4): kind-1 buff base 3 (fcn.0004b8a1) — the target
+        // skips max(1, margin·3/100)+1 rounds, margin = M − MagicResist from the gate.
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostSplinter,  k: 27, freezeBase: 3));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostCrystal,   k: 18));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostAvalanche, k: 27));
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostCrystal,   k: 18, freezeBase: 3));
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostAvalanche, k: 27, freezeBase: 3));
 
         // --- Blinding line: CONFIRMED Blind-only, NO damage component in the original ---
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.BlindingSpark, PlayerCondition.Blind));
@@ -50,8 +50,10 @@ public static class DjiKasSpells
         SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Hurry, CombatBuffs.BuffKind.Berserk, amount: 0, baseDuration: 10));
         SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.ThornTrap, k: 24)); // CONFIRMED K
         SpellEffectRegistry.Register(new RemoveTrapEffect(Base.Spell.RemoveTrapDK));
-        // Fungification: K not extracted yet — PLACEHOLDER magnitude.
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Fungification, k: 20));
+        // Fungification (RE batch 4, handler 0x9fd5c): damage = max(1, margin·120/100);
+        // a hit that meets/exceeds current LP kills (the mushroom transform — the kill
+        // falls out of the damage path naturally; transform visual not modelled).
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Fungification, k: 120));
         // Light raises the dungeon ambient level (ETM uAmbient → fragment shader multiply).
         // PLACEHOLDER: +50 percent-points and no duration decay (the original tracks Light
         // as an active spell percentage in SavedGame.ActiveSpells[0..1]).

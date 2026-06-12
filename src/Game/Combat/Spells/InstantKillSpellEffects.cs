@@ -9,9 +9,11 @@ namespace UAlbion.Game.Combat.Spells;
 /// <summary>
 /// The universal spell success gate, RE'd from MAIN.EXE fcn.000601a6 (used by every
 /// "chance" spell): the target must be a party member or match the spell's creature-class
-/// mask (else "unaffected creature type", effect 774), and the spell lands iff
-/// mastery% &gt; the target's Magic Resistance. DETERMINISTIC — the original has no random
-/// roll here. Party targets additionally get their resistance boosted by the
+/// masks (exclusion beats inclusion; "unaffected creature type", effect 774), and the
+/// spell lands iff mastery% &gt; the target's Magic Resistance. DETERMINISTIC — no random
+/// roll. The gate RETURNS THE MARGIN (M − resist): gated damage spells scale on the
+/// margin, not raw M (RE batch 4 — verified for the frost line, SmallFireball and
+/// Fungification). Party targets additionally get their resistance boosted by the
 /// MagicShield/PersonalProtection active-spell type-2 percentage (resist·pct/100).
 /// </summary>
 public static class SpellSuccessGate
@@ -19,16 +21,25 @@ public static class SpellSuccessGate
     /// <summary>Demon class bits of the creature-class bitmask (sheet+0x0E) — mask 0x44.</summary>
     public const int DemonClassMask = 0x44;
 
-    public static bool Lands(SpellCastContext context, ICombatParticipant target, int classMask = 0xFFFF)
+    /// <summary>Class bit 0x80 (also the crit-immunity bit) — KamulosGaze's exclusion mask.</summary>
+    public const int GazeImmuneMask = 0x80;
+
+    /// <summary>
+    /// The gate margin: &gt; 0 = the spell lands (and gated damage scales on it);
+    /// &lt;= 0 = resisted / unaffected creature type.
+    /// </summary>
+    public static int Margin(SpellCastContext context, ICombatParticipant target, int inclMask = 0xFFFF, int exclMask = 0)
     {
         if (context == null || target?.Effective == null)
-            return false;
+            return 0;
 
-        if (target.SheetId.Type != AssetType.PartySheet
-            && classMask != 0xFFFF
-            && (target.Effective.UnknownE & classMask) == 0)
+        if (target.SheetId.Type != AssetType.PartySheet)
         {
-            return false; // unaffected creature type
+            int classBits = target.Effective.UnknownE;
+            if (exclMask != 0 && (classBits & exclMask) != 0)
+                return 0; // excluded creature type (exclusion beats inclusion)
+            if (inclMask != 0xFFFF && (classBits & inclMask) == 0)
+                return 0; // unaffected creature type
         }
 
         int resist = target.Effective.Attributes?.MagicResistance?.Current ?? 0;
@@ -41,8 +52,11 @@ public static class SpellSuccessGate
             resist += resist * shieldPct / 100;
         }
 
-        return context.MasteryMultiplier > resist;
+        return context.MasteryMultiplier - resist;
     }
+
+    public static bool Lands(SpellCastContext context, ICombatParticipant target, int classMask = 0xFFFF)
+        => Margin(context, target, classMask) > 0;
 }
 
 /// <summary>
@@ -99,6 +113,30 @@ public sealed class BanishDemonEffect : ISpellEffect
             return SpellCastOutcome.Failed;
 
         if (!SpellSuccessGate.Lands(context, target, SpellSuccessGate.DemonClassMask))
+            return SpellCastOutcome.Resisted;
+
+        context.InstantKill(target);
+        return SpellCastOutcome.Hit;
+    }
+}
+
+/// <summary>
+/// Kamulos' Gaze (RE batch 4, handler 0xa8b12 → 0xa8b46): NOT a damage spell — a
+/// deterministic instant kill (fcn.0004e247) gated on M &gt; MagicResist, with creature
+/// class bit 0x80 (the crit-immunity bit) granting immunity (exclusion mask).
+/// </summary>
+public sealed class KamulosGazeEffect : ISpellEffect
+{
+    public SpellId SpellId { get; }
+    public KamulosGazeEffect(SpellId spellId) => SpellId = spellId;
+
+    public SpellCastOutcome Apply(SpellCastContext context)
+    {
+        var target = context?.Target;
+        if (target == null || context.InstantKill == null)
+            return SpellCastOutcome.Failed;
+
+        if (SpellSuccessGate.Margin(context, target, exclMask: SpellSuccessGate.GazeImmuneMask) <= 0)
             return SpellCastOutcome.Resisted;
 
         context.InstantKill(target);

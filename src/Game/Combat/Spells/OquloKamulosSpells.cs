@@ -33,6 +33,8 @@ public static class OquloKamulosSpells
         SpellEffectRegistry.Register(new StealLifeEffect(Base.Spell.StealLife));
         SpellEffectRegistry.Register(new StealMagicEffect(Base.Spell.StealMagic));
         SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.PersonalProtection, CombatBuffs.BuffKind.Defense, amount: 12, baseDuration: 0, persistent: true)); // battle-persistent (active-spell table)
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.KamulosGaze, k: 50)); // K not extracted — PLACEHOLDER
+        // KamulosGaze — CONFIRMED (RE batch 4): deterministic instant kill, not damage;
+        // creature class bit 0x80 grants immunity.
+        SpellEffectRegistry.Register(new KamulosGazeEffect(Base.Spell.KamulosGaze));
     }
 }
