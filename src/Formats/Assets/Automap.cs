@@ -34,8 +34,25 @@ public class Automap
         }
     }
 
+    public int Length => _discovered?.Length ?? 0;
     public bool this[int index] => _discovered[index];
-    public bool this[int x, int y] => _discovered[y * Width + x];
+    public bool this[int x, int y]
+    {
+        get
+        {
+            int index = y * Width + x;
+            // Saved automap blobs can be byte-padded (or from a differently-sized original
+            // save) — out-of-range reads count as undiscovered rather than throwing.
+            return index >= 0 && index < _discovered.Length && _discovered[index];
+        }
+    }
+
+    public void Set(int x, int y, bool value)
+    {
+        int index = y * Width + x;
+        if (index >= 0 && index < _discovered.Length)
+            _discovered[index] = value;
+    }
 
     Automap() { }
     public Automap(int width, int height)

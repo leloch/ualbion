@@ -31,6 +31,8 @@ public interface IGameState
     MapChangeCollection PermanentMapChanges { get; }
     ActiveItems ActiveItems { get; }
     IList<NpcState> Npcs { get; }
+    /// <summary>Per-map automap discovery bitfields (persisted in the save file).</summary>
+    IDictionary<AutomapId, byte[]> Automaps { get; }
     bool IsChainDisabled(MapId mapId, ushort chain);
     bool IsNpcDisabled(MapId mapId, byte npcNum);
     bool IsEventUsed(AssetId eventSetId, ActionEvent action);
