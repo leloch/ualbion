@@ -22,8 +22,10 @@ public static class DjiKantosSpells
         SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Regeneration,  k: 100));
         SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Lifebringer,   k: 100));
 
-        // Single damage spell in this school — K not extracted (open item, PLACEHOLDER)
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.GoddessWrath, k: 35));
+        // Goddess' Wrath — CONFIRMED (handler 0xa1134): not a damage spell at all; it
+        // kills max(1, living·M/100) randomly-chosen monsters outright, each gated by
+        // M > MagicResist. At full mastery it wipes the whole monster side.
+        SpellEffectRegistry.Register(new GoddessWrathEffect(Base.Spell.GoddessWrath));
 
         // Status — Irritation maps cleanly to the Irritated condition
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Irritation, PlayerCondition.Irritated));

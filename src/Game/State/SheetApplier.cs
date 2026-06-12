@@ -147,10 +147,15 @@ public class SheetApplier : Component
     static void ApplyStatus(CharacterSheet sheet, ChangeStatusEvent statusEvent)
     {
         var condition = statusEvent.Status.ToFlag();
+        // A condition is a single flag, so the amount-based operations collapse to
+        // set/clear. Previously Add/SubtractAmount fell through to a silent no-op,
+        // which made every condition-cure (and several inflictions) do nothing.
         sheet.Combat.Conditions = statusEvent.Operation switch
         {
-            NumericOperation.SetToMaximum => sheet.Combat.Conditions | condition,
-            NumericOperation.SetToMinimum => sheet.Combat.Conditions & ~condition,
+            NumericOperation.SetToMaximum  => sheet.Combat.Conditions | condition,
+            NumericOperation.AddAmount     => sheet.Combat.Conditions | condition,
+            NumericOperation.SetToMinimum  => sheet.Combat.Conditions & ~condition,
+            NumericOperation.SubtractAmount => sheet.Combat.Conditions & ~condition,
             NumericOperation.Toggle => sheet.Combat.Conditions ^ condition,
             _ => sheet.Combat.Conditions
         };

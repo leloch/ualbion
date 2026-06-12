@@ -23,18 +23,18 @@ public static class DruidSpells
         // Status — Panic maps to Panicking (CONFIRMED)
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Panic, PlayerCondition.Panicking));
 
-        // Buffs. RE corrected the mechanics (fcn.0004b8a1): HURRY is the AP×2 "powered"
-        // flag; BERSERK costs 25 % of LP and multiplies STR/CloseCombat by 1.5; Boasting
-        // inflicts Panicking on the target (CONFIRMED). The additive buff system can't
-        // express Berserk's ×1.5 yet — PLACEHOLDER additive bonus until it can.
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Berserk,     CombatBuffs.BuffKind.Attack,  amount: 10, baseDuration: 10)); // RE'd base 10; -25% LP cost + ×1.5 multipliers still PLACEHOLDER (additive approx)
+        // Buffs (all CONFIRMED — fcn.0004b8a1): BERSERK costs 25 % of current LP and
+        // multiplies STR + the three combat skills + base damage by 1.5 for
+        // max(1, M·10/100)+1 rounds; Boasting inflicts Panicking on the target.
+        SpellEffectRegistry.Register(new BerserkSpellEffect(Base.Spell.Berserk));
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Boasting, PlayerCondition.Panicking));
         SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.MagicShield, CombatBuffs.BuffKind.Defense, amount: 8, baseDuration: 0, persistent: true)); // battle-persistent (active-spell table)
 
-        // Anti-demon line — K not extracted yet (PLACEHOLDER magnitudes); the "only
-        // affects demons" gate needs monster-class data (PLACEHOLDER: hits anything).
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BanishDemon,  k: 30));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.BanishDemons, k: 40));
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.DemonExodus,  k: 60));
+        // Anti-demon line — CONFIRMED (handlers 0xa1aec/0xa1b20): demon-class targets
+        // (creature mask 0x44) die outright iff M > MagicResist; no damage K exists.
+        // The three spells differ only in target area (single/row/all).
+        SpellEffectRegistry.Register(new BanishDemonEffect(Base.Spell.BanishDemon));
+        SpellEffectRegistry.Register(new BanishDemonEffect(Base.Spell.BanishDemons));
+        SpellEffectRegistry.Register(new BanishDemonEffect(Base.Spell.DemonExodus));
     }
 }

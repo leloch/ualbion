@@ -69,6 +69,19 @@ public sealed class SpellCastContext
 
     /// <summary>Remove any trap from a combat tile (remove-trap spells). Null outside combat.</summary>
     public System.Action<int> RemoveTrap { get; init; }
+
+    /// <summary>
+    /// All live combatants on the side OPPOSING the caster — used by whole-side spells
+    /// (GoddessWrath's random-kill selection). Null outside combat.
+    /// </summary>
+    public System.Func<System.Collections.Generic.IReadOnlyList<ICombatParticipant>> GetLiveEnemies { get; init; }
+
+    /// <summary>
+    /// Kill a combatant outright (the original's instant-kill fcn.0004e247 — LP wipe with
+    /// normal death/XP handling). Used by GoddessWrath and the Banish-demon family.
+    /// Null outside combat.
+    /// </summary>
+    public System.Action<ICombatParticipant> InstantKill { get; init; }
 }
 
 public enum SpellCastOutcome

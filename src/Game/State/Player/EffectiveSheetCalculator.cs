@@ -33,6 +33,7 @@ public static class EffectiveSheetCalculator
             Age = sheet.Age,
             Level = sheet.Level,
             ExperienceReward = sheet.ExperienceReward,
+            UnknownE = sheet.UnknownE, // crit-immunity / creature-class flags — combat reads these off Effective
 
             // Display and behaviour
             Languages = sheet.Languages,

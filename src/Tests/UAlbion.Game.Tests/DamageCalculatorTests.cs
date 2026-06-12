@@ -62,26 +62,6 @@ public class DamageCalculatorTests
     }
 
     [Fact]
-    public void Hit_Chance_Is_Clamped_To_Five_Percent_Floor()
-    {
-        var atk = Stats(baseAttack: 1);
-        var def = Stats(baseDefense: 1_000_000);
-        Assert.Equal(0.05f, DamageCalculator.HitChance(atk, def), 4);
-    }
-
-    [Fact]
-    public void Hit_Chance_Is_Clamped_To_Ninety_Five_Percent_Ceiling()
-    {
-        var atk = Stats(baseAttack: 1_000_000);
-        var def = Stats(baseDefense: 1);
-        Assert.Equal(0.95f, DamageCalculator.HitChance(atk, def), 4);
-    }
-
-    [Fact]
-    public void Hit_Chance_Returns_Half_When_Both_Stats_Zero()
-        => Assert.Equal(0.5f, DamageCalculator.HitChance(Stats(), Stats()), 4);
-
-    [Fact]
     public void Magic_Damage_Accounts_For_Spell_Power()
     {
         var atk = Stats(magicAttack: 10);
@@ -107,27 +87,25 @@ public class DamageCalculatorTests
         => Assert.Equal(1, DamageCalculator.VaryDamage(1, 0));
 
     [Theory]
-    [InlineData(0.5f, 49, true)]
-    [InlineData(0.5f, 50, false)]
-    [InlineData(0.5f, 99, false)]
-    [InlineData(1.0f, 99, true)]
-    [InlineData(0.0f, 0,  false)]
-    public void Roll_Hit_Returns_True_When_Roll_Below_Chance(float chance, int roll, bool expected)
-        => Assert.Equal(expected, DamageCalculator.RollHit(chance, roll));
+    // RE'd from MAIN.EXE fcn.00035b15 (PercentRoll): success iff roll <= value, with
+    // auto-fail for value <= 0 (so the effective chance is (value+1)/range).
+    [InlineData(50, 50, true)]   // boundary: <= not <
+    [InlineData(50, 51, false)]
+    [InlineData(50, 0,  true)]
+    [InlineData(0,  0,  false)]  // auto-fail at zero skill
+    [InlineData(-5, 0,  false)]
+    [InlineData(100, 99, true)]  // skill >= 99 always hits a 0..99 roll
+    public void Percent_Roll_Succeeds_When_Roll_At_Most_Value(int value, int roll, bool expected)
+        => Assert.Equal(expected, DamageCalculator.PercentRoll(value, roll));
 
     [Theory]
-    [InlineData(0, true)]
-    [InlineData(4, true)]
-    [InlineData(5, false)]
-    [InlineData(99, false)]
-    public void Roll_Crit_Lands_Within_First_Five_Percent(int roll, bool expectedCrit)
-        => Assert.Equal(expectedCrit, DamageCalculator.RollCrit(roll));
-
-    [Theory]
-    [InlineData(0, true)]
-    [InlineData(7, true)]
-    [InlineData(8, false)]
-    [InlineData(50, false)]
-    public void Roll_Parry_Lands_Within_First_Eight_Percent(int roll, bool expectedParry)
-        => Assert.Equal(expectedParry, DamageCalculator.RollParry(roll));
+    // RE'd from MAIN.EXE fcn.00035fd5 (GetEffectiveSkill): Blind halves the WEAPON
+    // skills (CloseRange/LongRange) only — CriticalHit and Lockpicking are unaffected.
+    [InlineData(60, true,  false, 60)]
+    [InlineData(60, true,  true,  30)]
+    [InlineData(61, true,  true,  30)]  // integer halving
+    [InlineData(60, false, true,  60)]  // crit skill not halved by Blind
+    [InlineData(-10, true, false, 0)]   // clamped at zero
+    public void Effective_Skill_Halves_Weapon_Skills_When_Blind(int skill, bool isWeapon, bool blind, int expected)
+        => Assert.Equal(expected, DamageCalculator.EffectiveSkill(skill, isWeapon, blind));
 }
