@@ -11,9 +11,8 @@ namespace UAlbion.Game.Combat.Spells;
 /// "chance" spell): the target must be a party member or match the spell's creature-class
 /// mask (else "unaffected creature type", effect 774), and the spell lands iff
 /// mastery% &gt; the target's Magic Resistance. DETERMINISTIC — the original has no random
-/// roll here. (Party targets additionally get their resistance boosted by the
-/// MagicShield/PersonalProtection active-spell percentage — PLACEHOLDER: not applied yet,
-/// the type-2 table entry isn't tracked per member.)
+/// roll here. Party targets additionally get their resistance boosted by the
+/// MagicShield/PersonalProtection active-spell type-2 percentage (resist·pct/100).
 /// </summary>
 public static class SpellSuccessGate
 {
@@ -33,6 +32,15 @@ public static class SpellSuccessGate
         }
 
         int resist = target.Effective.Attributes?.MagicResistance?.Current ?? 0;
+
+        // Party targets get the MagicShield/PersonalProtection type-2 boost:
+        // resist += resist·pct/100, pct = max over casts of M (table 0x153b3e).
+        if (target.SheetId.Type == AssetType.PartySheet)
+        {
+            int shieldPct = CombatBuffs.Bonus(target.SheetId, CombatBuffs.BuffKind.ShieldResistPct);
+            resist += resist * shieldPct / 100;
+        }
+
         return context.MasteryMultiplier > resist;
     }
 }

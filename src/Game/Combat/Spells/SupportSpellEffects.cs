@@ -38,6 +38,17 @@ public sealed class BuffSpellEffect : ISpellEffect
             : Math.Max(1, context.MasteryMultiplier * _baseDuration / 100) + 1;
 
         CombatBuffs.Add(target.SheetId, _kind, _amount, rounds);
+
+        // The shields also write the active-spell TYPE-2 entry: percent = max(prev, M),
+        // which boosts the bearer's MagicResistance in the spell success gate
+        // (fcn.000607da writing 0x153b3e; read back by fcn.000601a6).
+        if (_persistent)
+        {
+            int prev = CombatBuffs.Bonus(target.SheetId, CombatBuffs.BuffKind.ShieldResistPct);
+            CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.ShieldResistPct,
+                Math.Max(prev, context.MasteryMultiplier), rounds);
+        }
+
         return SpellCastOutcome.Hit;
     }
 }
@@ -198,10 +209,47 @@ public sealed class EventSpellEffect : ISpellEffect
 }
 
 /// <summary>
-/// Utility spells whose systemic effect isn't wired yet (View of Life, Levitation,
-/// Teleporter). They cast successfully (consuming SP/charges) and log what WOULD happen —
-/// explicit PLACEHOLDERs so nothing silently fails, each naming the subsystem that needs
-/// to exist before they can be completed 1:1.
+/// View of Life (Dji-Kas spell 30): reveals every monster's current LP on the combat
+/// grid for the rest of the battle (VisualCombatTile reads CombatBuffs.ViewOfLife).
+/// </summary>
+public sealed class ViewOfLifeEffect : ISpellEffect
+{
+    public SpellId SpellId { get; }
+    public ViewOfLifeEffect(SpellId spellId) => SpellId = spellId;
+
+    public SpellCastOutcome Apply(SpellCastContext context)
+    {
+        if (context == null)
+            return SpellCastOutcome.Failed;
+        CombatBuffs.ViewOfLife = true;
+        return SpellCastOutcome.Hit;
+    }
+}
+
+/// <summary>
+/// Levitation (Dji-Kantos): lets the party float over pit (no-floor) tiles in 3D maps;
+/// Collider3D exempts them while ActivePartySpells.Levitating is set (cleared on map
+/// change — PLACEHOLDER for the original's active-spell percentage decay).
+/// </summary>
+public sealed class LevitationEffect : ISpellEffect
+{
+    public SpellId SpellId { get; }
+    public LevitationEffect(SpellId spellId) => SpellId = spellId;
+
+    public SpellCastOutcome Apply(SpellCastContext context)
+    {
+        if (context == null)
+            return SpellCastOutcome.Failed;
+        UAlbion.Game.Magic.ActivePartySpells.Levitating = true;
+        return SpellCastOutcome.Hit;
+    }
+}
+
+/// <summary>
+/// Utility spells whose systemic effect isn't wired yet (Teleporter). They cast
+/// successfully (consuming SP/charges) and log what WOULD happen — explicit PLACEHOLDERs
+/// so nothing silently fails, each naming the subsystem that needs to exist before they
+/// can be completed 1:1.
 /// </summary>
 public sealed class UtilitySpellEffect : ISpellEffect
 {

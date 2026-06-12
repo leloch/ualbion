@@ -8,7 +8,14 @@ public class Collider3D(LogicalMap3D logicalMap) : Component, IMovementCollider
 {
     readonly LogicalMap3D _logicalMap = logicalMap ?? throw new System.ArgumentNullException(nameof(logicalMap));
 
-    protected override void Subscribed() => Resolve<ICollisionManager>()?.Register(this);
+    protected override void Subscribed()
+    {
+        // New map = new collider; world-scoped active spells (Levitation) don't follow
+        // the party across maps.
+        Magic.ActivePartySpells.OnMapChange();
+        Resolve<ICollisionManager>()?.Register(this);
+    }
+
     protected override void Unsubscribed() => Resolve<ICollisionManager>()?.Unregister(this);
 
     public bool IsOccupied(int fromX, int fromY, int toX, int toY)
@@ -24,9 +31,11 @@ public class Collider3D(LogicalMap3D logicalMap) : Component, IMovementCollider
         if (wall != null)
             return true;
 
-        // No floor below → void / unwalkable.
+        // No floor below → void / unwalkable, unless the party is levitating
+        // (Levitation floats over pit tiles — PLACEHOLDER: the exemption also applies
+        // to NPC movement since the collider is shared; original gates per-mover).
         var (floorIndex, _) = _logicalMap.GetFloor(toX, toY);
-        if (floorIndex == 0)
+        if (floorIndex == 0 && !Magic.ActivePartySpells.Levitating)
             return true;
 
         // Tile may also hold a prop (an ObjectGroup). Conservatively treat any sub-object that

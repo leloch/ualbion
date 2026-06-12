@@ -29,7 +29,9 @@ public static class DjiKasSpells
         SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.LightHealing, k: 25)); // 25 % of max LP at full mastery (RE'd K)
 
         // --- Frost damage line — K constants CONFIRMED from the per-spell handlers ---
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostSplinter,  k: 27)); // + freeze 2-4 rounds in the original (not yet wired)
+        // FrostSplinter's freeze rider: kind-1 buff base 3 (fcn.0004b8a1) — the target
+        // skips max(1, M·3/100)+1 rounds (2-4). Crystal/Avalanche riders pending RE.
+        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostSplinter,  k: 27, freezeBase: 3));
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostCrystal,   k: 18));
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.FrostAvalanche, k: 27));
 
@@ -55,6 +57,6 @@ public static class DjiKasSpells
         // as an active spell percentage in SavedGame.ActiveSpells[0..1]).
         SpellEffectRegistry.Register(new EventSpellEffect(Base.Spell.Light,
             () => new UAlbion.Game.Events.AmbientLightEvent(50)));
-        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.ViewOfLife, "show monster LP in combat UI (needs combat UI hookup)"));
+        SpellEffectRegistry.Register(new ViewOfLifeEffect(Base.Spell.ViewOfLife)); // monster LP shown on the combat grid for the battle
     }
 }
