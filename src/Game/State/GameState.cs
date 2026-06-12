@@ -401,11 +401,37 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
                 ? _party.StatusBarOrder[i].Id
                 : PartyMemberId.None;
 
+        // Sync the live party position into the header — it's only read on load, so
+        // without this the save records wherever the party was when the game started.
+        var leader = _party?.Leader;
+        if (leader != null)
+        {
+            var pos = leader.GetPosition();
+            var map = TryResolve<IMapManager>()?.Current;
+            _game.PartyX = (ushort)pos.X;
+            // 2D maps put the tile Y in pos.Y; 3D maps use pos.Z (Y is the camera height).
+            _game.PartyY = (ushort)(map?.MapType == UAlbion.Formats.Assets.Maps.MapType.ThreeD ? pos.Z : pos.Y);
+        }
+
         // var key = new AssetId(AssetType.SavedGame, id);
         using var stream = disk.OpenWriteTruncate(IdToPath(id));
         using var aw = AlbionSerdes.CreateWriter(stream);
-        var mapping = new AssetMapping(); // TODO
-        SavedGame.Serdes(_game, mapping, aw, spellManager);
+        // Must use the same mapping the loader uses (ModApplier loads saves with
+        // AssetMapping.Global) — an empty mapping throws "Type X is not currently mapped"
+        // on the first id conversion and leaves a truncated save file behind.
+        if (Environment.GetEnvironmentVariable("UALBION_ANNOTATE_SAVE") == "1")
+        {
+            // Debug aid: write a field-by-field annotation alongside the save so writer-side
+            // offsets can be diffed against the reader's annotation (DumpSave 'a' command).
+            using var annotationStream = disk.OpenWriteTruncate(IdToPath(id) + ".write.txt");
+            using var annotationWriter = new System.IO.StreamWriter(annotationStream);
+            using var annotated = new SerdesNet.AnnotationProxySerdes(aw, annotationWriter);
+            SavedGame.Serdes(_game, AssetMapping.Global, annotated, spellManager);
+        }
+        else
+        {
+            SavedGame.Serdes(_game, AssetMapping.Global, aw, spellManager);
+        }
     }
 
     async AlbionTask InitialiseGame()

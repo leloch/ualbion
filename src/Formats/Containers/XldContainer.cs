@@ -152,7 +152,10 @@ public class XldContainer : IAssetContainer
         Action<int, int, TContext, ISerdes> func,
         IList<int> populatedIds)
     {
-        int count = populatedIds.Where(x => x >= firstId && x <= lastId).Max() - firstId + 1;
+        // No populated entries in this range (e.g. saving a fresh game with no automap
+        // data yet) → write an empty XLD chunk rather than throwing on Max().
+        var inRange = populatedIds.Where(x => x >= firstId && x <= lastId).ToList();
+        int count = inRange.Count == 0 ? 0 : inRange.Max() - firstId + 1;
         var descriptorOffset = s.Offset;
         var lengths = new int[count];
         s.Seek(s.Offset + XldDescriptor.SizeInBytes + HeaderSize(count));

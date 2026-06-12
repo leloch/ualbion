@@ -37,7 +37,7 @@ public class SavedGame
     public static readonly DateTime Epoch = new(2200, 1, 1, 0, 0, 0);
 
     public string Name { get; set; }
-    public uint Version { get; set; }
+    public uint Version { get; set; } = 138; // Original save format version; loader asserts on it
     public TimeSpan ElapsedTime { get; set; }
     public MapId MapId { get; set; }
     public MapId MapIdForNpcs { get; set; }
@@ -120,19 +120,22 @@ public class SavedGame
         _unlockedDoors.SetFlag(id.Id, value);
     }
 
+    // Fixed-size blobs must default to their on-disk sizes: a SavedGame built in memory
+    // (new game) writes these directly, and a short/null array silently desyncs every
+    // section after it (the loader then misreads the file). Loaded saves overwrite them.
     public ushort Unk0 { get; set; }
-    public uint MagicNumber { get; set; }
+    public uint MagicNumber { get; set; } = 0x25051971; // Expected by the loader's sanity assert
     public uint Unk9 { get; set; }
-    public ushort[] ActiveSpells { get; set; }
-    public byte[] UnkB1 { get; set; }
+    public ushort[] ActiveSpells { get; set; } = new ushort[0x50];
+    public byte[] UnkB1 { get; set; } = new byte[0xE5];
     public int Unk1A2 { get; set; }
     public ActiveItems ActiveItems { get; set; }
     public ushort HoursSinceResting { get; set; }
     public byte[] CombatPositions { get; private set; } = new byte[MaxPartySize];
     public MiscState Misc { get; private set; } = new();
-    public byte[] Unknown5B8C { get; set; }
+    public byte[] Unknown5B8C { get; set; } = new byte[0x2C];
     public NpcState[] Npcs { get; } = new NpcState[NpcCountPerMap];
-    public byte[] Unknown8Bb8 { get; set; }
+    public byte[] Unknown8Bb8 { get; set; } = new byte[0x8C0];
     public MapChangeCollection PermanentMapChanges { get; private set; } = [];
     public MapChangeCollection TemporaryMapChanges { get; private set; } = [];
     HashSet<VisitedEvent> _visitedSet = [];

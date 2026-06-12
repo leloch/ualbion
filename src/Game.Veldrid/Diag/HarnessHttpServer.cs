@@ -72,6 +72,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
     DateTime _lastFrameTime = DateTime.UtcNow;
     double _smoothedFps;
     string _lastError;
+    string _lastErrorDetail;
     int _commandsProcessed;
     bool _disposed;
 
@@ -126,6 +127,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             catch (Exception ex)
             {
                 _lastError = $"{ex.GetType().Name}: {ex.Message}";
+                _lastErrorDetail = ex.ToString(); // Full stack for /lasterror
                 TryWriteError(req.Context, HttpStatusCode.InternalServerError, _lastError);
             }
             finally
@@ -158,6 +160,8 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
             case "GET /npcs":            WriteJson(ctx, BuildNpcsDump()); break;
+            case "GET /pick":            WriteJson(ctx, BuildPickDump(ctx)); break;
+            case "GET /lasterror":       WriteJson(ctx, $"{{\"detail\":{JsonString(_lastErrorDetail)}}}"); break;
             case "GET /wallpixels":      HandlePixelDump(ctx, useWalls: true); break;
             case "GET /floorpixels":     HandlePixelDump(ctx, useWalls: false); break;
             case "GET /gpuwallpixels":   WriteGpuLayerPng(ctx, useWalls: true); break;
@@ -611,6 +615,35 @@ public sealed class HarnessHttpServer : Component, IDisposable
         return sb.ToString();
     }
 
+    // Diagnostic: cast the selection ray at the given PIXEL coordinates and report what it
+    // hits (target type, ToString, t) — for debugging click/hover hit detection.
+    string BuildPickDump(HttpListenerContext ctx)
+    {
+        var q = ctx.Request.QueryString;
+        int x = int.TryParse(q["x"], out var xv) ? xv : 0;
+        int y = int.TryParse(q["y"], out var yv) ? yv : 0;
+
+        var selectionManager = TryResolve<UAlbion.Core.ISelectionManager>();
+        if (selectionManager == null) return "{\"hits\":[]}";
+
+        var hits = new List<UAlbion.Core.Events.Selection>();
+        selectionManager.CastRayFromScreenSpace(hits, new Vector2(x, y), true, false);
+
+        var sb = new StringBuilder();
+        sb.Append("{\"hits\":[");
+        for (int i = 0; i < hits.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append('{');
+            sb.Append($"\"type\":{JsonString(hits[i].Target?.GetType().Name)},");
+            sb.Append($"\"target\":{JsonString(hits[i].Target?.ToString())},");
+            sb.Append($"\"t\":{F(hits[i].Distance)}");
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
     string BuildNpcsDump()
     {
         var state = TryResolve<IGameState>();
@@ -814,15 +847,20 @@ public sealed class HarnessHttpServer : Component, IDisposable
             TryWriteError(ctx, HttpStatusCode.NotFound, $"no clickable element with id '{id}'");
             return;
         }
-        // Send the click+release pair the same way the UI normally would.
+        // Send hover + click + release + blur the same way the UI normally would —
+        // Button ignores clicks unless it believes the cursor is over it (IsHovered).
         if (button.Equals("right", StringComparison.OrdinalIgnoreCase))
         {
+            component.Receive(new UAlbion.Core.Events.HoverEvent(), this);
             component.Receive(new UiRightClickEvent(), this);
+            component.Receive(new UAlbion.Core.Events.BlurEvent(), this);
         }
         else
         {
+            component.Receive(new UAlbion.Core.Events.HoverEvent(), this);
             component.Receive(new UiLeftClickEvent(), this);
             component.Receive(new UiLeftReleaseEvent(), this);
+            component.Receive(new UAlbion.Core.Events.BlurEvent(), this);
         }
         WriteJson(ctx, $"{{\"ok\":true,\"id\":{JsonString(id)},\"kind\":{JsonString(found.GetType().Name)},\"button\":{JsonString(button)}}}");
     }
