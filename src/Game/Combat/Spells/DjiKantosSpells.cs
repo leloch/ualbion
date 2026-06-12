@@ -12,12 +12,15 @@ public static class DjiKantosSpells
 {
     public static void RegisterAll()
     {
-        // Healing line. HealingDC = 40 % of max LP at full mastery (CONFIRMED K);
-        // the others' K constants weren't extracted yet (PLACEHOLDER percentages).
+        // Healing line — CONFIRMED by RE: HealingDC = 40 % of max LP; Recuperation is a
+        // FULL restore (the original additionally requires the target to have been awake
+        // >8 hours — gate not modelled, PLACEHOLDER); Regeneration and Lifebringer are
+        // IDENTICAL in the original: clear 9 conditions + heal max(1, MaxLP·M/100)
+        // (the condition-cleanse part needs a combined effect — PLACEHOLDER: heal only).
         SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.HealingDC,     k: 40));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Recuperation,  k: 60));
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Regeneration,  k: 10)); // weak per-tick heal
-        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Lifebringer,   k: 100)); // full heal
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Recuperation,  k: 100));
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Regeneration,  k: 100));
+        SpellEffectRegistry.Register(new HealHpEffect(Base.Spell.Lifebringer,   k: 100));
 
         // Single damage spell in this school — K not extracted (open item, PLACEHOLDER)
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.GoddessWrath, k: 35));

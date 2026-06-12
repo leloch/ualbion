@@ -27,9 +27,9 @@ public static class DruidSpells
         // flag; BERSERK costs 25 % of LP and multiplies STR/CloseCombat by 1.5; Boasting
         // inflicts Panicking on the target (CONFIRMED). The additive buff system can't
         // express Berserk's ×1.5 yet — PLACEHOLDER additive bonus until it can.
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Berserk,     CombatBuffs.BuffKind.Attack,  amount: 10, rounds: 3));
+        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Berserk,     CombatBuffs.BuffKind.Attack,  amount: 10, baseDuration: 10)); // RE'd base 10; -25% LP cost + ×1.5 multipliers still PLACEHOLDER (additive approx)
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Boasting, PlayerCondition.Panicking));
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.MagicShield, CombatBuffs.BuffKind.Defense, amount: 8,  rounds: 4));
+        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.MagicShield, CombatBuffs.BuffKind.Defense, amount: 8, baseDuration: 0, persistent: true)); // battle-persistent (active-spell table)
 
         // Anti-demon line — K not extracted yet (PLACEHOLDER magnitudes); the "only
         // affects demons" gate needs monster-class data (PLACEHOLDER: hits anything).

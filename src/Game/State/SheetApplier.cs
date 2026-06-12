@@ -220,7 +220,16 @@ public class SheetApplier : Component
             lp.Current = lp.Max;
 
         if (lp.Current > 0)
+        {
+            // Healing above zero wakes an unconscious character — without this, members
+            // knocked out in combat would stay down forever after being healed.
+            if ((sheet.Combat.Conditions & PlayerConditions.Unconscious) != 0)
+            {
+                sheet.Combat.Conditions &= ~PlayerConditions.Unconscious;
+                Info($"{sheet.Id} regains consciousness ({lp.Current}/{lp.Max} LP)");
+            }
             return;
+        }
 
         // At zero HP the original game considers the character Unconscious — a recoverable
         // state distinct from PermanentlyDead. UnconsciousMask in PlayerConditions is what
@@ -257,17 +266,15 @@ public class SheetApplier : Component
     /// times in one shot — matches the original engine's behaviour at hand-in NPCs).
     /// </summary>
     /// <remarks>
-    /// **PLACEHOLDER XP curve** — `XpForNextLevel(L) = L * L * 100`, a common RPG default.
-    /// Original Albion's curve isn't in `_RE_NOTES.md` yet; once the function reading
-    /// `sheet.ExperiencePoints` and comparing against a threshold is RE'd from
-    /// `prtlogic.c` (candidates: `fcn.00034b66`, `fcn.0003529d`), swap in the real one.
-    /// The per-level stat gains *are* read from the sheet (`LifePointsPerLevel` etc.)
-    /// so only the threshold needs confirmation — not the magnitude of each gain.
+    /// RE'd XP curve (see _RE_COMBAT.md "Placeholder formulas"): XP required to reach
+    /// level N+1 = max(1, ⌊1.25·N²⌋ + N − 14) × classMultiplier, level cap 50. Class
+    /// multipliers: Pilot 25, Scientist 35, IskaiWarrior 30, DjiKasMage 25, Druid 25,
+    /// EnlightenedOne 20, Technician 40, (class 7 unused: 0), OquloKamulos 25, Warrior 35.
     /// </remarks>
     void ExperienceChecks(CharacterSheet sheet)
     {
-        const int MaxLevel = 100;     // safety against runaway loops on malformed sheets
-        while (sheet.Level < MaxLevel && sheet.Combat.ExperiencePoints >= XpForNextLevel(sheet.Level))
+        const int MaxLevel = 50; // the original's level cap
+        while (sheet.Level < MaxLevel && sheet.Combat.ExperiencePoints >= XpForNextLevel(sheet.Level, sheet.PlayerClass))
         {
             sheet.Level++;
             ApplyPerLevelGains(sheet);
@@ -276,11 +283,15 @@ public class SheetApplier : Component
         }
     }
 
-    internal static int XpForNextLevel(int currentLevel)
+    static readonly int[] ClassXpMultipliers = [25, 35, 30, 25, 25, 20, 40, 0, 25, 35];
+
+    internal static int XpForNextLevel(int currentLevel, PlayerClass playerClass)
     {
-        // PLACEHOLDER: quadratic curve. Level 1 → 2 needs 100 XP, 2 → 3 needs 400, etc.
-        int next = currentLevel + 1;
-        return next * next * 100;
+        int classMul = (int)playerClass < ClassXpMultipliers.Length ? ClassXpMultipliers[(int)playerClass] : 25;
+        if (classMul == 0)
+            classMul = 25; // defensive: unused class slot / monsters
+        int baseXp = Math.Max(1, (int)(1.25 * currentLevel * currentLevel) + currentLevel - 14);
+        return baseXp * classMul;
     }
 
     static void ApplyPerLevelGains(CharacterSheet sheet)

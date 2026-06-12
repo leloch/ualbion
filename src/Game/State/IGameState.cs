@@ -17,6 +17,7 @@ public interface IGameState
     // NPC waypoint table (48 entries per character, one per half-hour slot — see MapNpc).
     // Phase 4.1 RE'd to confirm: tick rate is 48/day = "M-tick" = 30 game-minutes.
     int MTicksToday => (int)(48.0 * Time.TimeOfDay.TotalHours);
+    int HoursSinceResting { get; }
     DateTime Time { get; }
     IParty Party { get; }
     MapId MapId { get; }

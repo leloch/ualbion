@@ -43,10 +43,9 @@ public static class DjiKasSpells
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ThornSnare,   PlayerCondition.Paralysed));
 
         // --- Buffs / traps / utility ---
-        // Hurry doubles AP (the original "powered" flag) — RE'd via timed-effect builder
-        // fcn.0004b8a1. Duration PLACEHOLDER: the per-spell base for max(1,M*base/100)+1
-        // isn't extracted yet.
-        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Hurry, CombatBuffs.BuffKind.Berserk, amount: 0, rounds: 3));
+        // Hurry doubles AP (the original "powered" flag, fcn.0004ef8b); duration base 10
+        // (CONFIRMED): rounds = max(1, M·10/100) + 1.
+        SpellEffectRegistry.Register(new BuffSpellEffect(Base.Spell.Hurry, CombatBuffs.BuffKind.Berserk, amount: 0, baseDuration: 10));
         SpellEffectRegistry.Register(new TrapSpellEffect(Base.Spell.ThornTrap, k: 24)); // CONFIRMED K
         SpellEffectRegistry.Register(new RemoveTrapEffect(Base.Spell.RemoveTrapDK));
         // Fungification: K not extracted yet — PLACEHOLDER magnitude.

@@ -1808,3 +1808,286 @@ icons from **file 0x29** (index +12). Combat background bitmap handle lives at `
   (alternate projectile frame-cycler, flags2 bit0).
 - `0x13e146/0x13e14a` are writable globals (default 3200/6400) — nothing in combat seems
   to change them, but a zoom/config writer may exist (INFERRED constant).
+
+## Placeholder formulas (RE'd 2026-06-12)
+
+> Targets: crit chance, dodge/miss, XP-for-level curve, rest gating + recovery, missing
+> spell K constants, buff durations, out-of-combat condition durations. All radare2
+> against `albion_aaa`. CONFIRMED unless marked INFERRED.
+
+### Skill / percent-roll primitives (CONFIRMED)
+
+- `fcn.00035fd5(sheet, skillIdx)` = **GetEffectiveSkill**, skillIdx 0..3:
+  u16 at `sheet + 0x7A + skill*8` (0=CloseRangeCombat 0x7A, 1=LongRangeCombat 0x82,
+  **2=CriticalHit 0x8A**, 3=Lockpicking 0x92), **plus** equipment skill bonuses
+  (item `+0x0A` skill id / `+0x0B` amount, subtracted when the slot's curse flag
+  `slotFlags(+0x2E9) & 4` is set), **minus** equipment skill penalties (two pairs:
+  id at item `+0x0F/+0x10`, amount at `+0x11/+0x12`). If skillIdx is 0 or 1 and the
+  sheet has condition bit 0x80 (**Blind**), the result is **halved**. Clamped >= 0.
+- `fcn.00036193(sheet, skillIdx)` = GetBaseSkill (no equipment, no Blind).
+- `fcn.00035b15(value, range)` = **PercentRoll**: returns 1 iff `rand() % range <= value`
+  (auto-fail when value <= 0, auto-succeed when value >= range). Note `<=`, so
+  effective chance is (value+1)/range.
+- `fcn.00035bdc(sheet, skillIdx)` = **RollSkill** = PercentRoll(GetEffectiveSkill, 100).
+- Attribute getter `fcn.00035c77(sheet, statIdx)` (stats 0..8): u16 at
+  `sheet + 0x2A + stat*8` + equipment bonuses (item `+8` stat id / `+9` amount, curse
+  negates). Stat record is 8 bytes: +0 current, ... , **+6 = pre-exhaustion backup copy**.
+  Index order matches UAlbion: 0=STR 1=INT 2=DEX 3=SPD 4=STA 5=LUK 6=MagicResist 7=MagicTalent.
+
+### 1. The real strike pipeline: TO-HIT ROLL + CRITICAL HIT (CONFIRMED — corrects two earlier claims)
+
+Both attack completion callbacks — melee `fcn.0004eac1` (rolls at 0x4ec8c/0x4ed43) and
+ranged `fcn.0004f057` (rolls at 0x4f233/0x4f2ea) — share this exact structure:
+
+```c
+// after walking/animation setup; attacker = [ebp-0x30], target = [ebp-0x2c]
+PlaySound(weapon ? 446 : 455);
+if (!RollSkill(attackerSheet, ranged ? LongRangeCombat : CloseRangeCombat)) {
+    PlaySound(452);  return;                       // MISS — to-hit roll failed
+}
+(void)GetStatusConditions(targetSheet);            // result ANDed with 0 — DEAD CODE:
+// "xor eax,eax; test eax,eax; je" — a compiled-out defender-evasion branch (would have
+// played sound 447). The defender gets NO dodge roll. No Dexterity read anywhere here.
+
+// equipment wear (fcn.0004f920 — see below):
+BreakRoll(attackerSheet, 1<<weaponSlot, melee?0x20:0x40);   // weapon
+BreakRoll(targetSheet,   1<<5 /*chest*/, 2);
+BreakRoll(targetSheet,   1<<2 /*head*/,  4);
+
+if (!(targetSheet[0x0E] & 0x80)                    // 0x80 = CRIT-IMMUNE flag
+     && RollSkill(attackerSheet, CriticalHit)) {   // skill 2, sheet+0x8A
+    PlaySound(449);                                 // CRITICAL HIT
+    damage = GetLifePoints(targetSheet);            // fcn.0003674c = u16 sheet+0xCA
+    // i.e. damage == target's CURRENT LP -> INSTANT KILL
+} else {
+    damage = RollDamageVsDefense(atk, def);         // fcn.0004ee3b (known)
+}
+if (damage) ApplyDamage(target, damage);            // fcn.0004dec9
+else        PlaySound(451);                         // hit but fully absorbed
+```
+
+- **CRIT (target #1):** chance = effective **CriticalHit skill %** (PercentRoll vs 100),
+  blocked entirely by monster-sheet flag `+0x0E & 0x80` (crit-immunity). Effect is **not**
+  a damage multiplier — it is a **lethal hit** (damage = current LP). Earlier note
+  "Critical Hit skill is UI-only" was WRONG (the combat reads go through the indexed
+  getter `fcn.00035fd5`, not a direct `+0x8A` access, so the offset scan missed them).
+  Earlier note that `+0x0E & 0x80` means "immune to normal weapons" was also wrong —
+  the flag gates criticals.
+- **DODGE/MISS (target #2):** there IS a separate to-hit roll — the **attacker's weapon
+  skill** (CloseRange for melee, LongRange for ranged) vs 100, rolled before any damage
+  math. There is **no defender-side evasion**: the only defender check is dead code
+  (`conds & 0`), and no Dexterity/Speed read exists in the strike path. The defender's
+  contribution to missing remains the damage-vs-defense overlap (delta<=0, sound 451).
+  => UAlbion should REMOVE its flat 8 % dodge and flat 5 % crit, and instead:
+  miss when `rand()%100 > effCloseRange` (separate cue from the absorbed case), and
+  crit (instant kill) when `rand()%100 <= effCritSkill` unless the monster is crit-immune.
+- CORRECTION: "fcn.0004ed77 = MeleeHitOrMiss" in the earlier section is bogus — 0x4ed77
+  is a mid-function address inside `fcn.0004eac1` (it is the `call fcn.0004ee3b`
+  instruction). The "no separate hit roll" conclusion drawn from it is retracted.
+
+**Equipment break — `fcn.0004f920(sheet, slotMask, typeMask)` (CONFIRMED):** for each
+equipment slot 1..9 in slotMask holding an item: roll PercentRoll(item[+3] /*breakRate*/,
+**1000**); on success show dialog 300 ("item broke"), set slot flag bit 1 (broken),
+morph the item via `fcn.000665ce`, recompute via `fcn.00049584`. Wear happens on every
+swing that passes the to-hit roll: attacker's weapon, defender's chest (slot 5) and
+head (slot 2) pieces.
+
+**Damage-formula correction:** `fcn.000606b5` is NOT a class-damage modifier. It is
+`GetActiveSpellPercent(partyMemberIdx, type)` reading the **active-spell table** at
+`0x153b3e` (per party slot: 12 bytes = 3 types x 4 bytes; `0x153cbc[]` maps member ->
+slot). Entry: u16 +0 = stacked strength, u16 +2 = percent (max of casts). In
+`fcn.0004ee3b`: party attacker does `raw += raw * pct(type0)/100` and party defender
+`rawDef += rawDef * pct(type1)/100`. **No spell ever writes type 0**, so the attack-side
+modifier is always 0 in practice; type 1 comes from MagicShield/PersonalProtection.
+
+### 2. XP-for-level curve (target #3) — CONFIRMED
+
+The "runtime per-slot factor at 0x159756" guess was wrong: it is a **per-LEVEL factor
+table** (BSS, filled once at init by the loop at `0x34abd..0x34b51`):
+
+```c
+for (L = 0; L < 50; L++)
+    u16[0x159758 + L*2] = max(1, (L*L*125)/100 + L - 14);   // = 1.25 L^2 + L - 14
+```
+
+`fcn.00037aaa` (LevelUpCheck) per party member: `classMul = dword[0x13d9e4 + class*4]`
+(the known {25,35,30,25,25,20,40,0,25,35}); starting from level=1, while level < 50 and
+`xp >= table[level] * classMul`, level++. So **XP needed to reach level N+1 =
+max(1, floor(1.25*N^2) + N - 14) x classMul**; levels 2-4 cost just `classMul` each
+(table[1..3] clamp to 1), level cap **50**. Examples for Tom (classMul 25): L5 at 250 XP,
+L10 at 2400 (table[9]=96), L20 at 11,775 (table[19]=471), L50 at 76,575 (table[49]=3063).
+
+**`fcn.00037c22(sheet, nLevels)` = ApplyLevelUp** (also decodes the PRTCHAR 0xE0-0xEC block):
+
+```c
+newLevel = sheet[+5] += nLevels;
+trainPts = sheet[+0x11] = (w[sheet+0xE2] ? clamp(newLevel / w[sheet+0xE2], 1, 4) : 1);
+SetMaxLP(sheet, newLevel * w[sheet+0xE4]);                       // LP-per-level
+if (IsSpellcaster)  SetMaxSP(sheet, newLevel * (EffStat(INT)/30 + w[sheet+0xE6]));
+SLP += nLevels * w[sheet+0xEA];                                  // spell-learning pts
+// dialog 500 (or 5xx variant); extra popup at level >= 50
+```
+
+So PRTCHAR: +0xE2 = training-point divisor, +0xE4 = LP/level, +0xE6 = SP/level,
++0xEA = SLP/level. Remake change: replace `XpForNextLevel(L)=L^2*100` with the
+table formula x classMul, cap 50.
+
+### 3. Rest: gating, duration, recovery (target #4) — CONFIRMED
+
+CORRECTION: `fcn.0003822d` is NOT "rest recovery" — it is **RemovePartyMember /
+leader-incapacity handling** (frees per-slot handles; if nobody has conditions free of
+mask `0x731` = Unconscious|Paralysed|Fleeing|Panicking|Asleep|Insane, it revives Tom:
+LP->1 via fcn.000377c5 and clears those six conditions). The real rest chain:
+
+```
+map popup builder (0x22040 region)            confirm           executor
+  Rest option flags --------------------->  "Really rest?"  ->  fcn @ 0x68b05
+```
+
+**Gating (popup builder, 0x2204e..0x220df):**
+- `word[0x147990]` = current map **RestMode**, set at map load (0x119ea) from
+  `(mapHeaderFlags & 0xC) >> 2` — exactly UAlbion's `MapFlags.RestMode1/2`:
+  0=city (no Rest option; a **Wait** option is shown instead), 1=dungeon (rest 8 h),
+  2=wilderness (rest till dawn), 3=interior (**no Rest option at all** — hidden, not
+  "too dangerous"). `word[0x14799e]` (another map-load flag, also freezes the
+  hours-awake counter) hides Rest too.
+- Option disabled with **SystemText 601 "It's too dangerous here"** when
+  `word[0x15cc5a] != 0` (active hostile monster parties on the map — same flag also
+  blocks the city Wait option).
+- Option disabled with **SystemText 603 "Nobody in the party is tired"** when
+  `word[0x153cd2] < 3` (**hours awake** — must have been awake >= 3 game hours).
+- Confirm dialog = text 726, then `fcn.00068a8c(0)` -> event script -> executor 0x68b05.
+
+**Executor (0x68b05):**
+```c
+foreach active member: CureExhaustion(slot);     // fcn.00037958: clear cond 3 and restore
+                                                 // attr/skill currents from +6 backups
+if (RestMode == 1 || hour in [4,19))  { msg 605; hours = 8; }            // "eight hours"
+else                                  { msg 604; hours = hour<4 ? 7-hour // "till dawn"
+                                                               : 31-hour; }     // ->07:00
+rations = GetTotalPartyRations();                // fcn.00038b1f
+foreach active member:
+    if (innMode /*0x178020*/)      RestoreSlot(slot, word[0x17800e]);    // inn: paid %
+    else if (rations >= 2)         { rations -= 2; RestoreSlot(slot, 50); }
+    else                           msg 606 "X cannot recuperate - no food";
+SetTotalPartyRations(rations);                   // fcn.00038bbb
+hoursAwake = 0;  AdvanceGameClock(hours);        // fcn.000439b3
+```
+
+**`fcn.00068d2f(slot, pct)` = RestoreSlot:**
+`LP += max(1, MaxLP*pct/100) + EffStat(Stamina)/15`; if spellcaster
+`SP += max(1, MaxSP*pct/100) + EffStat(MagicTalent)/15`. Rest uses pct=**50**.
+=> Remake change: recovery is **one-shot 50 % of Max (+stat/15), 2 rations per member,
+no per-hour trickle**; replace the "2 LP + 1 SP per hour" placeholder.
+
+**Fatigue system (context for 603):** hour tick `fcn.00043acc`: `word[0x153cd2]++`
+each game hour; **every hour** Poisoned members lose `(rand()%6 < 1) ? 1 : rand()%6` LP
+(`fcn.000395ec`); on **odd hours** `fcn.00039362` runs: if hoursAwake > 24 -> "party is
+tired" message; if > 48 -> each member without Exhausted gets SetCondition(3) and stats
+are backed up then reduced (**STR x3/4, the other 8 attributes x1/2, all 4 skills x1/2**);
+members already Exhausted lose **10 % of current LP per check** (every 2 h).
+Recuperation (spell 41) requires hoursAwake > 8 and also resets it.
+
+### 4. Missing spell constants (target #5) — CONFIRMED
+
+**Universal spell success gate `fcn.000601a6(target, M, maskB, maskC)`** (used by every
+"chance" spell — resolves the old open item): target must be a party member or have
+`MonsterClassBits (fcn.00036701, sheet) & maskC` (else effect 774 = "unaffected
+creature type", fail); then `margin = M - EffStat(target, MagicResistance)`; **fail iff
+margin <= 0** (effect 731 + the resist value displayed). **Deterministic — there is NO
+random roll**: a spell lands iff mastery% > target's Magic Resistance. For party targets
+MagicResistance is first boosted by `resist += resist * ActivePct(type2)/100`
+(the PersonalProtection/MagicShield type-2 entry).
+
+| Spell | Handler | Decoded effect |
+|---|---|---|
+| 39 GoddessWrath | 0xa1134 | **kills `max(1, livingMonsters * M / 100)` randomly-chosen distinct monsters** (target picker fcn.0005f7ec; count via fcn.0004e493 — INFERRED living-monster count); each kill via instant-kill fcn.0004e247 (LP wipe + XP), gated by fcn.000601a6 with class mask 0xFFFF. At 100 % mastery this wipes the whole monster side. No damage K exists. |
+| 62/63/64 BanishDemon(s)/DemonExodus | 0xa1aec, shared cont 0xa1b20 | gate = fcn.000601a6 with **class mask 0x44** (demon class bits of sheet's monster-class bitmask) AND M > MagicResist -> **instant kill** (fcn.0004e247) with soul-rising animation. The old "x1000 / x250 factors" are the soul animation's descent/rise velocities, NOT chance math. The three spells differ only in SPELLDAT target area. |
+| 98 BigLightningTrap | 0xa6fd0 | tail-calls the SAME continuation 0xa659b as LightningTrap -> **K = 30**; "Big" = larger SPELLDAT area only. |
+| 100 BigLightningMine | 0xa777f | same continuation 0xa7038 as LightningMine -> **K = 42**; area only. |
+| 151..154 zombie breezes (Panic/Poison/Irritation/Plague) | 0xa95a4/0xa96fc/0xa9854/0xa99ac | **no damage at all**: projectile anim, then fcn.000601a6 gate, then SetCondition(8/1/11/2) respectively. |
+| 41 Recuperation | 0x6470b | requires hoursAwake(0x153cd2) > 8 else fail msg; per party member: CureExhaustion (fcn.00037958) + **RestoreSlot(slot, 100)** = full LP/SP (+Stamina/15, +MagicTalent/15); resets hoursAwake. M-independent. |
+| 31 Regeneration / 33 Lifebringer | 0x643aa / 0x645d1, shared cont 0x643fa | clear 9 conditions (all except Unconscious, Exhausted, Fleeing) + **heal max(1, MaxLP * M / 100)** — i.e. full heal at 100 % mastery. The two spells' per-target effect is IDENTICAL; only SPELLDAT cost/targeting differs. |
+
+### 5. Buff durations & Berserk (target #6) — CONFIRMED
+
+`fcn.0004b8a1(target, kind, M, base)`: **duration = max(1, M*base/100) + 1 rounds**,
+stored in the 4 x 8-byte slots at combatant +0x22; re-applying while active is rejected
+(the new anim is freed, nothing stacks). Bases seen at call sites: **Hurry 10**
+(11 rounds at 100 %), **Frost-freeze 3**, **Blinding 10**, **Berserk 10**.
+
+**Berserk (kind 3) exact effects** (applied once, on application):
+- immediate **damage = 25 % of current LP** through ApplyDamage (fcn.0004dec9 — can
+  trigger on-damage reactions, it is not a silent stat write);
+- base attribute **STR x150/100**;
+- base skills **CloseRangeCombat, LongRangeCombat AND CriticalHit x150/100** (the old
+  note missed LongRange + Crit);
+- PRTCHAR base-damage word `sheet+0xDA` **x150/100**.
+Expiry `fcn.0004bb76` multiplies the same five values by 100/150 (integer round-down
+losses included) and clears the per-kind flag/condition (kind0: AP flag; kind1:
+Paralysed; kind2: Blind).
+
+**MagicShield (66) and PersonalProtection (103) are NOT round-timed effects.** Both
+write the caster-party **active-spell table** (0x153b3e) via `fcn.000607da`, and both
+write **both** type 1 and type 2 entries with identical values:
+`strength(+0) += max(1, M*10/100)` (stacks across casts), `percent(+2) = max(prev, M)`.
+Type 1 percent feeds physical defense (`rawDef += rawDef*pct/100`), type 2 feeds
+MagicResistance in the spell gate. The only difference between the two spells is
+targeting (MagicShield: chosen party member; PersonalProtection: caster only).
+No in-combat round countdown for these entries was found (INFERRED: they persist for
+the battle; the +0 "strength" pool's depletion mechanism not located — possibly unused).
+
+### 6. Out-of-combat condition durations (target #7) — CONFIRMED: there are NONE
+
+- **No timer/decay exists for any condition.** The hourly handler only does the fatigue
+  counter, the Exhausted penalties, and the Poisoned LP drain (above). Nothing ever
+  clears Asleep/Panicking/Insane/Intoxicated on a clock.
+- **Combat end** (`fcn.000650ad`, called from battle exit fcn.0004a97d and victory
+  fcn.000648a7) batch-clears for all party members: **Irritated(11), Asleep(9),
+  Panicking(8), Fleeing(5), Paralysed(4)** — these five are combat-scoped.
+- Everything else — Poisoned, Ill, Exhausted, Intoxicated, Blind, **Insane**,
+  Unconscious — persists until an explicit cure (spell/item; Exhausted via rest /
+  Recuperation; the party-wipe rescue in fcn.0003822d clears Tom's
+  Unconscious/Paralysed/Insane/Asleep/Panicking/Fleeing as a fail-safe).
+=> Remake change: delete StatusConditionTicker's timed decay; instead clear the five
+combat-scoped conditions when a battle ends, and (optionally, for fidelity) add the
+hourly Poisoned drain + the 24 h/48 h fatigue thresholds.
+
+### New key globals / functions (this section)
+
+| Addr | Meaning |
+|---|---|
+| `fcn.00035fd5/00036193` | effective / base skill getter (skills at sheet+0x7A+idx*8) |
+| `fcn.00035b15/00035bdc` | PercentRoll(value,range) / RollSkill(sheet,skill) vs 100 |
+| `fcn.0003674c` | GetLifePoints (u16 sheet+0xCA) — crit damage source |
+| `fcn.0004f920` | equipment break roll (item[+3] vs 1000), break flag = slot bit 1 |
+| `fcn.000601a6` | spell success gate: M > MagicResist, creature-class mask, no RNG |
+| `fcn.00036701` | monster-class bitmask getter (demons = bits in 0x44) |
+| `0x159758` | XP factor table u16[50]: max(1, 1.25 L^2 + L - 14) |
+| `fcn.00037c22` | ApplyLevelUp (LP/SP/SLP/trainPts; PRTCHAR +0xE2/E4/E6/EA) |
+| `0x147990` | current map RestMode ((mapFlags & 0xC) >> 2) |
+| `0x15cc5a` | hostile-monsters-on-map count ("too dangerous" gate) |
+| `0x153cd2` | hours-awake counter (rest needs >= 3; tired > 24; exhausted > 48) |
+| `0x68b05` / `fcn.00068d2f` | rest executor / RestoreSlot(slot, pct) — rest pct = 50 |
+| `fcn.00037958` | cure Exhausted + restore stat/skill currents from +6 backups |
+| `fcn.00038b1f/00038bbb` | get/set total party rations (rest eats 2 per member) |
+| `fcn.00043acc/00039362/000395ec` | hour tick / fatigue check (odd hours) / poison drain |
+| `0x153b3e` | active-spell table (3 types x 4 B per party slot; +0 strength, +2 pct) |
+| `fcn.000607da/00060898/000606b5` | add active-spell entry / merge / read percent |
+| `fcn.000650ad` | combat-end clear: Irritated/Asleep/Panicking/Fleeing/Paralysed |
+| `fcn.0003822d` | (corrected) remove-party-member / party-wipe rescue — NOT rest |
+| `fcn.000375eb/000377c5` | SubtractLifePoints / AddLifePoints (slot-indexed) |
+
+### Corrections to earlier sections of this file
+
+- `fcn.0004ed77` is not a function ("MeleeHitOrMiss" entry is bogus — it is the middle
+  of `fcn.0004eac1`); the **"no separate hit-roll" conclusion is retracted** — the
+  attack callbacks roll the attacker's weapon skill vs 100 before any damage math.
+- "Critical Hit skill is UI-only / display-only" — WRONG; it is rolled per strike and
+  causes an instant kill (see section 1 above).
+- Target sheet `+0x0E & 0x80` = **crit-immunity**, not "immune to normal weapons".
+- `fcn.000606b5` is not "ClassDamageModifier" and `0x153b3e/0x153b40` is not a class
+  table — it is the active-spell (MagicShield/PersonalProtection) percent table.
+- `fcn.0003822d` is not "RestRecoveryClearConditions" (see section 3).
+- The Banish-demon "x1000/x250 chance factors" were animation velocities; the real gate
+  is deterministic M vs MagicResistance with demon-class mask 0x44.

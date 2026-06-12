@@ -5,22 +5,26 @@ namespace UAlbion.Game.Combat.Spells;
 
 /// <summary>
 /// Applies a temporary combat buff to the target (or the caster when no target tile was
-/// picked). Magnitudes/durations are PLACEHOLDERs pending RE; Berserk's AP-doubling
-/// mechanic itself is byte-exact (the "powered" flag from MAIN.EXE fcn.0004ef8b).
+/// picked). RE'd duration formula (fcn.0004b8a1): rounds = max(1, M·base/100) + 1 where
+/// base is per-spell (Hurry 10, Berserk 10, Blind 10, Freeze 3). Persistent buffs
+/// (MagicShield / PersonalProtection) last for the whole battle — the original tracks
+/// them in the active-spell percentage table, not the round timer.
 /// </summary>
 public sealed class BuffSpellEffect : ISpellEffect
 {
     public SpellId SpellId { get; }
     readonly CombatBuffs.BuffKind _kind;
     readonly int _amount;
-    readonly int _rounds;
+    readonly int _baseDuration;
+    readonly bool _persistent;
 
-    public BuffSpellEffect(SpellId spellId, CombatBuffs.BuffKind kind, int amount, int rounds)
+    public BuffSpellEffect(SpellId spellId, CombatBuffs.BuffKind kind, int amount, int baseDuration, bool persistent = false)
     {
         SpellId = spellId;
         _kind = kind;
         _amount = amount;
-        _rounds = rounds;
+        _baseDuration = baseDuration;
+        _persistent = persistent;
     }
 
     public SpellCastOutcome Apply(SpellCastContext context)
@@ -29,7 +33,11 @@ public sealed class BuffSpellEffect : ISpellEffect
         if (target?.SheetId == null)
             return SpellCastOutcome.Failed;
 
-        CombatBuffs.Add(target.SheetId, _kind, _amount, _rounds);
+        int rounds = _persistent
+            ? int.MaxValue / 2 // battle-scoped (CombatBuffs clears when a fight starts)
+            : Math.Max(1, context.MasteryMultiplier * _baseDuration / 100) + 1;
+
+        CombatBuffs.Add(target.SheetId, _kind, _amount, rounds);
         return SpellCastOutcome.Hit;
     }
 }

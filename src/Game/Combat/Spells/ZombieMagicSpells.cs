@@ -12,8 +12,9 @@ public static class ZombieMagicSpells
 {
     public static void RegisterAll()
     {
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.ZombiePoisonBreeze, k: 20)); // PLACEHOLDER K
-        SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.ZombiePlagueBreeze, k: 30)); // PLACEHOLDER K
+        // CONFIRMED by RE: the breezes are condition-only, no damage component.
+        SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ZombiePoisonBreeze, PlayerCondition.Poisoned));
+        SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ZombiePlagueBreeze, PlayerCondition.Ill)); // INFERRED mapping (plague → Ill)
 
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ZombiePanic,      PlayerCondition.Panicking));
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.ZombieIrritation, PlayerCondition.Irritated));
