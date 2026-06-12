@@ -1,6 +1,55 @@
 ﻿# UAlbion — Iteration Session Status
 
-> Rolling status. Updated 2026-06-12 (second pass) after the **gameplay-completeness session**.
+> Rolling status. Updated 2026-06-12 (third pass) after the **presentation + RE-fidelity session**.
+
+## 2026-06-12 third pass — combat presentation, RE-confirmed formulas, QoL
+
+Commits b4af91d1..bc21f8b1. All green throughout: 503 tests, smoke 13/13.
+
+1. **T2.7 utility spells** — Light raises the ETM ambient level (`ambient_light` event →
+   MapRenderable3D → uAmbient in ExtrudedTileMapSF.frag, regenerate headers via
+   `dotnet run --project src/Tools/ShaderWriter -- <shader dir>`); MapView = full automap
+   reveal + open (`reveal_automap` + `show_automap`). Verified live: ambient 40 dims the
+   scene to exactly 0.4× measured brightness.
+2. **T2.5 animated tactical combat** — one round per Start Round click (was: whole battle
+   auto-resolved); per-turn playback with WallClockTimerEvent pacing, active-combatant
+   highlight, red/green damage flashes + overlaid damage numbers (LayerStacker+SimpleText
+   in VisualCombatTile), monsters leave the grid when killed. The painted combat backdrop
+   finally displays (UiFixedPositionElement through the UI sprite path — a world Sprite
+   at any layer is covered by the map render passes). At 720×480 the combat screen matches
+   the original layout (NB window heights <480 drop UI to 1× integer scale).
+3. **T2.6 RE punch-list — all decoded and applied** (see _RE_COMBAT.md "Punch-list RE"
+   and _RE_NOTES.md "automap.c"/"Sound id space"):
+   - Automap discovery = facing wedge (depth 10) + flood fill with corner occlusion;
+     sight-block = wall flags bit 0x04 (WriteOverlay). Implemented in AutomapDialog.
+   - Spell magnitudes = max(1, M·K/100), M = max(1,(mastery+50)/100) from per-spell
+     mastery 0..10000. Confirmed K table applied; heals are % of target max LP.
+     Blinding line = Blind only; Shock/Boasting inflict Panicking; Hurry = AP×2 flag;
+     HealParalysis is a NULL handler in the original (kept 1:1 as a no-op).
+   - Combat Move: range clamp(Speed/30,1,3) Chebyshev, destination-only occupancy,
+     row restrictions. XP: pool monsterSheet.ExperienceReward (offset 0x20), victory
+     splits max(1,total/living). Monster AI mask Magic/Melee/Ranged with the verbatim
+     16-entry weight table; monsters now cast spells. 3D collision margin = min(T/4,50)
+     world units (≈0.098 tile). "Sounds 443/444/445" are actually SYSTEXTS combat
+     messages — now shown in the status bar during playback (+condition lines 762-773).
+4. **Monster contact combat** — chasing MonsterGroup NPCs trigger EncounterEvent on
+   reaching the party (2D + new 3D chase movement); victory raises npc_off. Save 2 now
+   auto-starts the Warniak fight it was saved during.
+5. **T3.10 QoL** — map-entry autosave (slot 98), Ctrl+F5/Ctrl+F9 quicksave/load (slot 99),
+   Vulkan window-close crash fixed (bail out of InnerLoop when _done set during PumpEvents),
+   `e:window_size <w> <h>` event.
+6. **T3.9 partial** — CombatAudio plays hit/miss/kill/heal samples (PLACEHOLDER named
+   samples; real combat SFX are per-monster WAVELIB entries via AIL, not yet RE'd).
+
+### Open items
+- T3.8 HD mod: skeleton + README exist (mods/HD); dir-container override loading doesn't
+  resolve yet (agent debugging; known issue in mods/HD/README.md).
+- T3.9: wavelib monster SFX mapping RE; ambient/song coverage audit.
+- T3.11: full playthrough verification pass.
+- Automap RENDERING still uses fixed glyphs (original: connection-mask wall glyphs at
+  0x230+mask, floor-texture minis, gated markers — documented in _RE_NOTES.md).
+
+---
 
 ## 2026-06-12 second pass — five gameplay systems landed
 
