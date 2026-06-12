@@ -1,0 +1,8 @@
+{
+  "Name": "UAlbion-HD",
+  "Description": "HD asset override layer: drop upscaled PNGs here to replace the originals",
+  "Version": "0.1.0",
+  "Dependencies": [ "Base", "Shaders", "Common", "Albion" ],
+  "InheritTypeConfigFrom": "Base",
+  "AssetConfig": "hd_assets.json"
+}

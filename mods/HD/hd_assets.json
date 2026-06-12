@@ -1,0 +1,20 @@
+{
+  // HD override layer. Any PNG present here overrides the corresponding original asset;
+  // missing files fall through to the Albion mod (the mod loader tries mods in reverse
+  // dependency order). Files are true-colour PNGs (png32 loader) named "<numeric id>.png".
+  //
+  // v1 targets the STRETCH-TO-FIT asset categories, where the renderer scales the image
+  // to a fixed quad so the source resolution is unconstrained — these accept upscales of
+  // any size today:
+  //   - Combat backgrounds (drawn fullscreen behind the battle UI)
+  //   - 3D dungeon backgrounds (skies)
+  //   - Story pictures (fullscreen interlaced images)
+  //
+  // Fixed-grid categories (2D tiles, 3D wall/floor texture arrays, UI icons) treat pixel
+  // size as logical size; replacing them with larger images would break layout/atlases.
+  // Supporting those needs a per-asset logical-scale property — tracked as follow-up.
+
+  "combg.1-19": { "Files": { "CombatBackgrounds": {} }, "Loader": "png32", "Container": "dir", "Pattern": "{id}.png" },
+  "3dbg.1-3":   { "Files": { "DungeonBackgrounds": {} }, "Loader": "png32", "Container": "dir", "Pattern": "{id}.png" },
+  "pic.1-45":   { "Files": { "Pictures": {} },           "Loader": "png32", "Container": "dir", "Pattern": "{id}.png" }
+}
