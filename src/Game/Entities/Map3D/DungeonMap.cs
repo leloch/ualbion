@@ -23,6 +23,7 @@ public class DungeonMap : GameComponent, IMap
     readonly Container _sceneObjects;
     LabyrinthData _labyrinthData;
     LogicalMap3D _logicalMap;
+    AutomapDialog _automap;
     float _backgroundRed;
     float _backgroundGreen;
     float _backgroundBlue;
@@ -46,6 +47,8 @@ public class DungeonMap : GameComponent, IMap
 
     void OnPlayerEnteredTile(PlayerEnteredTileEvent e)
     {
+        _automap?.MarkDiscovered(e.X, e.Y);
+
         // Fire any tile-scoped Normal-trigger event chain on the tile the party just entered.
         // Mirrors FlatMap.OnPlayerEnteredTile (2D); the 3D variant emits PlayerEnteredTileEvent
         // from Movement3D once the camera position crosses a tile boundary.
@@ -95,6 +98,8 @@ public class DungeonMap : GameComponent, IMap
         _sceneObjects.Add(renderable);
         _sceneObjects.Add(selection);
         _sceneObjects.Add(new SelectionHandler3D(_logicalMap, TileSize));
+        _automap = new AutomapDialog(_logicalMap, _mapData);
+        _sceneObjects.Add(_automap);
 
         AttachChild(new ScriptManager());
         AttachChild(new Collider3D(_logicalMap));

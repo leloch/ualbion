@@ -195,6 +195,11 @@ public sealed class SelectionHandler3D : GameComponent
         }
 
         options.Add(new ContextMenuOption(
+            S(Base.SystemText.MapPopup_Map),
+            new ShowAutomapEvent(),
+            ContextMenuGroup.System));
+
+        options.Add(new ContextMenuOption(
             S(Base.SystemText.MapPopup_MainMenu),
             new PushSceneEvent(SceneId.MainMenu),
             ContextMenuGroup.System));

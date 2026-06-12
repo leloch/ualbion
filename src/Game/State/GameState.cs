@@ -64,6 +64,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public MapChangeCollection PermanentMapChanges => _game.PermanentMapChanges;
     public ActiveItems ActiveItems => _game.ActiveItems;
     public IList<NpcState> Npcs => _game.Npcs;
+    public IDictionary<AutomapId, byte[]> Automaps => _game.Automaps;
     public bool IsChainDisabled(MapId mapId, ushort chain) => _game.IsChainDisabled(mapId, chain);
     public bool IsNpcDisabled(MapId mapId, byte npcNum) => _game.IsNpcDisabled(mapId, npcNum);
     public bool IsEventUsed(AssetId eventSetId, ActionEvent action) => _game.IsEventUsed(eventSetId, action);
