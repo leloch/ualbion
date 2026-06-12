@@ -2091,3 +2091,301 @@ hourly Poisoned drain + the 24 h/48 h fatigue thresholds.
 - `fcn.0003822d` is not "RestRecoveryClearConditions" (see section 3).
 - The Banish-demon "x1000/x250 chance factors" were animation velocities; the real gate
   is deterministic M vs MagicResistance with demon-class mask 0x44.
+
+## RE batch 4 (2026-06-12): item morph, remaining Ks, services
+
+> Targets: broken-item morph rule, KamulosGaze / Fungification magnitudes, FrostSplinter
+> freeze rider + buff kind 1, the six remaining PlaceAction service types, ground-shadow
+> LUT. All radare2 against `albion_aaa`. CONFIRMED unless marked INFERRED.
+
+### 1. "Broken-item morph" — there is NO morph; fcn.000665ce = AppendSlotToLootList (CONFIRMED)
+
+The original never maps an item id to a broken variant. **"Broken" is purely the item-slot
+flag bit 1 (= UAlbion `ItemSlotFlags.Broken` 0x2)** on the 6-byte slot record
+(+0 amount, +1 charges, +2 enchant count, +3 flags, +4 u16 itemId); the item id is unchanged.
+
+`fcn.000665ce(slotPtr)` is a 6-byte **memcpy of the slot record into the post-combat loot
+list**: buffer handle `0x177fec`, count `u16 0x177ff8` (capacity 792 entries), entry = the
+raw 6-byte slot. Loot-list family: `fcn.000664f5` alloc+clear, `fcn.00066575` free,
+`fcn.0006669a` remove-entry, `fcn.0006663a` loot-gold += (u32 `0x177ff4`),
+`fcn.0006666a` loot-rations += (u32 `0x177ff0`); readers are the victory handler
+`fcn.000648a7` (shows the loot window iff count != 0) and the loot-window code
+`fcn.0006492f` / 0x64dae..0x6529d / `fcn.00066155/0x6620c/0x662d5`.
+
+Exact break flow inside `fcn.0004f920(sheet, slotMask, typeMask)` per masked slot 1..9
+(skip if empty, if item typeid not in typeMask while slot not already broken-flagged):
+
+1. `PercentRoll(item[+3] breakRate, 1000)` — else next slot;
+2. fetch item name (`fcn.0004a5ad`), format **dialog 300** ("The %s broke"), show it;
+3. `slotFlags |= 2` (Broken);
+4. `fcn.000665ce(slot)` — copy the (now broken-flagged) slot **into the battle loot list**;
+5. `fcn.00049584(sheet, slotIdx, 1)` — **remove 1 from the slot** (count byte −1; slot
+   memset to 0 via `fcn.0004a4ee` when count hits 0).
+
+So a broken weapon/armour piece is *unequipped on the spot* and reappears in the
+post-battle loot window with the Broken flag set (to be repaired later via the RepairItem
+service, which clears the flag — see §5). `fcn.00049584` = RemoveFromSlot(sheet, slot 1..9
+equip at +0x2E6 / 10+ backpack at +0x31C, n).
+
+Related: `fcn.0004e124(combatant)` = monster-death loot dump (called from ApplyDamage
+`fcn.0004dec9` @0x4e0e3): for kind==2, every occupied slot of the 9 equipment + 24
+backpack slots is appended via `fcn.000665ce`, gold `u16 sheet+0x18` and rations
+`u16 sheet+0x1A` are added to the loot totals, then instant-kill `fcn.0004e247`.
+
+CORRECTION: `fcn.0004a49c` is not "GetItemId" — it is **IsSlotEmpty** (returns 1 when
+`u16 slot+4 == 0` or `byte slot+0 == 0`, else 0). 117 xrefs.
+
+### 2. KamulosGaze (Base.Spell 104) — instant kill, NO damage K (CONFIRMED)
+
+`0xa8b12` -> per-target continuation `0xa8b46` (gaze-beam + 16-segment ray animation):
+
+- gate `fcn.000601a6(target, M, exclMask=0x80, inclMask=0xFFFF)` -> margin
+  (= M − effective MagicResist; see refined gate decode in §4);
+- margin == 0 -> resisted (effect 731 + resist value shown), nothing else;
+- margin > 0 -> soul-rise animation, then **`fcn.0004e247` instant kill** (LP wipe +
+  XP accumulation). No magnitude constant exists anywhere in the handler.
+
+So the UAlbion placeholder `DamageSpellEffect(KamulosGaze, k: 50)` is the wrong shape:
+it should be a single-target **deterministic kill iff mastery% > target MagicResist**,
+blocked entirely for monsters with class bit 0x80 (the same exclusion bit the frost line
+uses — "creature type unaffected", effect 774).
+
+### 3. Fungification (Base.Spell 20) — margin-scaled damage, kill-into-mushroom (CONFIRMED)
+
+`0x9fd5c` -> continuation `0x9fd90`. Monsters only (combatant kind==2 check at 0x9ff08):
+
+```
+margin = gate(target, M, excl=0, incl=0xFFFF)        // fcn.000601a6 @ 0x9fea9
+if margin == 0: fail (731)
+dmg = max(1, margin * 120 / 100)                     // @ 0x9febc: imul 0x78 / idiv 100
+if GetLifePoints(target) <= dmg:                     // fcn.0003674c @ 0xa027f
+    instant kill via fcn.0004e247 @ 0xa04ea          // collapse-into-mushroom animation
+else:
+    effect 223 + ApplyDamage(target, dmg)            // fcn.0004dec9 @ 0xa02c5
+```
+
+The earlier "~half of target's current LP (INFERRED)" note was wrong — the `sar 1` it was
+based on (0xa025b) is mushroom-growth animation math (base size 150, ×2.5 step). There is
+no K: the magnitude is **max(1, (M − MagicResist) × 1.2)** with a lethal-overflow kill.
+
+### 4. Frost line freeze rider + buff kind 1 + gate refinement (CONFIRMED)
+
+All three frost spells run the identical per-target sequence (FrostSplinter cont @
+0x9c27f..0x9c7af, FrostCrystal @ 0x9c9b1..0x9cf06, FrostAvalanche @ 0x9d138..0x9d68d):
+
+```
+margin = fcn.000601a6(target, M, excl=0x80, incl=0xFFFF)   // result REPLACES M
+if margin == 0: nothing (731 + resist shown)
+fcn.0004b8a1(target, kind=1, M=margin, base=3)             // FREEZE — before the damage
+dmg = max(1, margin * K / 100); ApplyDamage(target, dmg)   // K = 27 / 18 / 27
+```
+
+So YES — FrostSplinter (and Crystal and Avalanche) apply the kind-1 freeze with base 3
+**in addition to** their damage, every time the gate passes. Freeze duration =
+`max(1, margin*3/100) + 1` rounds (2 rounds for margin ≤ 33, 3 for 34..66, 4 for ≥ 67).
+
+**Buff kind 1 exact semantics (`fcn.0004b8a1` full decode, ret 4):**
+- duration computed from (M=margin, base) as above; stored `u16 combatant+0x22+kind*8`,
+  M at +0x24, the effect-anim handle at +0x26;
+- if that slot is already non-zero the re-application is REJECTED (anim freed, no refresh);
+- switch(kind): 0 -> `combatant+4 |= 1` (AP×2); **1 -> `SetCondition(sheet, 4 = Paralysed)`**
+  (fcn.000363c2); 2 -> SetCondition(7 Blind); 3 -> Berserk block (25% LP self-damage +
+  STR / 3 skills / base-damage ×150/100, as previously documented);
+- then plays per-kind apply effect `u16[0x4a975 + kind*2]` via fcn.0004de64.
+
+**Expiry `fcn.0004bb76`** (round countdown hits 0): case 0 clears the AP flag (`&= ~1`),
+**case 1 `ClearCondition(4 = Paralysed)`** (fcn.0003645a), case 2 ClearCondition(7),
+case 3 multiplies the five Berserk values by 100/150. Confirmed — freeze is exactly
+Paralysed-for-N-rounds; no damage component of its own.
+
+**MAJOR CORRECTION — gated damage spells scale on the MARGIN, not raw M.** Every checked
+handler stores the gate's return value over its M variable and computes
+`max(1, (M − effMagicResist) * K / 100)`:
+verified for FrostSplinter/Crystal/Avalanche (K 27/18/27), SmallFireball (`shl edx,4` =
+×16 on the margin @ 0xa249f), Fungification (×120). INFERRED: the rest of the K-table
+(Fireball 22, LightningStrike 33, etc.) follows the same codegen — the earlier
+"dmg = max(1, M*K/100)" rows in *Item 1 — Magic system* should be read as **margin**×K/100.
+(Trap/mine continuations 0xa659b/0xa7038 only PLACE the trap — no gate/ApplyDamage at
+cast; the trigger-time path was not re-traced this session.)
+
+**Gate `fcn.000601a6(target, M, exclMask, inclMask)` — full decode (replaces "maskB/maskC"):**
+
+```
+bits = MonsterClassBits(sheet)            // fcn.00036701
+classOk = (bits & inclMask) && !(bits & exclMask)   // exclusion beats inclusion
+if (!classOk && target->team != 1):  effect 774 "unaffected creature type"; return 0
+resist = EffStat(target, 6 MagicResist)
+if target->team == 1: resist += resist * ActivePct(type2) / 100    // MagicShield/PersProt
+margin = M - resist
+if margin <= 0:  effect 731 + show resist value (action 10);  return 0
+effect (resist ? 630 : 418);  return margin     // success cue differs if target resisted some
+```
+
+Party members always pass the class check. Class bit **0x80 = frost/death-magic immunity**
+(excluded by FrostSplinter/Crystal/Avalanche and KamulosGaze); demons = bits 0x44 (known).
+
+### 5. PlaceAction services — dispatcher + the six remaining types (CONFIRMED)
+
+**Dispatcher `fcn.000666e9`** (the map-event handler for event type 0xB): event record at
+`(0x153160 + u16[0x13d70a]*50) + 0x18`. Field -> global copies, then
+`call [0x13eaf0 + type*4]` (13-entry fn table, NULL-checked):
+
+| Event field | Global | Meaning (decoded) |
+|---|---|---|
+| +1 type | `0x17800a` | PlaceActionType 0..12 |
+| +2 Unk2 | `0x178014` | item-picker custom-title flag (!=0xFF -> title = map text Unk5); for Merchant: goodbye text id |
+| +3 Unk3 | `0x178016` | price-confirm text override (0xFF -> SystemText 200 "That costs %d.%d gold") |
+| +4 Unk4 | `0x178012` | success/completion text id (0xFF -> per-service default dialog) |
+| +5 Unk5 | `0x17800e` | service parameter #2: spell school (LearnSpells), restore % (SleepInRoom), title text id (item pickers) |
+| +6 Unk6 (u16) | `0x17800c` | the price parameter (gold-TENTHS, like item Value) |
+| +8 Unk8 (u16) | `0x178010` | merchant inventory id (Merchant/ScrollMerchant) |
+| — | `0x178000` | event-source handle (for map-text lookups fcn.00043d3a / fcn.0007db4e) |
+| — | `0x178008` | current party member (init = u16[0x153cbc]; LearnSpells/RemoveCurse overwrite) |
+
+**Handler table `0x13eaf0`:** 0 LearnCloseCombat `0x667ea`, 1 Heal `0x66a0e`, 2 Cure
+`0x66c36`, 3 RemoveCurse `0x66f04`, 4 AskOpinion `0x67018`, 5 RestoreItemEnergy `0x671ff`,
+6 SleepInRoom `0x67483`, 7 Merchant `0x6750c`, 8 OrderFood `0x67530`,
+9 **ScrollMerchant `0x6750c` — literally the same pointer as Merchant**,
+0xA `0x6766d` (empty no-op), 0xB LearnSpells `0x6768c`, 0xC RepairItem `0x679b5`.
+
+**Shared `fcn.00067b9c(amount)` = TrySpendPartyGold** (11 xrefs — every paid service):
+free if amount==0; gets **pooled TOTAL party gold** `fcn.00038804`; if amount > total ->
+dialog 0x15e0d0 "not enough money", return 0; else yes/no confirm (text Unk3, or default
+200 formatted with `amount/10`, `amount%10` — prices are in tenths); on yes
+`fcn.000388a0(total − amount)` redistributes the new total over the party. =>
+UAlbion's "deduct from leader" placeholder should pool.
+
+**LearnSpells (0xB, `fcn.0006768c`):**
+- candidate scan: party slots 1..6, active (`fcn.00039941`) + **not Unconscious**
+  (`fcn.00035875` = !(conds & 1)) + spell-class bitmask `byte sheet+4` has bit **Unk5**
+  (`fcn.000371d3`); no candidate -> dialog 0x15e1f4. (Last matching member wins; in
+  practice schools are unique per member.)
+- spell list (UI `fcn.0007f8ce`, item-state callback `0x6784d`): all 30 spells of school
+  Unk5; state 188 = already known (`fcn.00037244`), state 189 = **level too low:
+  SPELLDAT byte+2 (UAlbion `SpellData.LevelRequirement`) > character level
+  (`fcn.000365d5` = `byte sheet+5`)**, else selectable.
+- **price = Unk6 × SpellData.LevelRequirement** (tenths) via TrySpendPartyGold.
+- learn `fcn.00060301`: known-bit `dword sheet+0xF2 + school*4 |= 1 << number`, then
+  **initial mastery = 4 × effective MagicTalent** (`fcn.00035c77(sheet,7)` then
+  `fcn.00037396`) — RESOLVES the old "initial mastery" open item. No SLP or TP cost.
+- then map text Unk4 (via fcn.0007db4e) or generic dialog 0x15db1c.
+
+**RepairItem (0xC, `fcn.000679b5`):** item picker `fcn.0007ec65(member 0x178008, title,
+filter 0x67b4d)`; filter lists only slots with **Broken flag (slotFlags & 2)**, others
+state 590. **price = item Value (`u16 item+0x20`) × Unk6 / 100** (Unk6 = percent of item
+value, price in tenths). On pay: `slotFlags &= ~2` (repaired in place — equip slot +0x2E9
+or backpack +0x31F). Success text Unk4 / default 0x15e164.
+
+**RestoreItemEnergy (5, `fcn.000671ff`):** picker filter `0x67400`: item must HAVE a
+spell (`byte item+0x16` spell number != 0, else state 93); slot charges
+(`byte slot+1`) >= `MaxCharges (item+0x1A)` -> state 567; slot enchant count
+(`byte slot+2`) >= `MaxEnchantmentCount (item+0x19)` -> state 568; else selectable.
+missing = MaxCharges − charges; affordable = totalGold / Unk6; number-input dialog
+(`fcn.0007c646`, 1..min(missing, affordable), prompt 0x15e10c); **price = n × Unk6**;
+on pay: `slot.charges += n; slot.enchantCount += 1` (one enchant tick per service, which
+is what eventually bricks the item at MaxEnchantmentCount). Text Unk4 / default 0x15e110;
+"can't afford any" -> 0x15e0d0.
+
+**RemoveCurse (3, `fcn.00066f04`):** party-member picker (`fcn.0007e1d2`, per-member
+callback 0x66fce -> `fcn.00049e28` = "has any equipped slot with Cursed flag (slotFlags
+& 4)", else state 718); nobody qualifies -> dialog 0x15e3c4. **price = flat Unk6**; on
+pay `fcn.00049d82(sheet)`: every equipped (1..9) cursed item is **REMOVED/destroyed**
+(`fcn.00049584` count−1, slot cleared) — not just uncursed; backpack is not scanned
+(cursed items only bind when equipped). Text Unk4 / default 0x15e0ec.
+
+**AskOpinion (4, `fcn.00067018`) = item identification:** item picker (filter 0x671b0:
+already has ExtraInfo flag (slotFlags & 1) -> state 565, else selectable);
+**price = item Value × Unk6 / 100** (same formula as repair); on pay **`slotFlags |= 1`
+(= ItemSlotFlags.ExtraInfo, the "identified" bit)**. Text Unk4 / default 0x15e0fc.
+
+**SleepInRoom (6, `fcn.00067483`):** **price = Unk6 × (active, conscious party members)**
+(`fcn.00038ea3` counts slots passing fcn.00039941 + fcn.00035875) — per-head, not flat;
+on pay: text Unk4 / default 0x15e18c, then `fcn.00068a8c(1)` -> sets innMode
+`0x178020 = 1` and runs the rest event script `0x13ec02` -> executor 0x68b05, which in
+inn mode calls **`RestoreSlot(slot, Unk5)`** per member — i.e. **Unk5 = the restore
+percentage** of Max LP/SP (+Stamina/15, +MagicTalent/15), and the inn path consumes
+NO rations (the ration branch is skipped). Corrects the UAlbion placeholder (flat 8-hour
+rest at 50%): an inn restores Unk5 % and charges per member.
+
+**Merchant (7) / ScrollMerchant (9, both `fcn.0006750c` -> `fcn.00067cfc`):** pushes
+screen descriptor `0x13eb3c` (init 0x67d2f, frame 0x67e07, exit 0x67e5b...); init loads
+the wares inventory **`fcn.000233b8(.., id = Unk8)` -> handle 0x178018** and the exit
+saves it back (`fcn.00023480(handle, Unk8)`); Unk2 != 0xFF is shown as the goodbye text.
+**ScrollMerchant has zero special code — the "scroll" nature is purely the stock
+contents of chest/merchant inventory Unk8.**
+
+### 6. Ground-shadow LUT (CONFIRMED)
+
+The combat shadow LUT `0x17d25c` (stored into the shadow slot at +0x36 by StartShadow
+`fcn.000558d2`, used by sprite render kind 3) is one of **11 consecutive 256-byte
+palette-remap tables** rebuilt by `fcn.00080807` on every palette change (7 call sites;
+validity flag `u16 0x13eec2`):
+
+| Table | Tint target | Blend % |
+|---|---|---|
+| `0x17d25c` | black | **50** — the monster ground-shadow LUT |
+| `0x17d35c` / `0x17d45c` / `0x17d55c` / `0x17d65c` | black | 40 / 30 / 20 / 10 |
+| `0x17d75c` / `0x17d85c` / `0x17d95c` / `0x17da5c` / `0x17db5c` | white | 10 / 20 / 30 / 40 / 50 |
+| `0x17dc5c` | red (255,0,0) | 50 |
+
+Construction `fcn.00080e7d(table, start=0, count=256, tR, tG, tB, pct)`:
+first `fcn.000710a3(0x17e160, 0, 256)` snapshots the current palette (entries at
+`0x17e164 + i*4`, RGB in bytes 0..2); then per index i:
+
+```
+c'[ch] = target[ch] + (pal[i][ch] - target[ch]) * (100 - pct) / 100   // blend pct% toward target
+table[i] = NearestPaletteIndex(c')                                     // fcn.0007113b
+```
+
+So the original shadow is **"darken every colour 50 % toward black, then snap to the
+nearest colour in the current palette"** — a palette-quantised darkening, not 50 % alpha.
+For UAlbion: shadow pixel = `palette[lut[srcIndex]]`; the palette snapping (banding) is
+part of the authentic look. The UI text/dialog renderers use the white/black tables for
+font shading, and several spell handlers build transient screen-tint tables by calling
+`fcn.00080e7d` directly (e.g. 0x9c1dc frost flash, 0xa4965, 0xa5bf4, 0xa7a28, 0xa837e).
+
+### New key globals / functions (this section)
+
+| Addr | Meaning |
+|---|---|
+| `fcn.000665ce` | AppendSlotToLootList (6-byte slot copy; handle 0x177fec, count 0x177ff8, cap 792) |
+| `0x177ff4` / `0x177ff0` | battle loot gold / rations accumulators |
+| `fcn.0004e124` | monster-death loot dump (equip+backpack+gold+rations) then kill |
+| `fcn.00049584` / `fcn.0004a4ee` | RemoveFromSlot(sheet, slotIdx, n) / clear slot (memset 6) |
+| `fcn.0004a49c` | IsSlotEmpty (1 = empty) — corrects "GetItemId" label |
+| `fcn.000601a6` | spell gate: returns margin = M − resist; excl/incl class masks; effects 774/731/630/418 |
+| `0x4a975` | per-buff-kind apply-effect id table (u16[4], in code segment) |
+| `fcn.000666e9` | PlaceAction dispatcher (event type 0xB); fn table `0x13eaf0`[13] |
+| `0x178000..0x178020` | PlaceAction globals (source, member, Unk2-8, innMode at 0x178020) |
+| `fcn.00067b9c` | TrySpendPartyGold(amount in tenths) — pooled, confirm dialog (Unk3 / text 200) |
+| `fcn.00038804` / `fcn.000388a0` | get / set total party gold (set redistributes) |
+| `fcn.00038ea3` | count active+conscious party members (inn pricing) |
+| `fcn.00035875` | IsConscious (= !(conditions & 1)) — NOT "IsSpellcaster" |
+| `fcn.000371d3` | sheet spell-class bitmask test (`byte sheet+4` & 1<<school) |
+| `fcn.00060301` | LearnSpell: known-bit `sheet+0xF2+school*4`; initial mastery = MagicTalent × 4 |
+| `fcn.00060aac` | SPELLDAT byte+2 lookup (LevelRequirement — gate + price multiplier) |
+| `fcn.000365d5` | GetLevel (`byte sheet+5`) |
+| `fcn.00049e28` / `fcn.00049d82` | has-cursed-equipped test / destroy all cursed equipped items |
+| `fcn.0007ec65` / `fcn.0007e1d2` / `fcn.0007c646` | item picker / member picker / number-input dialogs |
+| `fcn.00067cfc` / `0x13eb3c` / `0x178018` | merchant screen / its descriptor / wares handle (id = Unk8) |
+| `fcn.00080807` / `fcn.00080e7d` / `fcn.0007113b` | LUT-set builder / tint-table builder / nearest-palette-colour |
+| `0x17d25c..0x17dc5c` | 11 × 256 B remap LUTs (black 50..10, white 10..50, red 50) |
+| `0x17e160` / `0x13eec2` | palette snapshot for LUT building / LUTs-valid flag |
+
+### Corrections to earlier sections of this file
+
+- "Equipment break ... morph the item via fcn.000665ce" — WRONG: no morph exists.
+  fcn.000665ce appends the slot to the battle loot list; the break path flags the slot
+  Broken, moves it to the loot pile and clears the equipment slot (§1).
+- Spell table *Item 1*: damage magnitudes are `max(1, margin*K/100)` where
+  **margin = M − effective MagicResist** (gate return), not raw M (§4). The "104
+  KamulosGaze instant-kill" row is confirmed; Fungification's "half current LP" is wrong
+  (§3).
+- `fcn.0004a49c` = IsSlotEmpty, not GetItemId.
+- The spell gate's two masks are exclusion + inclusion (exclusion wins); class bit 0x80
+  is a frost/death-magic immunity bit (§4). The gate RETURNS the margin, which the
+  handlers reuse as the effective magnitude multiplier.
+- "Initial mastery value when a spell is first learned" (open item) — resolved:
+  **4 × effective MagicTalent** at learn time, scale 0..10000 (§5 LearnSpells).
+- PlaceActionManager.cs notes: gold should be pooled party-wide (not leader-only);
+  prices are in gold-tenths; SleepInRoom is per-member priced with restore % = Unk5.

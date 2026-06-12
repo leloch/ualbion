@@ -222,7 +222,13 @@ static class Albion
             ;
 
         if (!commandLine.Mute)
-            gameServices.Add(new AudioManager(false));
+        {
+            // A missing/busy audio device must not kill the game — run silent instead
+            // (OpenAL throws AudioException when no device can be opened, e.g. headless
+            // sessions, RDP, or a device wedged by force-killed processes).
+            try { gameServices.Add(new AudioManager(false)); }
+            catch (Exception ex) { Console.WriteLine($"Audio device unavailable, running muted: {ex.Message}"); }
+        }
 
         global.Attach(gameServices);
 

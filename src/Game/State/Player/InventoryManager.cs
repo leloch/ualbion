@@ -53,6 +53,10 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         On<ReadSpellScrollEvent>(OnReadSpellScroll);
         On<ConsumeItemChargeEvent>(OnConsumeCharge);
         On<BreakInventorySlotEvent>(OnBreakSlot);
+        On<RepairInventorySlotEvent>(OnRepairSlot);
+        On<IdentifyInventorySlotEvent>(OnIdentifySlot);
+        On<RechargeInventorySlotEvent>(OnRechargeSlot);
+        On<DestroyCursedEquipmentEvent>(OnDestroyCursed);
 
         ItemInHand = new ReadOnlyItemSlot(_hand);
     }
@@ -694,10 +698,11 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
 
     void OnBreakSlot(BreakInventorySlotEvent e)
     {
-        // Combat equipment wear (MAIN.EXE fcn.0004f920): flag the slot broken and show the
-        // "X is broken!" combat message (SYSTEXTS 736). The original also morphs the item
-        // into its broken variant via a transform table — not modelled (PLACEHOLDER:
-        // flag + message; the Broken flag already blocks selling and shows in inventory).
+        // Combat equipment wear (MAIN.EXE fcn.0004f920): flag the slot broken (the item
+        // id never changes — RE batch 4 confirmed there is NO morph) and show the
+        // "X is broken!" message. The original moves the broken item to the post-combat
+        // loot list and empties the slot; we keep it equipped with the Broken flag
+        // (PLACEHOLDER until the battle-loot window exists). RepairItem clears the flag.
         var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
         var inv = _getInventory(invId);
         var slot = inv?.GetSlot(e.SlotId);
@@ -709,6 +714,73 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         var tf = Resolve<ITextFormatter>();
         Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.CombatMsg_XIsBroken, item)));
         Raise(new InventoryChangedEvent(invId));
+    }
+
+    void OnRepairSlot(RepairInventorySlotEvent e)
+    {
+        // RepairItem NPC service (RE batch 4): clears the Broken flag, item unchanged.
+        var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
+        var slot = _getInventory(invId)?.GetSlot(e.SlotId);
+        if (slot == null || slot.Item.Type != AssetType.Item || (slot.Flags & ItemSlotFlags.Broken) == 0)
+            return;
+        slot.Flags &= ~ItemSlotFlags.Broken;
+        Info($"[Inv] Repaired {slot.Item} in {e.MemberId}'s {e.SlotId} slot");
+        Raise(new InventoryChangedEvent(invId));
+    }
+
+    void OnIdentifySlot(IdentifyInventorySlotEvent e)
+    {
+        // AskOpinion NPC service (RE batch 4): sets the ExtraInfo (identified) flag.
+        var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
+        var slot = _getInventory(invId)?.GetSlot(e.SlotId);
+        if (slot == null || slot.Item.Type != AssetType.Item || (slot.Flags & ItemSlotFlags.ExtraInfo) != 0)
+            return;
+        slot.Flags |= ItemSlotFlags.ExtraInfo;
+        Info($"[Inv] Identified {slot.Item} in {e.MemberId}'s {e.SlotId} slot");
+        Raise(new InventoryChangedEvent(invId));
+    }
+
+    void OnRechargeSlot(RechargeInventorySlotEvent e)
+    {
+        // RestoreItemEnergy NPC service (RE batch 4): adds charges (capped at the item's
+        // MaxCharges) and bumps the enchant counter once per service, capped by
+        // MaxEnchantmentCount.
+        var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
+        var slot = _getInventory(invId)?.GetSlot(e.SlotId);
+        if (slot == null || slot.Item.Type != AssetType.Item || e.Charges == 0)
+            return;
+        var item = _getItem(slot.Item);
+        if (item == null || item.MaxCharges == 0)
+            return;
+
+        slot.Charges = (byte)Math.Min(item.MaxCharges, slot.Charges + e.Charges);
+        if (slot.Enchantment < item.MaxEnchantmentCount)
+            slot.Enchantment++;
+        Info($"[Inv] Recharged {slot.Item} to {slot.Charges}/{item.MaxCharges} charges (enchant {slot.Enchantment}/{item.MaxEnchantmentCount})");
+        Raise(new InventoryChangedEvent(invId));
+    }
+
+    void OnDestroyCursed(DestroyCursedEquipmentEvent e)
+    {
+        // RemoveCurse NPC service (RE batch 4): cursed EQUIPPED items are DESTROYED,
+        // not uncursed — the service frees the body slots.
+        var invId = new InventoryId(InventoryType.Player, (ushort)e.MemberId.Id);
+        var inv = _getInventory(invId);
+        if (inv == null)
+            return;
+
+        bool any = false;
+        foreach (var slot in inv.EnumerateBodyParts())
+        {
+            if (slot == null || slot.Item.Type != AssetType.Item || (slot.Flags & ItemSlotFlags.Cursed) == 0)
+                continue;
+            Info($"[Inv] Curse removal destroyed {slot.Item} ({e.MemberId}'s {slot.Id.Slot} slot)");
+            slot.Clear();
+            any = true;
+        }
+
+        if (any)
+            Raise(new InventoryChangedEvent(invId));
     }
 
     AlbionTask OnReadItem(ReadItemEvent e)
