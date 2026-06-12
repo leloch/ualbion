@@ -41,7 +41,10 @@ public class LogicalMap2D : LogicalMap
             return null;
 
         int tileIndex = _mapData.Tiles[index].Underlay;
-        return tileIndex >= 1 ? TileData.Tiles[tileIndex] : null;
+        // Upper bound check: map cells can hold out-of-range tile ids (e.g. a script
+        // ChangeUnderlay with value 0 wraps to 0xFFFF) — treat as "no tile" rather than
+        // letting NPC movement queries crash the game.
+        return tileIndex >= 1 && tileIndex < TileData.Tiles.Count ? TileData.Tiles[tileIndex] : null;
     }
 
     public TileData GetOverlay(int x, int y) => GetOverlay(Index(x, y));
@@ -51,7 +54,7 @@ public class LogicalMap2D : LogicalMap
             return null;
 
         int tileIndex = _mapData.Tiles[index].Overlay;
-        return tileIndex > 1 ? TileData.Tiles[tileIndex] : null;
+        return tileIndex > 1 && tileIndex < TileData.Tiles.Count ? TileData.Tiles[tileIndex] : null;
     }
 
     public Passability GetPassability(int index)
