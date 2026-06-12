@@ -68,6 +68,8 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public IDictionary<AutomapId, byte[]> Automaps => _game.Automaps;
     public bool IsChainDisabled(MapId mapId, ushort chain) => _game.IsChainDisabled(mapId, chain);
     public bool IsNpcDisabled(MapId mapId, byte npcNum) => _game.IsNpcDisabled(mapId, npcNum);
+    public bool IsAutomapMarkerFound(int markerId) => _game?.IsAutomapMarkerFound(markerId) ?? false;
+    public void SetAutomapMarkerFound(int markerId) => _game?.SetAutomapMarkerFound(markerId, true);
     public bool IsEventUsed(AssetId eventSetId, ActionEvent action) => _game.IsEventUsed(eventSetId, action);
 
     public MapId MapId => _game.MapId;

@@ -60,6 +60,19 @@ public class SavedGame
     public IDictionary<TickerId, byte> Tickers => _tickers;
     public bool GetSwitch(SwitchId flag) => _switches.GetFlag(flag.Id);
     public void SetSwitch(SwitchId flag, bool value) => _switches.SetFlag(flag.Id, value);
+
+    // The goto-point (automap marker) visited bits — the original's switch type 7,
+    // indexed by AutomapInfo.MarkerId and set by stepping on the marker's tile
+    // (MAIN.EXE fcn.0005c10a). Gates the automap goto glyphs and the Teleporter
+    // spell's destination list. Serialized at save offset 0x5972 (256 bits).
+    public bool IsAutomapMarkerFound(int markerId)
+        => markerId >= 0 && markerId < AutomapMarkerCount && _automapMarkersFound.GetFlag(markerId);
+
+    public void SetAutomapMarkerFound(int markerId, bool value)
+    {
+        if (markerId >= 0 && markerId < AutomapMarkerCount)
+            _automapMarkersFound.SetFlag(markerId, value);
+    }
     public bool IsNpcDisabled(MapId mapId, int npcNumber)
     {
         if (mapId.IsNone)

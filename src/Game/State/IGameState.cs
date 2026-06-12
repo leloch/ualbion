@@ -34,6 +34,10 @@ public interface IGameState
     IList<NpcState> Npcs { get; }
     /// <summary>Per-map automap discovery bitfields (persisted in the save file).</summary>
     IDictionary<AutomapId, byte[]> Automaps { get; }
+    /// <summary>Goto-point visited bit (the original's switch type 7, by AutomapInfo.MarkerId).</summary>
+    bool IsAutomapMarkerFound(int markerId);
+    /// <summary>Mark a goto-point visited (party stepped on its tile).</summary>
+    void SetAutomapMarkerFound(int markerId);
     bool IsChainDisabled(MapId mapId, ushort chain);
     bool IsNpcDisabled(MapId mapId, byte npcNum);
     bool IsEventUsed(AssetId eventSetId, ActionEvent action);
