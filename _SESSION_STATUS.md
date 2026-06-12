@@ -55,12 +55,28 @@ Commits `ff4ad33c..fc85bdf3`. All green throughout: 499 tests (203 Game.Tests), 
    9-condition cleanse + mastery heal; Recuperation = magical full rest (gated >8 h
    awake, resets fatigue).
 
+### Sixth pass (same day) — RE batch 4 applied, all 12 NPC services, audio fail-soft
+
+Commits `aacc7279` + `573bcf10`. A background radare2 agent decoded the remaining
+unknowns (_RE_COMBAT.md "RE batch 4"); everything applied:
+- **Margin scaling** (major): gated damage spells deal max(1, (M−resist)·K/100) — the
+  gate margin, not raw M. KamulosGaze = deterministic instant kill (class bit 0x80
+  immune), Fungification = margin·120/100, all three frost spells freeze.
+- **No broken-item morph exists** — fcn.000665ce is AppendSlotToLootList; the Broken
+  flag was right, broken gear should move to the (unimplemented) battle-loot window.
+- **All 12 PlaceAction services live**: LearnSpells (price = Unk6×LevelRequirement,
+  mastery seeds at 4×MagicTalent), RepairItem, RestoreItemEnergy, RemoveCurse
+  (destroys cursed equipment), AskOpinion (identify), ScrollMerchant≡Merchant. Party
+  gold is pooled (fcn.00067b9c).
+- Monster SP shadow (casts drain), MagicShield type-2 resist boost in the spell gate,
+  View of Life (monster LP on the grid), Levitation (pit-tile exemption).
+- **Audio fail-soft**: a missing/busy audio device no longer crashes the game.
+
 ### Open items
-- Trap/mine area placement ("Big" variants differ only by SPELLDAT area), Banish area
-  targeting (row/all), monster SP shadow, broken-item morph table, the MagicShield
-  type-2 resist boost for party targets.
-- PlaceAction types LearnSpells / RepairItem / RestoreItemEnergy / RemoveCurse /
-  ScrollMerchant / AskOpinion are logged placeholders.
+- Battle-loot window (break/kill loot lists — fcn.000665ce/0004e124 decoded, UI absent);
+  trap/mine/Banish AREA placement ("Big"/row/all variants currently single-target).
+- Teleporter travel UI (the last placeholder spell); shadow LUT palette-snap
+  (50 %-black approximation in place — the original remaps via 0x17d25c tables).
 - World-map mouse pathfinding, key-rebind UI (maintainer wishlist).
 - Automap RENDERING still uses fixed glyphs (original: connection-mask wall glyphs).
 - DumpJson.cs:46 NREs when dumping event sets via --dump.
