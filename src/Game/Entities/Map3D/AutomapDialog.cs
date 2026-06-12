@@ -16,6 +16,9 @@ namespace UAlbion.Game.Entities.Map3D;
 [Event("show_automap", "Toggle the 3D dungeon automap overlay")]
 public class ShowAutomapEvent : Event { }
 
+[Event("reveal_automap", "Reveal the entire automap for the current map (Map View spell)")]
+public class RevealAutomapEvent : Event { }
+
 /// <summary>
 /// The 3D dungeon automap (Phase 5.3): a top-down overlay composed at runtime from the
 /// AutomapTiles graphics. Wall tiles use the map's AutomapGraphics table (wall index →
@@ -42,6 +45,14 @@ public class AutomapDialog : GameComponent
         _mapData = mapData ?? throw new ArgumentNullException(nameof(mapData));
         _discovered = new Automap(_map.Width, _map.Height);
         On<ShowAutomapEvent>(_ => Toggle());
+        On<RevealAutomapEvent>(_ =>
+        {
+            for (int y = 0; y < _map.Height; y++)
+                for (int x = 0; x < _map.Width; x++)
+                    _discovered.Set(x, y, true);
+            Persist();
+            if (_visible) { Hide(); Show(); } // Refresh if currently open
+        });
     }
 
     protected override void Subscribed()

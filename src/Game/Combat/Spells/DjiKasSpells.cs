@@ -47,7 +47,11 @@ public static class DjiKasSpells
         SpellEffectRegistry.Register(new RemoveTrapEffect(Base.Spell.RemoveTrapDK));
         // Fungification: the wiki gives no mechanic; treated as damage + poison pending RE.
         SpellEffectRegistry.Register(new DamageSpellEffect(Base.Spell.Fungification, baseDamage: 6, strengthScale: 1));
-        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Light, "raise dungeon ambient light level (needs LabyrinthData light override plumbing)"));
+        // Light raises the dungeon ambient level (ETM uAmbient → fragment shader multiply).
+        // PLACEHOLDER: +50 percent-points and no duration decay (the original tracks Light
+        // as an active spell percentage in SavedGame.ActiveSpells[0..1]).
+        SpellEffectRegistry.Register(new EventSpellEffect(Base.Spell.Light,
+            () => new UAlbion.Game.Events.AmbientLightEvent(50)));
         SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.ViewOfLife, "show monster LP in combat UI (needs combat UI hookup)"));
     }
 }

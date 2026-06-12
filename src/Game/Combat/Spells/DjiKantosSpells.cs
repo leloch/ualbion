@@ -26,7 +26,10 @@ public static class DjiKantosSpells
 
         // Escape / utility (PLACEHOLDERs documented per-spell)
         SpellEffectRegistry.Register(new WithdrawEffect(Base.Spell.QuickWithdrawal)); // Ends combat as Retreat
-        SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.MapView, "reveal the automap for the current map (hook into automap visited-state once Phase 5.3 lands)"));
+        // Map View reveals the whole automap and opens it.
+        SpellEffectRegistry.Register(new EventSpellEffect(Base.Spell.MapView,
+            () => new UAlbion.Game.Entities.Map3D.RevealAutomapEvent(),
+            () => new UAlbion.Game.Entities.Map3D.ShowAutomapEvent()));
         SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Teleporter, "open the teleporter destination picker (needs the Goto-marker map list UI)"));
         SpellEffectRegistry.Register(new UtilitySpellEffect(Base.Spell.Levitation, "float over pit tiles in 3D maps (needs pit-tile collision exemption)"));
     }

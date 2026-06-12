@@ -87,7 +87,8 @@ sealed partial class EtmPipeline : PipelineHolder { }
 
 sealed partial class EtmSet : ResourceSetHolder
 {
-    [UniformBuffer("Properties", ShaderStages.Vertex)] IBufferHolder<DungeonTileMapProperties> _properties;
+    // Fragment stage needs uAmbient for the dungeon lighting multiply (Light spell line).
+    [UniformBuffer("Properties", ShaderStages.Vertex | ShaderStages.Fragment)] IBufferHolder<DungeonTileMapProperties> _properties;
     [TextureArray("DayFloors", ShaderStages.Fragment)] ITextureArrayHolder _dayFloors;
     [TextureArray("DayWalls", ShaderStages.Fragment)] ITextureArrayHolder _dayWalls;
     [TextureArray("NightFloors", ShaderStages.Fragment)] ITextureArrayHolder _nightFloors;
