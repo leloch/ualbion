@@ -91,6 +91,13 @@ public sealed class SpellCastContext
     public System.Action<ICombatParticipant> SoulRise { get; init; }
 
     /// <summary>
+    /// Apply a status condition (Asleep/Paralysed/Blind/Panicking/…) to any combatant —
+    /// party members persist it on their sheet, monsters get it in the battle's transient
+    /// condition shadow so debuff spells land on enemies. Null outside combat / in tests.
+    /// </summary>
+    public System.Action<ICombatParticipant, UAlbion.Formats.Assets.Sheets.PlayerCondition> ApplyCondition { get; init; }
+
+    /// <summary>
     /// All combatants on the CASTER's side (in combat) or the whole party (outside) —
     /// used by party-wide spells (Recuperation). Null when unavailable.
     /// </summary>
