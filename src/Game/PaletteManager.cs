@@ -21,13 +21,20 @@ public class PaletteManager : GameServiceComponent<IPaletteManager>, IPaletteMan
         get
         {
             var state = TryResolve<IGameState>();
-            if (state == null || Night == null)
+            // Day/night cycling is gated on the MAP's lighting mode (mapFlags & 3 ==
+            // DayNightCycle), not on whether the palette happens to be in the night-palette
+            // table — so dungeons/shops never darken, and every outdoor map does.
+            if (state == null || Night == null || !IsDayNightMap())
                 return 0;
 
             var daysElapsed = (float)state.Time.TimeOfDay.TotalDays; // how far through the day we are (0..1)
             return MathF.Cos(daysElapsed * MathF.PI * 2) * 0.5f + 0.5f;
         }
     }
+
+    bool IsDayNightMap() =>
+        TryResolve<IMapManager>()?.Current?.MapData is { } map
+        && map.LightingMode == UAlbion.Formats.Assets.Maps.MapLightingMode.DayNightCycle;
 
     public PaletteManager()
     {
@@ -57,9 +64,16 @@ public class PaletteManager : GameServiceComponent<IPaletteManager>, IPaletteMan
         }
 
         Day = day;
-        Night = NightPalettes.TryGetValue(paletteId, out var nightPaletteId)
-            ? Assets.LoadPalette(nightPaletteId)
-            : null;
+        // Specific day→night mapping if one exists; otherwise, for an outdoor day/night map,
+        // fall back to the generic OutdoorsNight so later regions (whose exact night palette
+        // isn't in the table) still darken instead of staying bright all night. Indoor/dungeon
+        // maps get no night palette (Blend also gates them out via IsDayNightMap).
+        if (NightPalettes.TryGetValue(paletteId, out var nightPaletteId))
+            Night = Assets.LoadPalette(nightPaletteId);
+        else if (IsDayNightMap())
+            Night = Assets.LoadPalette(Base.Palette.OutdoorsNight);
+        else
+            Night = null;
 
         if (Night != null)
         {
