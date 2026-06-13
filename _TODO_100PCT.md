@@ -183,15 +183,20 @@ chain + add a swap prompt if it hard-fails. **M.**
 Reported from an actual play session. These are movement/camera/UI defects, not content gaps —
 several are likely small fixes but each needs reproduction + a root-cause pass. Iterate later.
 
-1. **3D movement W/S reversed** — pressing **W moves the party BACKWARDS** (and S forward). Axis
-   sign flip in the forward/back movement handler (`Movement3D` / `Normal3DMouseMode` key map). **S.**
-2. **3D mouse rotation dead** — clicking the on-screen rotation icon at the side of the viewport
-   does not turn the party. The turn-left/turn-right screen-edge controls aren't wired (or wired
-   to the wrong event). **S–M.**
-3. **3D mouse movement goes the wrong way** — click-to-move / hold-to-move sends the player in
-   the wrong direction (axis or screen→world mapping inverted, likely same root as #1). **M.**
-4. **3D no wall collision** — the player **clips through walls**; collision detection appears to
-   not run in 3D (or the collision map isn't consulted on mouse/keyboard moves). **M — gameplay-breaking.**
+1. **3D movement W/S reversed** — ✅ **FIXED** (`input.json` World3D). Root: WASD was bound to the
+   collision-free free camera with `Y=-1` for W, but both move handlers treat *positive Y = forward*.
+   Rebound WASD → `party_move` with positive-forward signs. Verified live (fwd → -Z, back returns).
+2. **3D mouse rotation dead** — ✅ **FIXED (wired)** (`Movement3D.OnMove3D`). The mouse turn/look
+   zones set `PartyMove3DEvent.Yaw/Pitch` but `OnMove3D` only read `Velocity` and early-returned
+   when velocity was zero, dropping all rotation. Now raises `CameraRotateEvent` for yaw/pitch
+   before the translation early-return. (Live mouse-drag confirmation still pending — harness can't
+   send the Yaw part.)
+3. **3D mouse movement goes the wrong way** — likely resolved by #1/#2 (the Forward/Back/Strafe
+   zones already send the correct signs; the disorientation came from the dead rotation + reversed
+   keyboard). **Confirm live.**
+4. **3D no wall collision** — ✅ **FIXED** (same rebind as #1). Plain WASD drove `camera_move` (free
+   cam, no collision); now drives `party_move` → `Movement3D.FilterCollision`. Verified live: 500
+   forward steps stop at a wall (~z 21.3) instead of clipping through.
 5. **2D mouse movement impossible** — 2D maps are keyboard-only; clicking the map does not move
    the party. (Matches the doc's "No 2D drag-to-walk" gap — but confirm even single click-to-step
    is absent.) **XL (full path-to-click) or M (single-step).**
