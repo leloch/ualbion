@@ -117,4 +117,24 @@ public class CombatFormulasTests
         for (int i = 0; i < 5; i++) m = CombatFormulas.GrowMastery(m, 99);
         Assert.Equal(495, m); // 5 casts × 99
     }
+
+    // --- Surrender win-condition (RE fcn.0x51a2e: threshold = max(1, partySize-2)) ---
+
+    [Theory]
+    [InlineData(6, 4)]  // full party → threshold 4
+    [InlineData(4, 2)]
+    [InlineData(3, 1)]
+    [InlineData(2, 1)]  // clamped to min 1
+    [InlineData(1, 1)]  // clamped to min 1
+    public void SurrenderThreshold_MaxOnePartyMinusTwo(int partySize, int expected)
+        => Assert.Equal(expected, CombatFormulas.SurrenderThreshold(partySize));
+
+    [Theory]
+    [InlineData(6, 5, false)] // 5 conscious > threshold 4 → no surrender
+    [InlineData(6, 4, true)]  // 4 conscious <= 4 → surrender
+    [InlineData(6, 2, true)]
+    [InlineData(3, 2, false)] // threshold 1; 2 > 1 → no
+    [InlineData(3, 1, true)]  // 1 <= 1 → surrender
+    public void ShouldRequestSurrender_WhenConsciousAtOrBelowThreshold(int partySize, int conscious, bool expected)
+        => Assert.Equal(expected, CombatFormulas.ShouldRequestSurrender(partySize, conscious));
 }

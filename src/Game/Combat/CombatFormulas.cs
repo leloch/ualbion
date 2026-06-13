@@ -89,4 +89,17 @@ public static class CombatFormulas
     public const int MaxMastery = 10000;
     public static ushort GrowMastery(int current, int magicTalent)
         => (ushort)Math.Clamp(current + Math.Max(0, magicTalent), 0, MaxMastery);
+
+    /// <summary>
+    /// The final-boss surrender win-condition (RE: monster behaviour-strategy row 8 col2,
+    /// fcn.0x51a2e — see _RE_ASK_SURRENDER.md). The end-game AI is intentionally unkillable;
+    /// instead, after a surrender-capable monster's strike that deals damage, it "asks for
+    /// surrender" once the party's conscious count drops to the threshold, which the original
+    /// signals via combat outcome 4. threshold = max(1, partySize - 2); surrender fires when
+    /// conscious &lt;= threshold. (The map-event opcode ask_surrender / 0x1C is inert — the
+    /// 9 data bytes are never read; the logic is pure monster AI.)
+    /// </summary>
+    public static int SurrenderThreshold(int partySize) => Math.Max(1, partySize - 2);
+    public static bool ShouldRequestSurrender(int partySize, int consciousCount)
+        => consciousCount <= SurrenderThreshold(partySize);
 }
