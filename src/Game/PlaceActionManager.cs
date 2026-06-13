@@ -105,7 +105,7 @@ public class PlaceActionManager : GameComponent
             case PlaceActionType.Cure:              Cure(e.Unk6); break;
             case PlaceActionType.SleepInRoom:       Sleep(e.Unk6); break;
             case PlaceActionType.OrderFood:         ShowFoodMenu(e.Unk6); break;
-            case PlaceActionType.LearnCloseCombat:  ShowTrainMenu(Skill.Melee, e.Unk6); break;
+            case PlaceActionType.LearnCloseCombat:  ShowTrainMenu(TrainedSkill(e.Unk5), e.Unk6); break;
             case PlaceActionType.LearnSpells:       ShowLearnSpellsMenu((UAlbion.Formats.Assets.SpellClass)e.Unk5, e.Unk6); break;
             case PlaceActionType.RepairItem:        ShowRepairMenu(e.Unk6); break;
             case PlaceActionType.RestoreItemEnergy: ShowRechargeMenu(e.Unk6); break;
@@ -250,6 +250,19 @@ public class PlaceActionManager : GameComponent
         Info($"[PlaceAction] Bought {e.Amount} rations ({e.Price * e.Amount} gold)");
         ShowSuccessText();
     }
+
+    // The "LearnCloseCombat" service (type 0x0) is the generic skill trainer; Unk5 selects
+    // WHICH skill (RE fcn.000667ea reads Unk5 0x17800e into the skill getter/setter): 0 =
+    // Melee, 1 = Ranged, 2 = Critical-Hit (Maini @ Kounos), 3 = Lock-Picking — matching the
+    // consecutive skill offsets 0x7A/0x82/0x8A/0x92 and the Skill enum order. Previously
+    // hardcoded to Melee, so the Ranged / Critical / Lock-Picking trainers did nothing.
+    static Skill TrainedSkill(int unk5) => unk5 switch
+    {
+        1 => Skill.Ranged,
+        2 => Skill.CriticalChance,
+        3 => Skill.LockPicking,
+        _ => Skill.Melee,
+    };
 
     void ShowTrainMenu(Skill skill, ushort goldPerPoint)
     {
