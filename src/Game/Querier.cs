@@ -40,6 +40,11 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
         On<UAlbion.Formats.MapEvents.ChangeUsedItemEvent>(e => { if (Context is EventContext c) c.UsedItemOverride = (AssetId)e.ItemId; });
         OnQuery<      QueryNpcActiveEvent, bool>(q => Resolve<IGameState>().IsNpcDisabled(MapId.None, q.Immediate));
         OnQuery<QueryScriptDebugModeEvent, bool>(_ => false);
+        OnQuery<  QueryIsCurrentMap2DEvent, bool>(_ =>
+        {
+            var t = TryResolve<IMapManager>()?.Current?.MapData?.MapType;
+            return t is UAlbion.Formats.Assets.Maps.MapType.TwoD or UAlbion.Formats.Assets.Maps.MapType.TwoDOutdoors;
+        });
         OnQuery<   QueryDoorUnlockedEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().IsDoorOpen(q.DoorId) ? 1 : 0, q.Immediate));
         OnQuery<  QueryChestUnlockedEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().IsChestOpen(q.ChestId) ? 1 : 0, q.Immediate));
         // Leader character-attribute / day-count branches (previously threw at map load).
