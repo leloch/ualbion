@@ -100,19 +100,29 @@ public class GameClock : ServiceComponent<IClock>, IClock
                 ((IComponent) state).Receive(_setTimeEvent, this);
 
                 int time = newGameTime.Day * 10000 + newGameTime.Hour * 100 + newGameTime.Minute;
-                if (newGameTime.Minute != lastGameTime.Minute)
+
+                // STATE-05: a single large frame delta can cross more than one boundary; fire one
+                // event per boundary actually crossed (was a single check firing at most once, so a
+                // hitch silently dropped poison/fatigue/buff ticks). Count integer boundaries via
+                // floored absolute units; cap the catch-up so a debugger pause can't storm events.
+                const int MaxCatchup = 48;
+                int minuteBoundaries = (int)((long)(newGameTime - System.DateTime.MinValue).TotalMinutes - (long)(lastGameTime - System.DateTime.MinValue).TotalMinutes);
+                int hourBoundaries = (int)((long)(newGameTime - System.DateTime.MinValue).TotalHours - (long)(lastGameTime - System.DateTime.MinValue).TotalHours);
+                int dayBoundaries = (newGameTime.Date - lastGameTime.Date).Days;
+
+                for (int i = 0; i < minuteBoundaries && i < MaxCatchup * 60; i++)
                 {
                     GameTrace.Log.MinuteElapsed(time);
                     Raise(MinuteElapsedEvent.Instance);
                 }
 
-                if (newGameTime.Hour != lastGameTime.Hour)
+                for (int i = 0; i < hourBoundaries && i < MaxCatchup; i++)
                 {
                     GameTrace.Log.HourElapsed(time);
                     Raise(HourElapsedEvent.Instance);
                 }
 
-                if (newGameTime.Date != lastGameTime.Date)
+                for (int i = 0; i < dayBoundaries && i < MaxCatchup; i++)
                 {
                     GameTrace.Log.DayElapsed(time);
                     Raise(DayElapsedEvent.Instance);
