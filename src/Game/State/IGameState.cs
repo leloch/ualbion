@@ -48,6 +48,8 @@ public interface IGameState
     int AmbientLightSpellPct { get; }
     bool IsChainDisabled(MapId mapId, ushort chain);
     bool IsNpcDisabled(MapId mapId, byte npcNum);
+    bool IsChestOpen(ChestId id);
+    bool IsDoorOpen(DoorId id);
     bool IsEventUsed(AssetId eventSetId, ActionEvent action);
 
     /// <summary>Conversation keywords the party has discovered, shared across all NPCs so a

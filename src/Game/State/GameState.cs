@@ -68,6 +68,8 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public IDictionary<AutomapId, byte[]> Automaps => _game.Automaps;
     public bool IsChainDisabled(MapId mapId, ushort chain) => _game.IsChainDisabled(mapId, chain);
     public bool IsNpcDisabled(MapId mapId, byte npcNum) => _game.IsNpcDisabled(mapId, npcNum);
+    public bool IsChestOpen(ChestId id) => _game?.IsChestOpen(id) ?? false;
+    public bool IsDoorOpen(DoorId id) => _game?.IsDoorOpen(id) ?? false;
 
     // Conversation keywords discovered by the party, shared across every NPC so a word learnt
     // from one carries to the next. Runtime store (carries within a session); cross-save
