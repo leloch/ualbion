@@ -121,6 +121,19 @@ class NpcManager2D : Component
                 continue;
 
             bool isDisabled = game.IsNpcDisabled(_logicalMap.Id, (byte)index);
+
+            // Re-key the NPC sprite to THIS map's gfx set. The save serdes (SavedGame.cs) hardcodes
+            // MapType.TwoD, so a save made on an outdoor map restores every NPC as NpcLargeGfx —
+            // oversized (32x48 vs 16x32) and the wrong sprite. Small/large gfx are parallel (same
+            // numeric id), so swap the asset type to match the live map's UseSmallSprites.
+            var st = game.Npcs[index];
+            if (st != null && (st.SpriteOrGroup.Type == AssetType.NpcLargeGfx || st.SpriteOrGroup.Type == AssetType.NpcSmallGfx))
+            {
+                var want = _logicalMap.UseSmallSprites ? AssetType.NpcSmallGfx : AssetType.NpcLargeGfx;
+                if (st.SpriteOrGroup.Type != want)
+                    st.SpriteOrGroup = new AssetId(want, st.SpriteOrGroup.Id);
+            }
+
             _npcs[index] = new Npc2D(
                 _sceneObjects,
                 game.Npcs[index],
