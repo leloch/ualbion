@@ -65,6 +65,14 @@ public class BattleView : GameComponent
                 ? SwayAmplitude * MathF.Sin(2 * MathF.PI * SwayPhase / SwayPeriod)
                 : 0;
 
+        // Soul-rise dissolve (RE 6 worker 0xa1b20): a banished demon's body rises in
+        // world-Y at 250 units/frame toward 26000, shrinking by 3%/frame (floor 10%),
+        // drawn translucent, then is removed. Spawns 3 rising soul wisps. Replaces the
+        // normal Die-and-freeze for that mob.
+        public bool SoulRising;
+        public float SoulRiseWorldY;     // world units risen so far
+        public float SoulRiseScale = 1f; // shrinks toward 0.1
+
         // WalkPath lerp (RE 5A, vtable_2 sub 3 @0x52019): the sprite interpolates along
         // the waypoints at N engine frames per tile (N = Move anim length), stepping
         // the Move animation every engine frame while walking.
@@ -112,10 +120,21 @@ public class BattleView : GameComponent
     const DrawLayer EffectLayer = (DrawLayer)0x2FE;
     static DrawLayer RowLayer(int row) => (DrawLayer)(0x2F2 + row); // rows 0..3 => 0x2F2..0x2F5
 
+    // Soul-rise tuning, RE 6 worker 0xa1b20 (world units; tile = 64): body lifts at
+    // 250 u/frame to 26000, shrinks 3%/frame (floor 10%); 3 wisps rise at 100-150 u/frame.
+    const float SoulRiseSpeed = 250f;
+    const float SoulRiseTargetY = 26000f;
+    const float SoulRiseShrinkPerFrame = 0.03f;
+    const float SoulRiseMinScale = 0.10f;
+
+    sealed class Wisp { public Sprite Sprite; public float UiX; public float UiY; public float VelUiY; public int Frames; }
+
     readonly IReadOnlyBattle _battle;
     readonly Dictionary<int, Mob> _mobs = [];
     readonly List<Mob> _corpses = [];
+    readonly List<Mob> _soulRisers = []; // banished demons mid-dissolve (detached from their cleared tile)
     readonly List<Effect> _effects = [];
+    readonly List<Wisp> _wisps = [];
     int _frameCounter;
 
     public BattleView(IReadOnlyBattle battle)
@@ -125,6 +144,44 @@ public class BattleView : GameComponent
         On<CombatTurnHighlightEvent>(e => SetAnimation(e.TileIndex, CombatAnimationId.Melee));
         On<CombatHitEvent>(OnHit);
         On<CombatWalkEvent>(OnWalk);
+        On<CombatSoulRiseEvent>(OnSoulRise);
+    }
+
+    /// <summary>
+    /// Banish dissolve (RE 6): mark the mob soul-rising (it lifts/shrinks/fades and is
+    /// then removed instead of becoming a corpse) and spawn 3 rising translucent wisps
+    /// (combat-gfx #40). Arrives before the kill's CombatHitEvent, which OnHit then skips.
+    /// </summary>
+    void OnSoulRise(CombatSoulRiseEvent e)
+    {
+        if (!_mobs.TryGetValue(e.TileIndex, out var mob))
+            return;
+
+        mob.SoulRising = true;
+        mob.Sprite.Flags = mob.Sprite.Flags.SetOpacity(0.6f);
+
+        // Spawn 3 rising translucent soul wisps (RE 6: comgfx #40, render kind 8) near the
+        // body's feet point, drifting up. Velocity is in UI pixels (the exact world-unit
+        // figure isn't player-distinguishable; the body lift/shrink below uses the RE
+        // constants verbatim).
+        var (x, y, _) = TileToScreen(e.TileIndex % SavedGame.CombatColumns, e.TileIndex / SavedGame.CombatColumns);
+        var rng = TryResolve<IRandom>();
+        int Roll(int n) => rng?.Generate(n) ?? 0;
+        for (int i = 0; i < 3; i++)
+        {
+            var sprite = AttachChild(new Sprite(
+                (SpriteId)Base.CombatGfx.HGradientBlue, // comgfx #40 = soul sprite (RE 6)
+                EffectLayer,
+                SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest,
+                SpriteFlags.LeftAligned.SetOpacity(0.6f)));
+            _wisps.Add(new Wisp
+            {
+                Sprite = sprite,
+                UiX = x + (Roll(21) - 10),  // ±10 UI px jitter
+                UiY = y - Roll(20),         // staggered over the body's lower band
+                VelUiY = 2f + Roll(2)       // 2-3 UI px/frame up
+            });
+        }
     }
 
     /// <summary>
@@ -172,8 +229,12 @@ public class BattleView : GameComponent
         {
             // Die-and-freeze: vtable_2 sub 9 plays Die then leaves the sprite on the LAST
             // Die frame as a corpse (non-demonic ground monsters — the common case).
+            // A banished demon is already soul-rising — leave it to that path, don't
+            // overwrite it with the corpse freeze or splash.
             if (_mobs.TryGetValue(e.TileIndex, out var mob))
             {
+                if (mob.SoulRising)
+                    return;
                 mob.Animation = CombatAnimationId.Die;
                 mob.AnimationStep = 0;
                 mob.OneShot = false;
@@ -307,11 +368,17 @@ public class BattleView : GameComponent
             {
                 if (_mobs.Remove(tile, out var stale))
                 {
-                    // A dying monster's tile is cleared by Battle the moment it's killed;
-                    // keep the sprite as a corpse playing/frozen-on its Die animation if
-                    // it has one, otherwise remove it like any other vacated tile.
-                    if (stale.Dying && HasFrames(stale, CombatAnimationId.Die))
+                    // A dying monster's tile is cleared by Battle the moment it's killed.
+                    if (stale.SoulRising)
                     {
+                        // Banished: keep dissolving upward as a detached sprite.
+                        stale.Shadow?.Remove();
+                        stale.Shadow = null;
+                        _soulRisers.Add(stale);
+                    }
+                    else if (stale.Dying && HasFrames(stale, CombatAnimationId.Die))
+                    {
+                        // Keep the sprite as a corpse frozen on its last Die frame.
                         stale.Shadow?.Remove();
                         stale.Shadow = null;
                         _corpses.Add(stale);
@@ -420,7 +487,54 @@ public class BattleView : GameComponent
         }
 
         UpdateCorpses(stepAnims);
+        UpdateSoulRisers();
+        UpdateWisps();
         UpdateEffects();
+    }
+
+    /// <summary>
+    /// Banished demons (RE 6 worker 0xa1b20 phase C): the body rises in world-Y at
+    /// 250 units/frame toward 26000, shrinking 3%/frame (floor 10%) and drawn translucent,
+    /// then is removed. The grid tile is already cleared, so these are detached sprites.
+    /// </summary>
+    void UpdateSoulRisers()
+    {
+        for (int i = _soulRisers.Count - 1; i >= 0; i--)
+        {
+            var m = _soulRisers[i];
+            m.SoulRiseWorldY = Math.Min(SoulRiseTargetY, m.SoulRiseWorldY + SoulRiseSpeed);
+            m.SoulRiseScale = Math.Max(SoulRiseMinScale, m.SoulRiseScale - SoulRiseShrinkPerFrame);
+
+            LayoutMob(m, 0); // idle frame; the rise offset + shrink come from the soul-rise state
+
+            if (m.SoulRiseWorldY >= SoulRiseTargetY)
+            {
+                m.Sprite.Remove();
+                _soulRisers.RemoveAt(i);
+            }
+        }
+    }
+
+    void UpdateWisps()
+    {
+        for (int i = _wisps.Count - 1; i >= 0; i--)
+        {
+            var w = _wisps[i];
+            w.UiY -= w.VelUiY;
+            w.Frames++;
+            if (w.UiY < -12 || w.Frames > 120)
+            {
+                w.Sprite.Remove();
+                _wisps.RemoveAt(i);
+                continue;
+            }
+
+            var tex = Assets.LoadTexture(w.Sprite.Id);
+            float ww = tex?.Regions is { Count: > 0 } ? tex.Regions[0].Width : 8;
+            float wh = tex?.Regions is { Count: > 0 } ? tex.Regions[0].Height : 8;
+            w.Sprite.Position = new Vector3(-1 + 2 * (w.UiX - ww / 2) / UiW, 1 - 2 * (w.UiY - wh) / UiH, 0);
+            w.Sprite.Size = new Vector2(2 * ww / UiW, -2 * wh / UiH);
+        }
     }
 
     static bool HasFrames(Mob mob, CombatAnimationId animation)
@@ -519,14 +633,15 @@ public class BattleView : GameComponent
         float frameW = animTex?.Regions is { Count: > 0 } ? animTex.Regions[physicalFrame].Width : 32;
         float frameH = animTex?.Regions is { Count: > 0 } ? animTex.Regions[physicalFrame].Height : 32;
 
-        float w = frameW * wPct / 100f * scale;
-        float h = frameH * hPct / 100f * scale;
+        float w = frameW * wPct / 100f * scale * mob.SoulRiseScale;
+        float h = frameH * hPct / 100f * scale * mob.SoulRiseScale;
 
         // Vertical offset: the original sets slot.y = -Unk152 world units (ShowCombatant,
         // sheet+0x4B8) — flying monsters have NEGATIVE values, lifting the body above the
         // ground; the shadow slot stays at y = 0. Classes 2/3/4 add the sine bob (and
-        // 2/4 the X sway) — world units project through the same scale factor.
-        float bodyY = y + (monster.Unk152 - mob.BobOffset) * scale;
+        // 2/4 the X sway) — world units project through the same scale factor. A banished
+        // demon additionally lifts by its accumulated soul-rise world-Y (RE 6).
+        float bodyY = y + (monster.Unk152 - mob.BobOffset - mob.SoulRiseWorldY) * scale;
         float bodyX = x + mob.SwayOffset * scale;
 
         // Bottom-centre at (bodyX, bodyY): top-left = (bodyX - w/2, bodyY - h).
@@ -561,11 +676,19 @@ public class BattleView : GameComponent
         foreach (var corpse in _corpses)
             corpse.Sprite.Remove();
 
+        foreach (var riser in _soulRisers)
+            riser.Sprite.Remove();
+
+        foreach (var wisp in _wisps)
+            wisp.Sprite.Remove();
+
         foreach (var effect in _effects)
             effect.Sprite.Remove();
 
         _mobs.Clear();
         _corpses.Clear();
+        _soulRisers.Clear();
+        _wisps.Clear();
         _effects.Clear();
     }
 }

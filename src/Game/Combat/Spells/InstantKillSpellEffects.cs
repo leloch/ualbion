@@ -132,6 +132,7 @@ public sealed class BanishDemonEffect : ISpellEffect
         if (!SpellSuccessGate.Lands(context, target, SpellSuccessGate.DemonClassMask))
             return SpellCastOutcome.Resisted;
 
+        context.SoulRise?.Invoke(target); // banish dissolve VFX before the kill (RE 6)
         context.InstantKill(target);
         return SpellCastOutcome.Hit;
     }
