@@ -36,8 +36,23 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
             var used = ctx.UsedItemOverride ?? ctx.Source.AssetId; // change_used_item override, else the UseItem source
             return used == (AssetId)q.ItemId;
         });
-        // change_used_item: transform/consume the tool a UseItem puzzle is checking.
-        On<UAlbion.Formats.MapEvents.ChangeUsedItemEvent>(e => { if (Context is EventContext c) c.UsedItemOverride = (AssetId)e.ItemId; });
+        // change_used_item (RE _RE_OPCODES_FLAGS.md, handler 0x3bed3): the original CONSUMES one
+        // of the tool the player just applied and GIVES one of the event's ItemId — an inventory
+        // transformation (consume tool → receive product), guarded so the give only happens if the
+        // consume succeeded. (We also keep the query-override so a later query used_item==X matches.)
+        On<UAlbion.Formats.MapEvents.ChangeUsedItemEvent>(e =>
+        {
+            if (Context is not EventContext c) return;
+            var used = c.UsedItemOverride ?? c.Source.AssetId; // the tool being applied
+            c.UsedItemOverride = (AssetId)e.ItemId;
+            if (used.Type != AssetType.Item || e.ItemId.IsNone)
+                return;
+            var party = Resolve<IGameState>().Party;
+            if (party.GetItemCount((ItemId)used) <= 0) // consume must succeed
+                return;
+            Raise(new ModifyItemCountEvent(NumericOperation.SubtractAmount, 1, (ItemId)used));
+            Raise(new ModifyItemCountEvent(NumericOperation.AddAmount, 1, e.ItemId));
+        });
         // SCRIPT-02: "active" = NOT disabled (was un-negated), and key on the NPC index q.NpcNum
         // (was q.Immediate, the comparison byte, so it always tested NPC 0). Mirrors line ~109.
         OnQuery<      QueryNpcActiveEvent, bool>(q => !Resolve<IGameState>().IsNpcDisabled(MapId.None, (byte)q.NpcNum));

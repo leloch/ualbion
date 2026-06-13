@@ -135,6 +135,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyDaysEvent>(OnModifyDays);
         On<ModifyHoursEvent>(OnModifyHours);
         On<ModifyMTicksEvent>(OnModifyMTicks);
+        On<TrapEvent>(OnTrap);
         On<RestEvent>(OnRest);
         OnAsync<PartyWaitEvent>(OnWait);
         On<HourElapsedEvent>(_ => ProcessHourElapsed());
@@ -155,6 +156,10 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyNpcOffEvent>(e => _game.SetNpcDisabled(e.Map, e.NpcNum, SetFlag(e.Operation, _game.IsNpcDisabled(e.Map, e.NpcNum))));
         On<NpcOffEvent>(e => _game.SetNpcDisabled(MapId.None, e.NpcNum, true));
         On<NpcOnEvent>(e => _game.SetNpcDisabled(MapId.None, e.NpcNum, false));
+        // execute (RE _RE_OPCODES_FLAGS.md, 0x3b78f): enable/disable the active NPC — Unk1!=0
+        // enables, ==0 disables. Best-effort: resolve the NPC index from the event source's
+        // AssetId (the chain's NPC). Direct call (not Raise) since Raise skips our own handler.
+        On<ExecuteEvent>(OnExecute);
         On<SetChestOpenEvent>(e => _game.SetChestOpen(e.Chest, SetFlag(e.Operation, _game.IsChestOpen(e.Chest))));
         On<SetDoorOpenEvent>(e => _game.SetDoorOpen(e.Door, SetFlag(e.Operation, _game.IsDoorOpen(e.Door))));
         // The data-change family is a set of sibling classes (one per ChangeProperty kind),
@@ -210,6 +215,62 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     {
         _game.Tickers.TryGetValue(e.TickerId, out var curValue);
         _game.Tickers[e.TickerId] = (byte)e.Operation.Apply(curValue, e.Amount, 0, 255);
+    }
+
+    // World trap tile (RE _RE_OPCODES_WORLD.md, handler 0x3aa35). Per affected member: a gender
+    // filter (Unk2 bitmask), a Luck save that avoids the trap entirely, then on failure inflict
+    // condition Unk1 (bit index, >=12 = none) and RandomVary(Unk6) LP damage. Unconscious skipped.
+    void OnExecute(ExecuteEvent e)
+    {
+        if (Context is not EventContext c || c.Source == null || _game?.Npcs == null)
+            return;
+        var npcId = c.Source.AssetId;
+        int index = -1;
+        for (int i = 0; i < _game.Npcs.Length; i++)
+            if (_game.Npcs[i] != null && _game.Npcs[i].Id == npcId) { index = i; break; }
+        if (index < 0)
+            return; // not NPC-sourced (e.g. tile-triggered) — can't resolve the active NPC
+        _game.SetNpcDisabled(MapId.None, (byte)index, e.Unk1 == 0); // Unk1==0 → disable, else enable
+    }
+
+    void OnTrap(TrapEvent e)
+    {
+        var party = TryResolve<IParty>();
+        var rng = TryResolve<IRandom>();
+        if (party == null || rng == null)
+            return;
+
+        IEnumerable<IPlayer> targets = e.Unk3 switch
+        {
+            1 => party.StatusBarOrder,                                       // whole party
+            2 => party.StatusBarOrder.Where((_, i) => i == e.Unk5),          // specific slot
+            _ => party.Leader == null ? [] : new[] { party.Leader }          // leader / active
+        };
+
+        foreach (var member in targets)
+        {
+            var combat = member?.Effective?.Combat;
+            if (combat == null)
+                continue;
+            if ((e.Unk2 & (1 << (int)member.Effective.Gender)) == 0)         // gender filter
+                continue;
+            if ((combat.Conditions & PlayerConditions.Unconscious) != 0)     // already down
+                continue;
+
+            int luck = member.Effective.Attributes?.Luck?.Current ?? 0;
+            if (UAlbion.Game.Combat.DamageCalculator.PercentRoll(luck, rng.Generate(100)))
+                continue; // lucky escape
+
+            var target = new TargetId(AssetType.PartyMember, member.Id.Id);
+            if (e.Unk1 < 12)
+                Raise(new ChangeStatusEvent(target, (PlayerCondition)e.Unk1, NumericOperation.SetToMaximum));
+            if (e.Unk6 > 0)
+            {
+                int dmg = UAlbion.Game.Combat.DamageCalculator.VaryDamage(e.Unk6, rng.Generate(51));
+                if (dmg > 0)
+                    Raise(new DataChangeEvent(target, ChangeProperty.Health, NumericOperation.SubtractAmount, (ushort)Math.Min(ushort.MaxValue, dmg)));
+            }
+        }
     }
 
     void OnModifyDays(ModifyDaysEvent e) // Only SetAmount + AddAmount

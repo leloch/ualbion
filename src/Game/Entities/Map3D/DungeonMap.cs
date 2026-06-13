@@ -48,7 +48,20 @@ public class DungeonMap : GameComponent, IMap
         On<ChangeNpcMovementEvent>(OnChangeNpcMovement);
         On<ChangeNpcSpriteEvent>(OnChangeNpcSprite);
         On<ChangeIconEvent>(ChangeIcon);
+        On<SpinnerEvent>(OnSpinner);
         // On<UnloadMapEvent>(_ => Unload());
+    }
+
+    // Spinner tile (RE _RE_OPCODES_WORLD.md, handler 0x3a8a1): sets the party's FACING — 0..3 are
+    // absolute quadrants (N/E/S/W); 4 = random direction (the classic disorientation tile). It only
+    // acts in 3D and never moves the party. (PLACEHOLDER: the random case doesn't exclude the
+    // current facing — a small chance of no turn; the original re-rolls until different.)
+    void OnSpinner(SpinnerEvent e)
+    {
+        int dir = e.Unk1;
+        if (dir == 4)
+            dir = Resolve<UAlbion.Game.IRandom>().Generate(4);
+        Raise(new UAlbion.Formats.ScriptEvents.PartyTurnEvent((UAlbion.Formats.Direction)(dir & 3)));
     }
 
     // Wall/floor/ceiling changes (levers, pressure plates → portcullis/wall-dissolve in
