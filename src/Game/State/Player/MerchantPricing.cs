@@ -4,18 +4,18 @@ namespace UAlbion.Game.State.Player;
 
 /// <summary>
 /// Merchant buy/sell pricing off an item's base <c>Value</c> (the "base resell value × 10",
-/// stored in gold-tenths — the same unit party gold uses). The original applies a per-shop
-/// multiplier (≈38–130%) that is not yet decoded, so these use documented defaults; the
-/// percent is a parameter so a per-shop value can be threaded in once RE'd. Pure + testable.
+/// stored in gold-tenths — the same unit party gold uses).
+///
+/// RE (_RE_MERCHANT.md, MAIN.EXE 0x68174 / 0x68328 / 0x2c10a): Albion shops have NO buy/sell
+/// spread — both directions use the SAME per-shop percent and the SAME formula
+/// <c>price = max(1, Value * percent / 100)</c> (truncating integer division, floored to 1).
+/// The percent is the opening <c>PlaceActionEvent.Unk6</c> (≈38–130 %); 100 returns Value.
+/// Pure + testable.
 /// </summary>
 public static class MerchantPricing
 {
-    public const int DefaultBuyPercent = 100;  // pay the base value (per-shop markup RE-pending)
-    public const int DefaultSellPercent = 33;  // resale returns a fraction (exact rate RE-pending)
+    public const int DefaultPercent = 100; // 100 % → price == Value (used until the shop percent is plumbed)
 
-    public static int Price(int itemValue, int percent)
-        => Math.Max(0, itemValue) * Math.Max(0, percent) / 100;
-
-    public static int BuyPrice(int itemValue, int percent = DefaultBuyPercent) => Price(itemValue, percent);
-    public static int SellPrice(int itemValue, int percent = DefaultSellPercent) => Price(itemValue, percent);
+    public static int Price(int itemValue, int percent = DefaultPercent)
+        => Math.Max(1, Math.Max(0, itemValue) * Math.Max(0, percent) / 100);
 }

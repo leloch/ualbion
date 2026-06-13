@@ -114,6 +114,21 @@ public class LogicalInventorySlot : UiElement
         {
             var item = Assets.LoadItem(slotInfo.Item);
             itemName = Assets.LoadStringSafe(item.Name);
+
+            // Price hover (B5): a merchant ware shows its buy price; a sellable backpack item
+            // while a shop is open shows its sell price. Both use the per-shop percent; Albion
+            // has no buy/sell spread. Price is in gold-tenths → "N.M".
+            bool merchantWare = _id.Id.Type == InventoryType.Merchant;
+            bool sellable = !_activeMerchant.IsNone && _id.Id.Type == InventoryType.Player
+                            && (item.Flags & ItemFlags.PlotItem) == 0;
+            if (merchantWare || sellable)
+            {
+                int price = MerchantPricing.Price(item.Value, inventoryManager.ActiveMerchantPercent);
+                Raise(new HoverTextEvent(new LiteralText($"{itemName} ({price / 10}.{price % 10})")));
+                Raise(new SetCursorEvent(Base.CoreGfx.CursorSelected));
+                _visual.Hoverable = true;
+                return;
+            }
         }
 
         var hand = inventoryManager.ItemInHand;

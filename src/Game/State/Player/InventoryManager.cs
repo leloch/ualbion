@@ -26,6 +26,8 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
     readonly Func<ItemId, ItemData> _getItem;
     readonly ItemSlot _hand = new(new InventorySlotId(InventoryType.Temporary, 0, ItemSlotId.None));
     IEvent _returnItemInHandEvent;
+    int _activeMerchantPercent = MerchantPricing.DefaultPercent; // per-shop buy/sell percent while a merchant is open
+    public int ActiveMerchantPercent => _activeMerchantPercent;
 
     ItemSlot GetSlot(InventorySlotId id) => _getInventory(id.Id)?.GetSlot(id.Slot);
     public ReadOnlyItemSlot ItemInHand { get; }
@@ -46,6 +48,10 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         On<InventoryGiveItemEvent>(OnGiveItem);
         On<InventorySellEvent>(OnBuyFromMerchant);
         On<InventorySellToMerchantEvent>(OnSellToMerchant);
+        // Capture the active shop's per-shop buy/sell percent (PlaceActionEvent.Unk6 → MerchantEvent)
+        // so buy/sell and the price hover use it; reset to default when the screen closes.
+        On<MerchantEvent>(e => _activeMerchantPercent = e.PricePercent <= 0 ? MerchantPricing.DefaultPercent : e.PricePercent);
+        On<InventoryCloseEvent>(_ => _activeMerchantPercent = MerchantPricing.DefaultPercent);
         OnAsync<InventoryDiscardEvent>(OnDiscard);
         On<SetInventorySlotUiPositionEvent>(OnSetSlotUiPosition);
         On<ActivateItemEvent>(OnActivateItem);
@@ -265,7 +271,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         if (item == null)
             return;
 
-        int price = MerchantPricing.BuyPrice(item.Value);
+        int price = MerchantPricing.Price(item.Value, _activeMerchantPercent);
         var party = TryResolve<IParty>();
         if (party == null)
             return;
@@ -286,16 +292,20 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
             return;
 
         SpendPartyGold(price);
-        slot.Amount -= given;
-        if (slot.Amount == 0)
-            slot.Clear();
+        // Stock 0xFF (ItemSlot.Unlimited) is the infinite-stock sentinel — never deplete it.
+        if (slot.Amount != ItemSlot.Unlimited)
+        {
+            slot.Amount -= given;
+            if (slot.Amount == 0)
+                slot.Clear();
+        }
         Update(e.Id);
     }
 
     // Sell one unit of an owned backpack item to the active merchant (the backpack "Sell"
-    // option = player sells to merchant). Pays the resell value (33% of item.Value, per-shop
-    // multiplier RE-pending), deposits the ware into the merchant so it can be bought back,
-    // and only removes/credits if the merchant had room. Mirror of OnBuyFromMerchant (B5).
+    // option = player sells to merchant). Pays the per-shop price (same percent/formula as buy —
+    // Albion has no buy/sell spread), deposits the ware into the merchant so it can be bought
+    // back, and only removes/credits if the merchant had room. Mirror of OnBuyFromMerchant (B5).
     void OnSellToMerchant(InventorySellToMerchantEvent e)
     {
         if (e.Merchant.Type != InventoryType.Merchant)
@@ -320,7 +330,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         if (slot.Amount == 0)
             slot.Clear();
 
-        int price = MerchantPricing.SellPrice(item.Value);
+        int price = MerchantPricing.Price(item.Value, _activeMerchantPercent);
         if (price > 0)
         {
             var party = TryResolve<IParty>();
