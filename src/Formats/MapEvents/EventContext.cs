@@ -29,6 +29,11 @@ public class EventContext
     public bool LastEventResult { get; set; }
     public ActionEvent LastAction { get; set; }
 
+    // The "used item" for `query used_item`, overridable mid-chain by `change_used_item`
+    // (sets it to a transformed item, or to None to mark the tool consumed). Null = no
+    // override, so the query falls back to the trigger Source's AssetId (the UseItem verb).
+    public UAlbion.Config.AssetId? UsedItemOverride { get; set; }
+
     public override string ToString() => $"{Id} Status:{Status} Src:{Source} Node:{Node}";
     /*
     byte   EventContextType
