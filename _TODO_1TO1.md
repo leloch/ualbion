@@ -76,15 +76,15 @@ removed-NPC index.
 | ~~Conversation default block~~ | `Conversation.cs` | RESOLVED `57bc62e5` — all four real BlockIds handled; default now warns on malformed data |
 | ~~Goddess' amulet / vital items~~ | `InventoryManager.cs` | DONE `78c13390` — PlotItem-flagged items can't be discarded (InvMsg 193) |
 | TextFormatter Damage token | `TextFormatter.cs:40` | Guessed semantics; defensive fallback harmless — confirm token arg model via RE |
-| Animated 3D meshes | `MapObject.cs:102` | 3D map objects don't animate (needs RE 6) |
+| ~~Animated 3D meshes~~ | `MapObject.cs` | N/A (RE 6): the original has no mesh path — all dungeon objects are billboards with sprite-frame animation, already handled. TODO closed. |
 | Z-fighting hack | `MapObject.cs:178` | "still happens sometimes" — cosmetic, harmless |
 | ~~Weight limit on give~~ | `InventoryManager.cs` | DONE `755a37f1` — TryGiveItems enforces MaxWeight |
 | ChangeNpcMovement "other flags" | `NpcManager2D.cs` | RE 5D: remaining bits non-behavioral; map the few that matter or document |
 | ~~Battle-view walk lerp~~ | `BattleView.cs` | DONE `6927f129` (also listed at section 3) — WalkPath lerp at Move-anim-length frames/tile |
 | ~~Ghost translucency (class 2)~~ | `BattleView.cs` | DONE `973b57a5` — renderClass==2 draws at 0.6 opacity |
 | SheetApplier ChangeItem subtract | `SheetApplier.cs:142` | Subtract/SubtractPercentage silently no-op (unreachable in base data; mod/script safety) |
-| Banish 62/63/64 area targeting | `InstantKillSpellEffects.cs:115` | Resolve single/row/all (reuse existing row-mask plumbing) |
-| Unknown1C HomeNpcIndex wiring | `CharacterSheet.cs:117` | Confirm/wire RemovedNpcs join/leave per _RE_5D.md §6 |
+| ~~Banish 62/63/64 area targeting~~ | `InstantKillSpellEffects.cs` | ALREADY DONE — Battle.CastQueuedSpell enumerates row/all by the Targets byte and calls BanishDemonEffect per enemy (verified `dc3014fe`-era; comment was stale). |
+| Unknown1C HomeNpcIndex wiring | `Party.cs:90/126` | DEFERRED (scoped): RE 5D §6 — join sets sheet+0x1C=(mapId−1)*96+slot + RemovedNpcs bit, leave clears it. AddMember/RemoveMember currently don't; faithful fix needs AddPartyMemberEvent to carry the source map+NPC-slot (not present) and mutates save-state. Recruit/dismiss is rare and recruitment scripts already npc_off the source. M [needs-design], save-compat risk — do deliberately, not rushed. |
 
 ## 5. Doc drift / comment cleanups (5 minutes each, do with next touch)
 

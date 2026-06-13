@@ -97,10 +97,11 @@ public class MapObject : GameComponent
             _sprite.Frame = AnimUtil.GetFrame(_frame, _sprite.FrameCount, _isBouncy);
         }
 
-        if (_mesh != null)
-        {
-            // TODO: Animated meshes
-        }
+        // No mesh-animation branch: RE 6 confirmed Albion's 3D renderer has NO polygonal
+        // mesh path — every dungeon object is a screen-aligned BILLBOARD whose only
+        // animation is sprite-frame cycling (handled by the _sprite path above, FrameCount
+        // at ObjectInfo+6, Properties bit0 = ping-pong = _isBouncy). The _mesh field has no
+        // 1:1 counterpart to animate, so there is nothing to do here.
     }
 
     public MapObjectId Id { get; }

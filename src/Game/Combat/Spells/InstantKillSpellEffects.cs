@@ -109,11 +109,14 @@ public sealed class GoddessWrathEffect : ISpellEffect
 }
 
 /// <summary>
-/// The Banish-demon family (spells 62/63/64), RE'd from handlers 0xa1aec/0xa1b20: the
-/// target must be demon-class (creature mask 0x44) and the success gate must pass
-/// (M &gt; MagicResist) — then it dies outright with the soul-rising animation. The three
-/// spells differ only in SPELLDAT target area (single / row / all — PLACEHOLDER: all
-/// three resolve single-target until area targeting exists).
+/// The Banish-demon family (spells 62/63/64), RE'd from handlers 0xa1aec/0xa1b20: each
+/// affected target must be demon-class (creature mask 0x44) and pass the success gate
+/// (M &gt; MagicResist), then dies outright. This effect resolves ONE target; the
+/// single/row/all area difference is driven by each spell's SPELLDAT Targets byte
+/// (62 OneMonster / 63 RowOfMonsters / 64 AllMonsters), which Battle.CastQueuedSpell
+/// already enumerates — it calls this effect once per enemy in the area, each
+/// independently gated. (The soul-rise death animation is the one remaining PLACEHOLDER,
+/// pending RE 6.)
 /// </summary>
 public sealed class BanishDemonEffect : ISpellEffect
 {
