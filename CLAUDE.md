@@ -3,6 +3,9 @@
 Operational index for working on **UAlbion**, an open-source C# / .NET 9 remake of the 1996 Blue Byte RPG *Albion* (MS-DOS). Read this first; it points to the deeper docs.
 
 > **Companion docs (read when relevant):**
+> - `_HANDOVER.md` — **start here for onboarding**: doc map, current state, the working loop, the harness, the save-file map.
+> - `_ENGINE_GOTCHAS.md` — recurring bug-class landmines (read before touching eventing/combat/state/rendering).
+> - `_RE_INDEX.md` — one-stop index: every RE'd mechanic → its doc section + MAIN.EXE function.
 > - `_TODO_1TO1.md` — **the single source of truth for all remaining work** (RE backlog, blocked/ready implementation, doc drift, verification debt, deliberate deviations). Check + update this first.
 > - `_PROJECT_LOG.md` — full narrative engagement record (combat RE, harness, 3D-bug analysis, known regressions, next steps). **Read this for deep context.**
 > - `_HANDOFF.md` — earlier multi-session checkpoints.
