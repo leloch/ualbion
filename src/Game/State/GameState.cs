@@ -563,7 +563,32 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)hours));
         _game.HoursSinceResting = 0;
 
+        // PartySleeps (action 0x3D): the original fires each active party member's PartySleeps
+        // chain on every rest — e.g. Sira2 (NPC 984) heals Sira+Mellthas, runs do_script
+        // Script.60, and drives the Sira/Mellthas romance + Triifalai-seed beats (B1′). Only
+        // members whose event set actually has the chain react.
+        foreach (var member in _party.StatusBarOrder)
+        {
+            var setId = member == null ? default : GetSheet(member.Id.ToSheet())?.EventSetId ?? default;
+            if (setId.IsNone) continue;
+            var set = Assets.LoadEventSet(setId);
+            var chain = FindActionChainIndex(set, ActionType.PartySleeps);
+            if (chain != null)
+                Raise(new TriggerChainEvent(set, chain.Value, new EventSource(set.Id, UAlbion.Formats.Assets.Maps.TriggerType.Action)));
+        }
+
         Info($"The party rests for {hours} hours.");
+    }
+
+    // First chain in an event set headed by the given action type (block 0, no argument).
+    static ushort? FindActionChainIndex(UAlbion.Formats.Assets.EventSet set, ActionType type)
+    {
+        if (set?.Chains == null) return null;
+        foreach (var idx in set.Chains)
+            if (idx < set.Events.Count && set.Events[idx].Event is ActionEvent a
+                && a.ActionType == type && a.Block == 0 && a.Argument.IsNone)
+                return idx;
+        return null;
     }
 
     /// <summary>
