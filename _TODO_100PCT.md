@@ -178,6 +178,32 @@ chain + add a swap prompt if it hard-fails. **M.**
 
 ---
 
+## Live-run control / render bugs (user-reported 2026-06-13, UNTRIAGED)
+
+Reported from an actual play session. These are movement/camera/UI defects, not content gaps —
+several are likely small fixes but each needs reproduction + a root-cause pass. Iterate later.
+
+1. **3D movement W/S reversed** — pressing **W moves the party BACKWARDS** (and S forward). Axis
+   sign flip in the forward/back movement handler (`Movement3D` / `Normal3DMouseMode` key map). **S.**
+2. **3D mouse rotation dead** — clicking the on-screen rotation icon at the side of the viewport
+   does not turn the party. The turn-left/turn-right screen-edge controls aren't wired (or wired
+   to the wrong event). **S–M.**
+3. **3D mouse movement goes the wrong way** — click-to-move / hold-to-move sends the player in
+   the wrong direction (axis or screen→world mapping inverted, likely same root as #1). **M.**
+4. **3D no wall collision** — the player **clips through walls**; collision detection appears to
+   not run in 3D (or the collision map isn't consulted on mouse/keyboard moves). **M — gameplay-breaking.**
+5. **2D mouse movement impossible** — 2D maps are keyboard-only; clicking the map does not move
+   the party. (Matches the doc's "No 2D drag-to-walk" gap — but confirm even single click-to-step
+   is absent.) **XL (full path-to-click) or M (single-step).**
+6. **Party-leader switch has no effect** — selecting a different leader doesn't take; the new
+   leader's portrait/head should enlarge (the "bigger head" leader indicator) and party order/
+   leader-driven behaviour should update. Functional + visual. **M.**
+7. **World-map NPCs are giant** — on the 2D overworld (city-to-city travel) the wandering NPC
+   sprites render hugely oversized; the player party sprites are correctly sized. Sprite-scale /
+   world-map billboard sizing applied to NPCs only. **M.**
+
+---
+
 ## Additional completion requirements to VERIFY in the live run (not yet findings)
 
 These are real-game mechanics the brief mandates that no audit finding squarely covers. Each is
@@ -205,6 +231,59 @@ a hypothesis to confirm during Phase 3/4, not an asserted gap:
    water-bucket/blue-staff force fields), Kounos↔Srimalinar Mahino gate, Umajo guide-Ohl,
    the "Umajo Danu" ritual, Kenget Kamulos / Beastmaster. The "179 maps unverified" lumps
    these; track each as its own checkpoint.
+
+---
+
+## RE backlog — original logic still to disassemble from MAIN.EXE
+
+> Distinct from the wiring work above: these are places where we **don't know the original's
+> logic** and must read it out of `MAIN.EXE` (radare2 project `albion_aaa`,
+> `F:\Dev\albion\radare2-6.1.4-w64\bin\radare2.exe`). The big systems (combat strike pipeline,
+> spells, world-tick, NPC AI, lighting, lockpicking — RE clusters A–D in `_TODO_1TO1.md`) are
+> **decoded and applied**; what remains is below. Enums verified against current
+> `ActionType.cs` / `QueryType.cs` 2026-06-13 (the `src/RemainingUnknowns.txt` dump is from a
+> different checkout `C:\Depot\bb\ualbion` and is **stale** — e.g. it still shows `Unk3D` for
+> the now-named `PartySleeps`; don't cite it as current).
+>
+> **The complete RE list can only come from the Phase-4 run.** Static analysis gives the
+> *candidate* set; running the back half tells you which `Unk` opcodes/queries actually appear
+> in real Jirinaar→finale maps (must-RE) vs which are dead enum entries (ignore).
+
+### Tier 1 — RE that gates COMPLETION (decode, or the game can't finish / crashes on load)
+
+| Item | Why it blocks | Where to look |
+|---|---|---|
+| **`AskSurrenderEvent` Unk1–Unk8** — *the single highest-value RE task.* The only win path; need the surrender threshold, which member falls, and how it chains to the Seed deploy. | B2 — ending cannot fire. | `AskSurrenderEvent.cs:24-30`; find the surrender handler in MAIN.EXE (combat end / map-event dispatch). |
+| **Story `ActionType` values used by real NPCs** — `0xE` (981_Tom, endgame), `0x17`+`0x2D` (Sira spell scenes), `0x9` (234 Riko / 242 Gerwad), `0x2` (Garris pay/charter). | B1′ + finale dialogue beats; each is `Unk*` with the NPC named but no decoded effect. | `ActionType.cs:9,16,21,30,52`; trace the action-dispatch switch in MAIN.EXE. ~40 of 62 ActionType values are still `Unk*`, but only these 5 are known-used on the story path. |
+| **`QueryType` values that THROW on parse — [RISK] crashes map load.** Diff of the enum vs `QueryEvent.Serdes` (29 cases, default `throw FormatException`). **Semantics known from the name (light RE — mostly serdes layout + handler):** `DoorUnlocked`(0x2), `ChestUnlocked`(0x3), `Gender`(0x16), `Class`(0x17), `Race`(0x18), `Day`(0x1B), `IsCurrentMap2D`(0x28). **Genuinely undecoded (needs RE):** `Unk8`, `UnkB`, `UnkD`, `Unk24`, `Unk25`, `Unk26`, `Unk27`. | Any one used in a real map = unloadable map. **Extract the map event tables in Phase 0 and diff the used set against the serdes switch.** | `QueryType.cs`; `QueryEvent.cs:18-50`; `Querier.cs`. |
+| **World map-event opcodes parse-only with unknown fields** — `TrapEvent` (Unk1–6: damage / condition / Luck-Dex evasion; Unk6 tagged "Damage?"), `SpinnerEvent` (Unk1: rotation amount), `CreateTransportEvent` (Unk1–8: type / position / piloting). | Traps inert, spinners don't disorient, transports don't spawn (possible water-crossing gate). | `TrapEvent.cs:36-40`; `SpinnerEvent.cs:28`; `CreateTransportEvent.cs:22-28`. |
+| **Placeholder-*named* events — we don't even know what they DO** — `ChangeUnk0Event`, `ChangeUnkBEvent`, `ChangeUnkCEvent`, `ModifyUnk2Event`, `ExecuteEvent`/`SignalTarget`. | Silent no-ops that may drop story side-effects. | the `*Unk*Event.cs` files in `src/Formats/MapEvents`; identify the opcode handler in MAIN.EXE. |
+
+### Tier 2 — RE for FIDELITY only (game completes; just not byte-exact)
+
+The spells/mechanics **work**; these `INFERRED` tags (from `_RE_COMBAT.md`) mean one factor in
+the probability/damage math is a strong guess, not byte-traced:
+- Condition-spell roll factors: ThornSnare (M×100/100), Boasting/Shock/Panic (M×80/100). (`_RE_COMBAT.md:1295,1325`)
+- Fungification & BanishDemon LP-chance factors (×1000/×250, ×120). (`_RE_COMBAT.md:1310,1321,2205`)
+- GoddessWrath living-monster count. (`_RE_COMBAT.md:2004`)
+- The remainder of the damage **K-table**. (`_RE_COMBAT.md:2205`)
+- Interior of the 14-byte combat-cell / ~66-byte combatant struct (gameplay fields decoded;
+  the rest is unknown padding). (`_RE_COMBAT.md:999,1038`)
+- Assorted `INFERRED` audio-sample and automap-helper attributions. (`_RE_NOTES.md`)
+
+### Tier 3 — the large `Unk*` data-field surface (NOT logic-blocking)
+
+Most of `RemainingUnknowns.txt` is this: dozens of `Unknown*` fields in `CharacterSheet`
+(0x06–0xFC), `NpcState` (Unk4–0x7E), `MiscState`, `SavedGame` blobs, `LabyrinthData`, and
+unused flag-enum bits. They are **read and written back faithfully** — not knowing their
+meaning doesn't break logic as long as the round-trip holds (smoke 13/13 confirms it does).
+Each becomes an RE task **only if the Phase-4 run shows one gates behavior.** Do not pre-RE
+these speculatively.
+
+### Confirmed NOT needed (RE already proved the original has nothing here)
+
+Animated 3D meshes (RE 6: no mesh path — all billboards), Levitation (NULL handler in the
+original), Smacker decoder (all video is FLIC per `alb_assets.json`).
 
 ---
 
