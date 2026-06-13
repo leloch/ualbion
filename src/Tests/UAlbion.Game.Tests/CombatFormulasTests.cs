@@ -79,4 +79,22 @@ public class CombatFormulasTests
     [InlineData(50, 100, 0)]  // unpickable → 0
     public void Lockpick_ChancePercent(int skill, int difficulty, int expected)
         => Assert.Equal(expected, CombatFormulas.LockpickChancePercent(skill, difficulty));
+
+    // --- Action points per level (RE ApplyLevelUp: clamp(level/LevelsPerActionPoint,1,4)) ---
+
+    [Theory]
+    [InlineData(1, 5, 1)]    // level 1, 5 levels/AP → 1 (floored, min 1)
+    [InlineData(4, 5, 1)]    // still below the first threshold
+    [InlineData(5, 5, 1)]    // 5/5 = 1
+    [InlineData(10, 5, 2)]   // 10/5 = 2
+    [InlineData(20, 5, 4)]   // 20/5 = 4
+    [InlineData(50, 5, 4)]   // 50/5 = 10, clamped to 4
+    [InlineData(50, 10, 4)]  // 50/10 = 5, clamped to 4
+    [InlineData(30, 10, 3)]  // 30/10 = 3
+    public void ActionPoints_ClampedLevelOverDivisor(int level, int divisor, int expected)
+        => Assert.Equal(expected, CombatFormulas.ActionPointsForLevel(level, divisor));
+
+    [Fact]
+    public void ActionPoints_ZeroDivisor_DefaultsToOne()
+        => Assert.Equal(1, CombatFormulas.ActionPointsForLevel(40, 0));
 }
