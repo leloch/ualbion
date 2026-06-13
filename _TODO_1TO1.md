@@ -164,6 +164,24 @@ All five confirmed against the actual code, not comments:
    `:173-174` as non-behavioral except 0x40 = collision class (via `NpcState.NoClip`, `:159`).
    (`edd368a7` / `dc3014fe`.)
 
+## 4e. §3 RE-BLOCKED POLISH — empirically re-verified 2026-06-13 (code-line evidence)
+
+1. **Soul-rise (demonic-corpse dissolve)** — `BattleView.cs`: Mob fields `SoulRising` /
+   `SoulRiseWorldY` / `SoulRiseScale` (`:73-75`), tuning consts `SoulRiseSpeed` etc.
+   (`:124-126`, RE 6 worker 0xa1b20: lift 250 u/f → 26000, shrink 3%/f floor 10%, 3 wisps).
+   Triggered by banish: `InstantKillSpellEffects.cs:135` `context.SoulRise?.Invoke(target)`
+   via the `ISpellEffect.SoulRise` hook (`:91`). (`12ff1433`.)
+2. **Ambient NPC sound-set** — the 13×0x28 table @0x13db10 is `AmbientSoundSets.Sets`
+   (`AmbientSoundSets.cs:36-51`, exactly 13 sets × 4 slots, real sample ids 11/56/150-160…);
+   `MapNpc.Sound`→slots 0-3 wiring in `AmbientSoundManager.cs` (slot0 ambient always-loop `:79`,
+   slot1 movement-loop `:82`, slot2 chase-alert one-shot, slot3 chase-loop `:86`, keyed by
+   `npc.Sound`). Audible output remains UNVERIFIED headlessly (no audio device). (`a5f7ff22`.)
+3. **Animated 3D meshes** — N/A by RE, not skipped: the radare2 cluster (RE 6, `_RE_6.md:208-217`)
+   CONFIRMED the original 3D renderer has NO polygonal-mesh path — every dungeon object is a
+   screen-aligned billboard (`fcn.000bf4d4`→`fcn.000bed08`), and "animating a mesh" = cycling
+   the billboard sprite frame, which the remake already does (`MapObject.cs`). Adding a mesh
+   path would be a *deviation* from 1:1; the faithful outcome is "nothing to apply."
+
 ## 5. Doc drift / comment cleanups (5 minutes each, do with next touch)
 
 - `Battle.cs:1037` + `InventoryManager.cs:705` — say "PLACEHOLDER until the battle-loot
