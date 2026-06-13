@@ -34,7 +34,7 @@ public class SavedGame
     // const int Unk8Count = 1500; // ? = 0xBC bytes
     // #pragma warning restore CA1823 // Avoid unused private fields
 
-    public static readonly DateTime Epoch = new(2200, 1, 1, 0, 0, 0);
+    public static readonly DateTime Epoch = new(2230, 9, 8, 0, 0, 0); // Albion's lore start date (was a placeholder 2200-01-01)
 
     public string Name { get; set; }
     public uint Version { get; set; } = 138; // Original save format version; loader asserts on it
