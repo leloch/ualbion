@@ -335,8 +335,18 @@ public class Battle : GameComponent, IReadOnlyBattle
         var tf = TryResolve<Text.ITextFormatter>();
         if (tf == null)
             return;
-        var name = subject?.Effective?.GetName(ReadVar(V.User.Gameplay.Language));
-        var source = name == null ? tf.Format(text) : tf.Format(text, name);
+        // The SYSTEXT's {NAME} resolves the formatter's *active context entity*, not a string
+        // arg — so seed it with this combatant. Passing the name as a plain argument (the old
+        // code) left {NAME} unresolved → literal "NAME" on screen. Belt-and-braces: set the
+        // GameState Combatant context (covers a SYSTEXT that re-issues a {COMBATANT} token, which
+        // would otherwise re-read the global and clobber the implicit seed) AND prepend an
+        // implicit Combatant token (covers a bare {NAME} with no context token in the SYSTEXT).
+        var sheet = subject?.Effective;
+        if (subject != null)
+            Raise(new SetContextEvent(UAlbion.Game.Text.ContextType.Combatant, (AssetId)subject.SheetId));
+        var source = sheet == null
+            ? tf.Format(text)
+            : tf.Format(text, new System.Collections.Generic.List<(Text.Token, object)> { (Text.Token.Combatant, sheet) });
         Raise(new DescriptionTextEvent(source));
     }
 
