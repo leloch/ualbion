@@ -80,11 +80,15 @@ _launch*.log
 # Catch-all for root harness/RE working artifacts. NOTE: the kept docs are _*.md
 # (_TODO_1TO1, _RE_*, _HANDOVER, _ENGINE_GOTCHAS, _RE_INDEX, _PROJECT_LOG, etc.) and
 # the scripts are _*.ps1 (_smoke_all_saves, _harness_drive) — those are NOT matched here.
+# Everything else prefixed "_" is a disposable working artifact: logs, tsv/csv, json/txt
+# dumps (e.g. _commitmsg.txt, _dump_out.log, harness traces). No tracked file has a
+# basename starting with "_" except the kept .md/.ps1, so these broad globs are safe.
 _*.log
 _*.tsv
-_re_tmp_*.txt
-_re_tmp_*.json
-_wallpix_meta.json
-_harness_latest.txt
-_smoke_latest.txt
+_*.csv
+_*.json
+_*.txt
+_re_tmp_*
 _sweep/
+_smoke_logs/
+data/exported/
