@@ -210,7 +210,15 @@ several are likely small fixes but each needs reproduction + a root-cause pass. 
    (`set_party_leader` Tom→Rainer takes; the leader portrait is raised 3px via `Leader.Id`). Note:
    the indicator is a 3px raise, not an enlargement — if the original enlarges the head, that's a
    separate render tweak.
-7. **World-map NPCs are giant** — INVESTIGATED, root not yet pinned. Asset-type resolution is
+7. **World-map NPCs are giant / wrong** — ✅ **FIXED** (`ecc5c9bc`). Root cause (diagnosed live via
+   the harness `/sprites` + the new `/state` mapType/tileset): `SavedGame.cs:322` hardcodes
+   `MapType.TwoD` when (de)serializing saved `NpcState`, so every NPC restored from a save loads as
+   `NpcLargeGfx` regardless of map. On a `TwoDOutdoors` map (overworld) the NPCs must be
+   `NpcSmallGfx` → they came back 32×48 (vs 16×32) AND the wrong sprite. Teleporting masked it
+   (re-inits from map data). Fix: `NpcManager2D` re-keys each NPC sprite to the live map's gfx set
+   (`UseSmallSprites`; small/large enums are parallel, same numeric id). Deeper follow-up: fix the
+   `SavedGame.cs:322` hardcode itself (needs a MapId→MapType resolver in the save layer). User-confirmed.
+   --- (original note below, superseded) --- Asset-type resolution is
    correct (`MapNpc.Serdes`: TwoDOutdoors→`NpcSmallGfx`, TwoD→`NpcLargeGfx`); both player
    (`SmallPlayer`/`LargePlayer`) and `Npc2D` build a `MapSprite` with no explicit `.Size`, so both
    fall back to native texture frame size (`Sprite.UpdateSprite` `_size ??= subImage.Size`). Needs
