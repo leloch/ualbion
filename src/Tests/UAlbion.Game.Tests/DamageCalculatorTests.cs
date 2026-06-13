@@ -21,6 +21,21 @@ public class DamageCalculatorTests
     public void TotalAttack_Sums_Base_And_Bonus()
         => Assert.Equal(30, DamageCalculator.TotalAttack(Stats(baseAttack: 20, bonusAttack: 10)));
 
+    [Fact] // Regression for STAT-01: DeepClone/CopyFrom dropped the attack + magic fields,
+    public void DeepClone_PreservesAttackAndMagicFields() // collapsing all combat damage to ~0.
+    {
+        var src = Stats(baseAttack: 21, bonusAttack: 7, baseDefense: 9, bonusDefense: 3, magicAttack: 13, magicDefense: 5);
+        src.LifePoints = new CharacterAttribute { Current = 40, Max = 50 };
+        var clone = src.DeepClone();
+        Assert.Equal((ushort)21, clone.BaseAttack);
+        Assert.Equal((short)7, clone.BonusAttack);
+        Assert.Equal((ushort)13, clone.MagicAttack);
+        Assert.Equal((ushort)5, clone.MagicDefense);
+        Assert.Equal((ushort)9, clone.BaseDefense);
+        Assert.Equal((short)3, clone.BonusDefense);
+        Assert.Equal(28, DamageCalculator.TotalAttack(clone)); // 21 base + 7 bonus
+    }
+
     [Fact]
     public void TotalAttack_Floors_Negative_Bonus_At_Zero()
         => Assert.Equal(20, DamageCalculator.TotalAttack(Stats(baseAttack: 20, bonusAttack: -50)));
