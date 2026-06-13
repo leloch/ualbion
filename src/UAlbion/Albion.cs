@@ -190,6 +190,7 @@ static class Albion
             new CombatClock(),
             new RandomNumberGenerator(),
             new VideoManager(),
+            new ScreenFadeManager(),
             new EventChainManager(),
             new Querier(),
             new MapManager(),
