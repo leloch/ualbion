@@ -83,13 +83,11 @@ public class PartyMagicMenu : GameComponent
 
     SpellEnvironments CurrentEnvironment()
     {
-        var map = TryResolve<IMapManager>()?.Current;
-        return map?.MapData?.MapType switch
-        {
-            MapType.ThreeD => SpellEnvironments.Dungeon,
-            MapType.TwoDOutdoors => SpellEnvironments.Outdoors,
-            _ => SpellEnvironments.Indoors,
-        };
+        // RE 5B fcn.00060554: env index = (mapFlags & 0xC) >> 2 == (int)RestMode (out of
+        // combat — this menu is the non-combat cast path). 0 City / 1 Dungeon / 2 Wilderness
+        // / 3 Interior. Previously gated on MapType, which hid dungeon-only utility spells.
+        var rest = TryResolve<IMapManager>()?.Current?.MapData?.RestMode ?? RestMode.RestEightHours;
+        return (SpellEnvironments)(1 << (int)rest);
     }
 
     void ShowSpells(PartyMemberId memberId)

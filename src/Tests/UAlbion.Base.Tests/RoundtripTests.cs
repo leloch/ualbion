@@ -184,10 +184,10 @@ public class RoundtripTests
         var spell = new SpellData(Spell.Lifebringer, SpellClass.DjiKantos, 2)
         {
             Cost = 60,
-            Environments = SpellEnvironments.Indoors
-                         | SpellEnvironments.Outdoors
+            Environments = SpellEnvironments.City
                          | SpellEnvironments.Dungeon
-                         | SpellEnvironments.Inventory,
+                         | SpellEnvironments.Wilderness
+                         | SpellEnvironments.Interior,
 
             LevelRequirement = 13,
             Targets = SpellTargets.DeadParty,
