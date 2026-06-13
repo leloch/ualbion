@@ -213,6 +213,20 @@ public class PartyMagicMenu : GameComponent
         if (cost > 0)
             Raise(new DataChangeEvent(new TargetId(AssetType.PartyMember, e.MemberId.Id), ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
 
+        // Mastery grows with use (RE post-cast fcn.000603ae: mastery += MagicTalent, cap
+        // 10000) — persisted on the caster's base sheet, same as the combat cast path.
+        var baseSheet = TryResolve<IGameState>()?.GetSheet(e.MemberId.ToSheet());
+        var strengths = baseSheet?.Magic?.SpellStrengths;
+        if (strengths != null)
+        {
+            int talent = baseSheet.Attributes?.MagicTalent?.Current ?? 0;
+            if (talent > 0)
+            {
+                strengths.TryGetValue(e.SpellId, out var current);
+                strengths[e.SpellId] = Combat.CombatFormulas.GrowMastery(current, talent);
+            }
+        }
+
         // Cast SFX — same RE'd per-spell sample table the combat path uses.
         foreach (var sample in CombatAudio.GetCastSamples(e.SpellId))
             Raise(new SoundEffectEvent(sample, 100, 0, 0, 0, SoundMode.GlobalOneShot));

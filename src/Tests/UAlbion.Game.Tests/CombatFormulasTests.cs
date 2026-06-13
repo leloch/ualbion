@@ -97,4 +97,24 @@ public class CombatFormulasTests
     [Fact]
     public void ActionPoints_ZeroDivisor_DefaultsToOne()
         => Assert.Equal(1, CombatFormulas.ActionPointsForLevel(40, 0));
+
+    // --- Spell mastery growth (RE post-cast: mastery += MagicTalent, cap 10000) ---
+
+    [Theory]
+    [InlineData(0, 30, 30)]
+    [InlineData(100, 30, 130)]
+    [InlineData(9990, 30, 10000)]   // capped at 10000
+    [InlineData(10000, 30, 10000)]  // already maxed
+    [InlineData(500, 0, 500)]       // no talent → no growth
+    [InlineData(500, -5, 500)]      // negative talent ignored
+    public void GrowMastery_AddsTalentCappedAt10000(int current, int talent, int expected)
+        => Assert.Equal(expected, CombatFormulas.GrowMastery(current, talent));
+
+    [Fact]
+    public void GrowMastery_RepeatedCastsClimbTowardCap()
+    {
+        int m = 0;
+        for (int i = 0; i < 5; i++) m = CombatFormulas.GrowMastery(m, 99);
+        Assert.Equal(495, m); // 5 casts × 99
+    }
 }

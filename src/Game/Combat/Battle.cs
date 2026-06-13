@@ -1254,6 +1254,26 @@ public class Battle : GameComponent, IReadOnlyBattle
             else
                 _liveSp[caster.SheetId] = Math.Max(0, SpellPoints(caster) - cost); // monster SP shadow
         }
+
+        // Mastery improves with use (RE post-cast fcn.000603ae: mastery += MagicTalent, cap
+        // 10000). Persisted on the caster's base sheet — party casters only; GetSheet returns
+        // null for transient monster clones, so their mastery stays fixed.
+        GrowSpellMastery(caster, spellId);
+    }
+
+    void GrowSpellMastery(ICombatParticipant caster, SpellId spellId)
+    {
+        if (caster == null)
+            return;
+        var sheet = TryResolve<IGameState>()?.GetSheet(caster.SheetId);
+        var strengths = sheet?.Magic?.SpellStrengths;
+        if (strengths == null)
+            return;
+        int talent = sheet.Attributes?.MagicTalent?.Current ?? 0;
+        if (talent <= 0)
+            return;
+        strengths.TryGetValue(spellId, out var current);
+        strengths[spellId] = CombatFormulas.GrowMastery(current, talent);
     }
 
     /// <summary>
