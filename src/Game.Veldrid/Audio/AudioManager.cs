@@ -30,6 +30,7 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
     readonly Dictionary<SampleId, AudioBuffer> _sampleCache = [];
     readonly Dictionary<(SongId, int), AudioBuffer> _waveLibCache = [];
     readonly List<ActiveSound> _activeSounds = [];
+    readonly Dictionary<int, AudioSource> _ambientLoops = []; // keyed NPC ambient voices (RE 6)
     readonly ManualResetEvent _doneEvent = new(false);
     readonly AudioDevice _device;
     readonly Lock _syncRoot = new();
@@ -45,6 +46,9 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
         On<WaveLibEvent>(PlayWaveLib);
         On<SongEvent>(e => PlayMusic(e.SongId));
         On<AmbientEvent>(e => PlayAmbient(e.SongId));
+        On<StartAmbientLoopEvent>(StartAmbientLoop);
+        On<StopAmbientLoopEvent>(e => StopAmbientLoop(e.Key));
+        On<MoveAmbientLoopEvent>(MoveAmbientLoop);
         On<MuteEvent>(_ => StopAll());
         On<QuitEvent>(_ => _doneEvent.Set());
 
@@ -168,6 +172,63 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
             _activeSounds.Add(active);
     }
 
+    // --- Keyed ambient NPC voices (RE 6 fcn.0004356a/fcn.00062f60) ---
+
+    void StartAmbientLoop(StartAmbientLoopEvent e)
+    {
+        lock (_syncRoot)
+        {
+            if (_ambientLoops.ContainsKey(e.Key))
+                return; // already running — do not restart (matches the original)
+        }
+
+        var buffer = GetBuffer(e.Sample);
+        if (buffer == null)
+            return;
+
+        var tileSize = Resolve<IMapManager>()?.Current?.TileSize ?? Vector3.One;
+        var source = _device.CreateSource(buffer);
+        source.Volume = Math.Clamp(e.Volume, 0f, 1f);
+        source.Looping = e.Looping;
+        source.SourceRelative = false; // localised at the NPC
+        source.Position = tileSize * new Vector3(e.TileX, e.TileY, 0f);
+        source.ReferenceDistance = tileSize.X;
+        // Radius (world units) → rolloff: larger radius carries further (gentler rolloff).
+        source.RolloffFactor = e.Radius > 0 ? Math.Max(0.5f, 4000f / e.Radius) : 4.0f;
+        source.Play();
+
+        if (e.Looping)
+        {
+            lock (_syncRoot)
+                _ambientLoops[e.Key] = source;
+        }
+        else
+        {
+            // One-shot (e.g. chase alert): track in _activeSounds so the update loop reaps it.
+            lock (_syncRoot)
+                _activeSounds.Add(new ActiveSound(source, $"ambient1shot:{e.Key}", 0));
+        }
+    }
+
+    void StopAmbientLoop(int key)
+    {
+        lock (_syncRoot)
+        {
+            if (_ambientLoops.Remove(key, out var source))
+                source.Stop();
+        }
+    }
+
+    void MoveAmbientLoop(MoveAmbientLoopEvent e)
+    {
+        var tileSize = Resolve<IMapManager>()?.Current?.TileSize ?? Vector3.One;
+        lock (_syncRoot)
+        {
+            if (_ambientLoops.TryGetValue(e.Key, out var source))
+                source.Position = tileSize * new Vector3(e.TileX, e.TileY, 0f);
+        }
+    }
+
     void PlayMusic(SongId songId)
     {
         if (_musicGenerator?.SongId == songId)
@@ -229,6 +290,13 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
                 sound.Source.Dispose();
             }
             _activeSounds.Clear();
+
+            foreach (var source in _ambientLoops.Values)
+            {
+                source.Stop();
+                source.Dispose();
+            }
+            _ambientLoops.Clear();
 
             foreach (var sample in _sampleCache.Values)
                 sample?.Dispose();
