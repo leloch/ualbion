@@ -169,16 +169,24 @@ actual code (build clean):
 
 ## 7. Verification debt (live checks to run after the next batches)
 
-1. **Loot window**: ✅ PARTIAL 2026-06-13 — Warniak victory resolves cleanly through
-   the new flee/morale/multi-strike pipeline (no errors, scene pops, MonsterEye live);
-   Warniaks carry no inventory so the no-drop case (no empty window) is verified.
-   STILL TODO: a drop-carrying group (e.g. humanoid bandits) → window lists items →
-   Take All lands in party inventory.
-2. **NPC morph**: ✅ VERIFIED 2026-06-13 — change_npc_movement fired live on
-   Nakiridaani (2D) flipped NPC 0 Waypoints→Stationary, lastError null (dispatch path
-   works). Cross-reload replay is structurally exercised by every map load in smoke
-   (NpcManager2D.Subscribed replays the recorded changes); the explicit leave-and-return
-   walk-through remains a nice-to-have manual check.
+1. **Loot window**: ✅ NO-DROP VERIFIED (2 groups) 2026-06-13 — drove two full combats
+   to victory live via the harness (`encounter MonsterGroup.OneArgim` on save 2 →
+   queue_combat_action Melee ×party → begin_combat_round to victory in 3 rounds; plus the
+   auto-Warniak fight). Both resolve cleanly (lastError null, combat scene pops back to the
+   map), and NEITHER produces a loot window — confirmed via `/ui` (no Inventory/Chest/Loot
+   pane) — because neither group carries inventory/gold. The drop case uses the IDENTICAL
+   loot-window UI (the post-combat `InventoryScreen`, same component the no-drop path
+   exercises) fed by `AppendSlotToLootList`; verifying it end-to-end requires identifying a
+   drop-carrying MonsterGroup, which lives in binary monster data (not headlessly
+   enumerable) — deferred to a Phase-3 live playthrough where such a fight occurs naturally.
+2. **NPC morph (2D change_npc_sprite/movement persistence)**: ✅ VERIFIED ACROSS RELOAD
+   2026-06-13 — on Nakiridaani (save 5, 2D): `change_npc_movement 0 Stationary AbsPerm`
+   flipped NPC 0 Waypoints→Stationary (observable via `/npcs`) and `change_npc_sprite 0
+   NpcLargeGfx.Christine AbsPerm` dispatched cleanly (lastError null); then `save_game 99`
+   + `load_game 99` → NPC 0 is STILL Stationary after reload. This proves the ChangeIcon
+   record/replay persistence path that BOTH events share (change_npc_sprite is the same
+   MapEventType.ChangeIcon through the same NpcManager2D recording). Sprite pixels aren't
+   exposed by `/npcs`, so the movement field is the observable proxy for the shared path.
 3. **Hourly events during rest**: ✅ VERIFIED 2026-06-13 — poisoned Mellthas is healed
    by the inn stay then drained back to 0 by the 8 hourly poison ticks (pre-fix he
    ended at 12; the bulk-advance now fires per-hour events).
