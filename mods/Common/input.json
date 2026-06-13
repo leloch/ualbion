@@ -96,7 +96,7 @@
     // "Ctrl+A": "!loadnextmap",
     // "Ctrl+X": "!loadprevmap",
 
-    "M": "open_map",
+    "M": "show_automap",
     "T": "wait",
     "Ctrl+Shift+M": "set_mouse_mode MouseLook",
     "Ctrl+Shift+N": "set_mouse_mode Normal3D",
