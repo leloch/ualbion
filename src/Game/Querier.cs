@@ -30,7 +30,14 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
         OnQuery<         QuerySwitchEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().GetSwitch(q.SwitchId) ? 1 : 0, q.Immediate));
         OnQuery<         QueryTickerEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().GetTicker(q.TickerId), q.Immediate));
         OnQuery<    QueryTriggerTypeEvent, bool>(q => ((EventContext)Context).Source.Trigger == (TriggerType)q.Argument);
-        OnQuery<       QueryUsedItemEvent, bool>(q => ((EventContext)Context).Source.AssetId == (AssetId)q.ItemId);
+        OnQuery<       QueryUsedItemEvent, bool>(q =>
+        {
+            var ctx = (EventContext)Context;
+            var used = ctx.UsedItemOverride ?? ctx.Source.AssetId; // change_used_item override, else the UseItem source
+            return used == (AssetId)q.ItemId;
+        });
+        // change_used_item: transform/consume the tool a UseItem puzzle is checking.
+        On<UAlbion.Formats.MapEvents.ChangeUsedItemEvent>(e => { if (Context is EventContext c) c.UsedItemOverride = (AssetId)e.ItemId; });
         OnQuery<      QueryNpcActiveEvent, bool>(q => Resolve<IGameState>().IsNpcDisabled(MapId.None, q.Immediate));
         OnQuery<QueryScriptDebugModeEvent, bool>(_ => false);
         // Leader character-attribute / day-count branches (previously threw at map load).
