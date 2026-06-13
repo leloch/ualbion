@@ -101,17 +101,18 @@
     "Ctrl+Shift+M": "set_mouse_mode MouseLook",
     "Ctrl+Shift+N": "set_mouse_mode Normal3D",
 
-    // Party movement (positive Y = forward; collision-checked via Movement3D.FilterCollision).
-    // A/D strafe; turn with the arrow keys / the 3D mouse turn zones.
-    "W": "+party_move  0  1",
-    "A": "+party_move -1  0",
-    "S": "+party_move  0 -1",
-    "D": "+party_move  1  0",
+    // Party movement — MUST be party_move_3d (handled by Movement3D, collision-checked via
+    // FilterCollision). NOTE: plain party_move is a 2D-only event (PartyCaterpillar) with NO
+    // 3D handler, so it does nothing here. Positive Y = forward; A/D strafe.
+    "W": "+party_move_3d  0  1",
+    "A": "+party_move_3d -1  0",
+    "S": "+party_move_3d  0 -1",
+    "D": "+party_move_3d  1  0",
 
-    "Shift+W": "+party_move  0  2",
-    "Shift+A": "+party_move -2  0",
-    "Shift+S": "+party_move  0 -2",
-    "Shift+D": "+party_move  2  0",
+    "Shift+W": "+party_move_3d  0  2",
+    "Shift+A": "+party_move_3d -2  0",
+    "Shift+S": "+party_move_3d  0 -2",
+    "Shift+D": "+party_move_3d  2  0",
 
     // Free debug camera (no collision) — moved off plain WASD onto Ctrl.
     "Ctrl+W": "+camera_move  0  4",
@@ -119,8 +120,9 @@
     "Ctrl+S": "+camera_move  0 -4",
     "Ctrl+D": "+camera_move  4  0",
 
-    "Up": "+cam_rotate 0 0.03",
-    "Down": "+cam_rotate 0 -0.03",
+    // Arrows: Up/Down walk forward/back, Left/Right turn.
+    "Up": "+party_move_3d 0  1",
+    "Down": "+party_move_3d 0 -1",
     "Left": "+cam_rotate 0.03 0",
     "Right": "+cam_rotate -0.03 0",
 

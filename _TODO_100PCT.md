@@ -183,9 +183,12 @@ chain + add a swap prompt if it hard-fails. **M.**
 Reported from an actual play session. These are movement/camera/UI defects, not content gaps —
 several are likely small fixes but each needs reproduction + a root-cause pass. Iterate later.
 
-1. **3D movement W/S reversed** — ✅ **FIXED** (`input.json` World3D). Root: WASD was bound to the
-   collision-free free camera with `Y=-1` for W, but both move handlers treat *positive Y = forward*.
-   Rebound WASD → `party_move` with positive-forward signs. Verified live (fwd → -Z, back returns).
+1. **3D movement W/S reversed / WASD dead** — ✅ **FIXED** (`input.json` World3D). Root: WASD was
+   bound to the collision-free free camera with `Y=-1` for W, but both move handlers treat
+   *positive Y = forward*. **First fix mistakenly used `party_move` — a 2D-only event with no 3D
+   handler (Movement3D only handles `party_move_3d`), so WASD did nothing.** Corrected to
+   `+party_move_3d` (positive Y = forward, A/D strafe); arrows Up/Down now walk, Left/Right turn.
+   Verified: `party_move_3d` steps -Z and reverses; continuous `+` bindings re-raise each frame.
 2. **3D mouse rotation dead** — ✅ **FIXED (wired)** (`Movement3D.OnMove3D`). The mouse turn/look
    zones set `PartyMove3DEvent.Yaw/Pitch` but `OnMove3D` only read `Velocity` and early-returned
    when velocity was zero, dropping all rotation. Now raises `CameraRotateEvent` for yaw/pitch
