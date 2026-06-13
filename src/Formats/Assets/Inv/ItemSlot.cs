@@ -235,7 +235,10 @@ public class ItemSlot : IReadOnlyItemSlot
                     : MaxItemCount;
 
                 ushort amountToTransfer = Math.Min(other.Amount, quantity ?? max);
-                amountToTransfer = Math.Min((ushort)(max - Amount), amountToTransfer);
+                // INV-03: this is the empty-destination OVERWRITE branch — `Item = other.Item`
+                // above forced Amount=1, so clamping against (max - Amount) stranded 1 (capped at
+                // 98 not 99). Clamp against max directly; Amount is overwritten below regardless.
+                amountToTransfer = Math.Min(max, amountToTransfer);
                 Amount = amountToTransfer;
                 if(other.Amount != Unlimited)
                     other.Amount -= amountToTransfer;

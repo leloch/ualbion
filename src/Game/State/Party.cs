@@ -137,12 +137,21 @@ public class Party : ServiceComponent<IParty>, IParty
 
     bool RemoveMember(PartyMemberId id)
     {
-        var player = _statusBarOrder.FirstOrDefault(x => x.Id == id);
-        if (player == null)
+        int index = _statusBarOrder.FindIndex(x => x.Id == id);
+        if (index < 0)
             return false;
 
+        var player = _statusBarOrder[index];
         _walkOrder.Remove(player);
-        _statusBarOrder.Remove(player);
+        _statusBarOrder.RemoveAt(index);
+
+        // STATE-02: _combatPositions is keyed in lockstep with _statusBarOrder, so compact it too
+        // — otherwise members after the removed one keep the wrong battle-grid slot (and the
+        // corruption persists in the save via SavedGame.CombatPositions).
+        for (int i = index; i < _combatPositions.Length - 1; i++)
+            _combatPositions[i] = _combatPositions[i + 1];
+        _combatPositions[^1] = 0;
+
         player.Remove();
         Raise(new PartyChangedEvent());
         return true;

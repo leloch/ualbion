@@ -172,6 +172,13 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
                 return
                     item.TypeId == ItemType.CloseRangeWeapon
                     && item.SlotType is ItemSlotId.Tail or ItemSlotId.RightHandOrTail;
+            case ItemSlotId.RightHand:
+                // INV-04: a two-handed weapon needs the off-hand free (symmetric with the
+                // LeftHand check above). Without this the player could wield a 2H weapon AND a
+                // shield and gain both bonuses.
+                if (item.Hands > 1 && sheet.Inventory.LeftHand.Item.Type == AssetType.Item)
+                    return false;
+                return true;
             default:
                 return true;
         }
