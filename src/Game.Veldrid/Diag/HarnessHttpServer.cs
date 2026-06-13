@@ -50,6 +50,7 @@ namespace UAlbion.Game.Veldrid.Diag;
 ///   GET  /log    [?n=N&clear=1]         → recent on-screen text (combat/examine/hover messages)
 ///   GET  /combat                        → combat state: combatants, team, tile, hp, conditions
 ///   GET  /inventory                     → party inventories: gold, rations, item counts (B5 trade testing)
+///   GET  /sprites [?filter=...]         → rendered sprites: id, position, render size (sprite-sizing bugs)
 ///   GET  /npcs                          → NPC positions/movement on the current map
 ///   POST /event/raw   "load_game 7"     → fire any UAlbion event by its `-c` text form
 ///   POST /event       { name, args }    → same, but JSON-structured
@@ -204,6 +205,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /log":             WriteJson(ctx, BuildLog(ctx)); break;
             case "GET /combat":          WriteJson(ctx, BuildCombatDump()); break;
             case "GET /inventory":       WriteJson(ctx, BuildInventoryDump()); break;
+            case "GET /sprites":         WriteJson(ctx, BuildSpritesDump(ctx)); break;
             case "GET /pick":            WriteJson(ctx, BuildPickDump(ctx)); break;
             case "POST /key":            HandleKey(ctx); break;
             case "GET /lasterror":       WriteJson(ctx, $"{{\"detail\":{JsonString(_lastErrorDetail)}}}"); break;
@@ -788,6 +790,61 @@ public sealed class HarnessHttpServer : Component, IDisposable
             sb.Append($"\"sp\":{eff?.Magic?.SpellPoints?.Current ?? 0},");
             sb.Append($"\"conditions\":{JsonString(eff?.Combat?.Conditions.ToString())},");
             sb.Append($"\"alive\":{(hp > 0 ? "true" : "false")}");
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    static readonly System.Reflection.FieldInfo ChildrenField = typeof(UAlbion.Api.Eventing.Component)
+        .GetField("_children", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+    static void CollectSprites(object component, List<UAlbion.Core.Visual.Sprite> outList, int depth)
+    {
+        if (component == null || depth > 64) return;
+        if (component is UAlbion.Core.Visual.Sprite s)
+            outList.Add(s);
+        if (ChildrenField?.GetValue(component) is System.Collections.IEnumerable children)
+            foreach (var c in children)
+                CollectSprites(c, outList, depth + 1);
+    }
+
+    // Rendered sprites in the active scene with their id, world position and render Dimensions
+    // (logical Size). Diagnoses sprite-sizing bugs (e.g. oversized world-map NPCs) by comparing
+    // an NPC's Dimensions against the player's. ?filter=substring matches the sprite id.
+    string BuildSpritesDump(HttpListenerContext ctx)
+    {
+        string filter = ctx.Request.QueryString["filter"];
+
+        // Walk both the active scene (3D billboards live here) AND the current map (2D map
+        // entities — NPCs/player — hang off the FlatMap, not the scene). Dedup by reference.
+        var seen = new HashSet<UAlbion.Core.Visual.Sprite>();
+        var sprites = new List<UAlbion.Core.Visual.Sprite>();
+        var roots = new object[] { TryResolve<ISceneManager>()?.ActiveScene, TryResolve<UAlbion.Game.IMapManager>()?.Current };
+        foreach (var root in roots)
+        {
+            if (root == null) continue;
+            var found = new List<UAlbion.Core.Visual.Sprite>();
+            CollectSprites(root, found, 0);
+            foreach (var s in found) if (seen.Add(s)) sprites.Add(s);
+        }
+
+        var sb = new StringBuilder();
+        sb.Append("{\"count\":").Append(sprites.Count).Append(",\"sprites\":[");
+        bool first = true;
+        foreach (var sp in sprites)
+        {
+            string id = sp.Id?.ToString() ?? "None";
+            if (filter != null && id.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+            if (!first) sb.Append(',');
+            first = false;
+            var pos = sp.Position;
+            var dim = sp.Dimensions;
+            sb.Append('{');
+            sb.Append($"\"id\":{JsonString(id)},");
+            sb.Append($"\"kind\":{JsonString(sp.GetType().Name)},");
+            sb.Append($"\"x\":{F(pos.X)},\"y\":{F(pos.Y)},\"z\":{F(pos.Z)},");
+            sb.Append($"\"w\":{F(dim.X)},\"h\":{F(dim.Y)}");
             sb.Append('}');
         }
         sb.Append("]}");

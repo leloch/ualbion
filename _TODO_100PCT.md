@@ -214,9 +214,12 @@ several are likely small fixes but each needs reproduction + a root-cause pass. 
    correct (`MapNpc.Serdes`: TwoDOutdoors→`NpcSmallGfx`, TwoD→`NpcLargeGfx`); both player
    (`SmallPlayer`/`LargePlayer`) and `Npc2D` build a `MapSprite` with no explicit `.Size`, so both
    fall back to native texture frame size (`Sprite.UpdateSprite` `_size ??= subImage.Size`). Needs
-   a **live visual pass** (load the overworld, dump `/npcs` sprite ids + sizes) to confirm whether
-   NPCs load large gfx at runtime or it's a frame-size/tile-scale mismatch — don't blind-fix (risks
-   regressing indoor 2D). **M.** STILL OPEN.
+   a **live visual pass**. NEW LEAD (via the new `/sprites` harness endpoint): on a 2D map
+   (Nakiridaani) `/sprites` returns **0** sprites, while a 3D map returns 2400 — i.e. 2D map
+   entities (player + NPCs) are NOT individual `Sprite` components under the scene/map tree the way
+   3D billboards are. So 2D NPCs render through a different (batched/tile-renderer) path; the size
+   bug likely lives there, not in `MapSprite`. Next: trace the 2D NPC render path
+   (`NpcManager2D`/`Npc2D` → which renderer actually draws it on the overworld). **M.** STILL OPEN.
 8. **Combat: combatant names show literal "NAME"** — ✅ **FIXED** (`TextFormatter` + `Battle`).
    Combat SYSTEXTS use the `{NAME}` token, which resolves the formatter's `active` entity (set by a
    `{COMBATANT}`/`{SUBJECT}` context token reading `GameState`), NOT the string arg `ShowCombatMessage`
