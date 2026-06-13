@@ -14,6 +14,8 @@ public class Movement3D : Component
 {
     const float TurnRateDegreesPerFrame = 3.0f;
     const float MoveDeadZone = 0.05f;
+    const float MouseTurnRate = 0.03f;  // radians per mouse-input pulse, scaled by zone intensity
+    const float MousePitchRate = 0.02f;
 
     float _pendingYawDegrees;
     bool _noclip;
@@ -71,7 +73,14 @@ public class Movement3D : Component
 
     void OnMove3D(PartyMove3DEvent e)
     {
-        // Velocity.X = strafe intensity (positive = right), Velocity.Y = forward intensity.
+        // Continuous look/turn from the 3D mouse screen-edge zones. Previously dropped:
+        // OnMove3D only read Velocity, so the mouse turn/look arrows did nothing (and the
+        // early-return below bailed before any rotation when there was no translation).
+        if (MathF.Abs(e.Yaw) > 0.0001f || MathF.Abs(e.Pitch) > 0.0001f)
+            Raise(new CameraRotateEvent(e.Yaw * MouseTurnRate, e.Pitch * MousePitchRate));
+
+        // Velocity.X = strafe intensity (positive = right), Velocity.Y = forward intensity
+        // (POSITIVE = forward — matches CameraMotion3D's -Z negation and the mouse Forward zone).
         int strafe = Math.Abs(e.Velocity.X) > MoveDeadZone ? Math.Sign(e.Velocity.X) : 0;
         int forward = Math.Abs(e.Velocity.Y) > MoveDeadZone ? Math.Sign(e.Velocity.Y) : 0;
         if (strafe == 0 && forward == 0)
