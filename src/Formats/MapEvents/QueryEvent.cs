@@ -19,6 +19,8 @@ public abstract class QueryEvent : MapEvent, IBranchingEvent
         {
             QueryType.Switch => QuerySwitchEvent.Serdes((QuerySwitchEvent)e, mapping, s),
             QueryType.ChainActive => QueryChainActiveEvent.Serdes((QueryChainActiveEvent)e, mapping, s),
+            QueryType.DoorUnlocked => QueryDoorUnlockedEvent.Serdes((QueryDoorUnlockedEvent)e, mapping, s),
+            QueryType.ChestUnlocked => QueryChestUnlockedEvent.Serdes((QueryChestUnlockedEvent)e, mapping, s),
             QueryType.NpcActiveOnMap => QueryNpcActiveOnMapEvent.Serdes((QueryNpcActiveOnMapEvent)e, mapping, s),
             QueryType.HasPartyMember => QueryHasPartyMemberEvent.Serdes((QueryHasPartyMemberEvent)e, mapping, s),
             QueryType.HasItem => QueryHasItemEvent.Serdes((QueryHasItemEvent)e, mapping, s),
