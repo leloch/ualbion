@@ -217,6 +217,14 @@ several are likely small fixes but each needs reproduction + a root-cause pass. 
    a **live visual pass** (load the overworld, dump `/npcs` sprite ids + sizes) to confirm whether
    NPCs load large gfx at runtime or it's a frame-size/tile-scale mismatch — don't blind-fix (risks
    regressing indoor 2D). **M.** STILL OPEN.
+8. **Combat: combatant names show literal "NAME"** — ✅ **FIXED** (`TextFormatter` + `Battle`).
+   Combat SYSTEXTS use the `{NAME}` token, which resolves the formatter's `active` entity (set by a
+   `{COMBATANT}`/`{SUBJECT}` context token reading `GameState`), NOT the string arg `ShowCombatMessage`
+   passed. With no active set it fell back to literal "{NAME}". Fix: context tokens now accept a
+   directly-provided entity (`p ?? GameState.X`), and `ShowCombatMessage` passes the combatant as an
+   implicit `Combatant` token. (Other `{NAME}`/`{SUBJECT}` placeholders may exist — watch for more.)
+9. **Combat: no target-selection highlight** — selecting a monster to attack gives no visual cue
+   (expected: an outline on the target's grid cell for the queued action). **M.** STILL OPEN.
 
 ---
 

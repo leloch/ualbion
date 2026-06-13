@@ -81,13 +81,15 @@ public class TextFormatter : GameServiceComponent<ITextFormatter>, ITextFormatte
                         yield return valueTuple3;
                     break;
 
-                // Change context
-                case Token.Combatant: active = Resolve<IGameState>().Combatant; break;
-                case Token.Inventory: active = Resolve<IGameState>().CurrentInventory; break;
-                case Token.Leader: active = Resolve<IGameState>().Leader; break;
-                case Token.Subject: active = Resolve<IGameState>().Subject; break;
-                case Token.Victim: active = Resolve<IGameState>().Victim; break;
-                case Token.Weapon: active = Resolve<IGameState>().Weapon; break;
+                // Change context. A non-null payload (passed via implicitTokens) overrides the
+                // GameState lookup so callers can seed the active entity directly — e.g. combat
+                // messages naming a specific combatant whose {NAME} would otherwise be unresolved.
+                case Token.Combatant: active = p ?? Resolve<IGameState>().Combatant; break;
+                case Token.Inventory: active = p ?? Resolve<IGameState>().CurrentInventory; break;
+                case Token.Leader: active = p ?? Resolve<IGameState>().Leader; break;
+                case Token.Subject: active = p ?? Resolve<IGameState>().Subject; break;
+                case Token.Victim: active = p ?? Resolve<IGameState>().Victim; break;
+                case Token.Weapon: active = p ?? Resolve<IGameState>().Weapon; break;
 
                 case Token.Parameter:
                     yield return (Token.Text, args[argNumber].ToString());
