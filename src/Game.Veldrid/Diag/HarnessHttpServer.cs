@@ -47,8 +47,12 @@ namespace UAlbion.Game.Veldrid.Diag;
 ///   GET  /healthz                       → { ok, fps, frame }
 ///   GET  /state                         → JSON snapshot (map, party, dialogs, ...)
 ///   GET  /ui                            → list of visible UI elements with bounds
+///   GET  /log    [?n=N&clear=1]         → recent on-screen text (combat/examine/hover messages)
+///   GET  /combat                        → combat state: combatants, team, tile, hp, conditions
+///   GET  /npcs                          → NPC positions/movement on the current map
 ///   POST /event/raw   "load_game 7"     → fire any UAlbion event by its `-c` text form
 ///   POST /event       { name, args }    → same, but JSON-structured
+///   POST /key         { key, frames? }  → simulate a keypress (held N frames) through the input pipeline
 ///   POST /click       { id }            → synthetic click on UI element by stable ID
 ///   POST /click/at    { x, y, button? } → synthetic click at screen coordinates
 ///   POST /screenshot                    → image/png of the current frame (501 if unavailable)
@@ -76,6 +80,17 @@ public sealed class HarnessHttpServer : Component, IDisposable
     int _commandsProcessed;
     bool _disposed;
 
+    // On-screen text log — a ring buffer of the messages the game prints to the description /
+    // hover areas (combat narration, examine text, status messages). Lets a test agent read what
+    // the player would read without OCR'ing a screenshot. All access is on the game thread.
+    const int MaxLogEntries = 256;
+    readonly List<(long frame, string kind, string text)> _messageLog = new();
+
+    // Simulated held keys: physical key → frame on which to auto-release. Each frame Pump injects
+    // the appropriate key-down/up so continuous ("+") keybindings fire for the held duration —
+    // this exercises the full key→binding→event chain (not just the bound event).
+    readonly Dictionary<global::Veldrid.Sdl2.Key, long> _heldKeyReleaseFrame = new();
+
     public HarnessHttpServer(int port)
     {
         _port = port;
@@ -86,6 +101,29 @@ public sealed class HarnessHttpServer : Component, IDisposable
 
         On<EngineUpdateEvent>(_ => Pump());
         On<PreSwapBuffersEvent>(_ => FulfillScreenshots());
+        On<DescriptionTextEvent>(e => AppendMessage("desc", e.Source));
+        On<HoverTextEvent>(e => AppendMessage("hover", e.Source));
+    }
+
+    void AppendMessage(string kind, UAlbion.Game.Text.IText text)
+    {
+        var s = RenderText(text);
+        if (string.IsNullOrEmpty(s)) return;
+        // Collapse consecutive duplicates (the same hover text re-fires every frame).
+        if (_messageLog.Count > 0 && _messageLog[^1].kind == kind && _messageLog[^1].text == s)
+            return;
+        _messageLog.Add((_frameCount, kind, s));
+        if (_messageLog.Count > MaxLogEntries)
+            _messageLog.RemoveRange(0, _messageLog.Count - MaxLogEntries);
+    }
+
+    static string RenderText(UAlbion.Game.Text.IText text)
+    {
+        if (text == null) return null;
+        var sb = new StringBuilder();
+        try { foreach (var b in text.GetBlocks()) sb.Append(b.Text); }
+        catch { return null; }
+        return sb.ToString();
     }
 
     async Task AcceptLoopAsync()
@@ -113,6 +151,8 @@ public sealed class HarnessHttpServer : Component, IDisposable
             double inst = 1.0 / dt;
             _smoothedFps = _smoothedFps == 0 ? inst : _smoothedFps * 0.9 + inst * 0.1;
         }
+
+        ReleaseExpiredHeldKeys();
 
         // Drain at most 32 requests per frame so a burst can't starve the engine.
         int budget = 32;
@@ -160,7 +200,10 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
             case "GET /npcs":            WriteJson(ctx, BuildNpcsDump()); break;
+            case "GET /log":             WriteJson(ctx, BuildLog(ctx)); break;
+            case "GET /combat":          WriteJson(ctx, BuildCombatDump()); break;
             case "GET /pick":            WriteJson(ctx, BuildPickDump(ctx)); break;
+            case "POST /key":            HandleKey(ctx); break;
             case "GET /lasterror":       WriteJson(ctx, $"{{\"detail\":{JsonString(_lastErrorDetail)}}}"); break;
             case "GET /wallpixels":      HandlePixelDump(ctx, useWalls: true); break;
             case "GET /floorpixels":     HandlePixelDump(ctx, useWalls: false); break;
@@ -667,6 +710,141 @@ public sealed class HarnessHttpServer : Component, IDisposable
         }
         sb.Append("]}");
         return sb.ToString();
+    }
+
+    // Recent on-screen text (combat narration / examine / hover / status). ?n=N limits the
+    // number returned (default 50, newest last); ?clear=1 empties the buffer.
+    string BuildLog(HttpListenerContext ctx)
+    {
+        if (ctx.Request.QueryString["clear"] == "1")
+            _messageLog.Clear();
+        int n = int.TryParse(ctx.Request.QueryString["n"], out var nv) && nv > 0 ? nv : 50;
+        int start = Math.Max(0, _messageLog.Count - n);
+
+        var sb = new StringBuilder();
+        sb.Append("{\"count\":").Append(_messageLog.Count).Append(",\"messages\":[");
+        for (int i = start; i < _messageLog.Count; i++)
+        {
+            if (i > start) sb.Append(',');
+            var (frame, kind, text) = _messageLog[i];
+            sb.Append('{');
+            sb.Append($"\"frame\":{frame},");
+            sb.Append($"\"kind\":{JsonString(kind)},");
+            sb.Append($"\"text\":{JsonString(text)}");
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    UAlbion.Game.Combat.IReadOnlyBattle FindBattle()
+    {
+        var scene = TryResolve<ISceneManager>()?.ActiveScene;
+        if (scene == null) return null;
+
+        // Battle is added as a child of the active (combat) scene — reflect _children like the
+        // other harness dumps do (Battle isn't a resolvable service).
+        var childrenField = typeof(UAlbion.Api.Eventing.Component).GetField("_children",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        if (childrenField?.GetValue(scene) is not System.Collections.IEnumerable children)
+            return null;
+        foreach (var c in children)
+            if (c is UAlbion.Game.Combat.IReadOnlyBattle b)
+                return b;
+        return null;
+    }
+
+    // Combat state: every combatant with team, grid position, HP (from the battle's shadow,
+    // which covers monsters), conditions, and alive flag. {"active":false} when not in combat.
+    string BuildCombatDump()
+    {
+        var battle = FindBattle();
+        if (battle == null) return "{\"active\":false}";
+
+        string language = ReadVar(V.User.Gameplay.Language);
+        var sb = new StringBuilder();
+        sb.Append("{\"active\":true,\"combatants\":[");
+        bool first = true;
+        var mobs = battle.Mobs;
+        for (int i = 0; i < mobs.Count; i++)
+        {
+            var p = mobs[i];
+            if (p == null) continue;
+            if (!first) sb.Append(',');
+            first = false;
+
+            var eff = p.Effective;
+            int hp = battle.GetLifePoints(p);
+            bool isMonster = p.SheetId.Type == UAlbion.Config.AssetType.MonsterSheet;
+            sb.Append('{');
+            sb.Append($"\"sheet\":{JsonString(p.SheetId.ToString())},");
+            sb.Append($"\"name\":{JsonString(eff?.GetName(language))},");
+            sb.Append($"\"team\":{JsonString(isMonster ? "monster" : "party")},");
+            sb.Append($"\"tileX\":{p.X},\"tileY\":{p.Y},\"tile\":{p.CombatPosition},");
+            sb.Append($"\"hp\":{hp},");
+            sb.Append($"\"hpMax\":{eff?.Combat?.LifePoints?.Max ?? 0},");
+            sb.Append($"\"sp\":{eff?.Magic?.SpellPoints?.Current ?? 0},");
+            sb.Append($"\"conditions\":{JsonString(eff?.Combat?.Conditions.ToString())},");
+            sb.Append($"\"alive\":{(hp > 0 ? "true" : "false")}");
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    // Simulate a keypress through the real input pipeline (key → binding → event), so keybindings
+    // can be tested end-to-end. Body: {"key":"W"[,"frames":N]}. Holds the key for N frames so
+    // continuous ("+") bindings fire each frame; releases automatically.
+    void HandleKey(HttpListenerContext ctx)
+    {
+        string body = ReadBody(ctx);
+        string keyName; int frames = 1;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            keyName = doc.RootElement.GetProperty("key").GetString();
+            if (doc.RootElement.TryGetProperty("frames", out var f)) frames = f.GetInt32();
+        }
+        catch (Exception ex) { TryWriteError(ctx, HttpStatusCode.BadRequest, "expected {\"key\":\"W\"[,\"frames\":N]}: " + ex.Message); return; }
+
+        if (!Enum.TryParse<global::Veldrid.Sdl2.Key>(keyName, true, out var key))
+        {
+            TryWriteError(ctx, HttpStatusCode.BadRequest, $"unknown key '{keyName}' (use global::Veldrid.Sdl2.Key names, e.g. W, Up, ShiftLeft)");
+            return;
+        }
+        if (frames < 1) frames = 1;
+
+        RaiseKey(key, true);                                  // key-down → InputBinder._pressedKeys
+        _heldKeyReleaseFrame[key] = _frameCount + frames;     // auto key-up scheduled in Pump
+        WriteJson(ctx, $"{{\"ok\":true,\"key\":{JsonString(key.ToString())},\"frames\":{frames}}}");
+    }
+
+    void ReleaseExpiredHeldKeys()
+    {
+        if (_heldKeyReleaseFrame.Count == 0) return;
+        List<global::Veldrid.Sdl2.Key> toRelease = null;
+        foreach (var kvp in _heldKeyReleaseFrame)
+            if (_frameCount >= kvp.Value)
+                (toRelease ??= new List<global::Veldrid.Sdl2.Key>()).Add(kvp.Key);
+        if (toRelease == null) return;
+        foreach (var k in toRelease)
+        {
+            RaiseKey(k, false);
+            _heldKeyReleaseFrame.Remove(k);
+        }
+    }
+
+    void RaiseKey(global::Veldrid.Sdl2.Key key, bool down)
+    {
+        // KeyEvent(timestamp, windowId, down, repeat, physical, virtual, modifiers). InputBinder
+        // reads only Physical/Down/Modifiers, so Virtual can be default.
+        var ke = new global::Veldrid.Sdl2.KeyEvent(0u, 0u, down, false, key, default, global::Veldrid.Sdl2.ModifierKeys.None);
+        Raise(new KeyboardInputEvent
+        {
+            DeltaSeconds = 0,
+            KeyEvents = new List<global::Veldrid.Sdl2.KeyEvent> { ke },
+            InputEvents = Array.Empty<System.Text.Rune>()
+        });
     }
 
     string BuildCameraDump()
