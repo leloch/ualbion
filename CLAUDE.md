@@ -7,6 +7,7 @@ Operational index for working on **UAlbion**, an open-source C# / .NET 9 remake 
 > - `_ENGINE_GOTCHAS.md` — recurring bug-class landmines (read before touching eventing/combat/state/rendering).
 > - `_RE_INDEX.md` — one-stop index: every RE'd mechanic → its doc section + MAIN.EXE function.
 > - `_TODO_1TO1.md` — **the single source of truth for all remaining work** (RE backlog, blocked/ready implementation, doc drift, verification debt, deliberate deviations). Check + update this first.
+> - `_TODO_100PCT.md` — **playthrough-completability roadmap** (companion axis to `_TODO_1TO1.md`): the 6 blockers (B1–B6) and phase plan to make the game completable start-to-finish, not just 1:1 faithful.
 > - `_PROJECT_LOG.md` — full narrative engagement record (combat RE, harness, 3D-bug analysis, known regressions, next steps). **Read this for deep context.**
 > - `_HANDOFF.md` — earlier multi-session checkpoints.
 > - `_RE_COMBAT.md` — reverse-engineering of MAIN.EXE combat code.

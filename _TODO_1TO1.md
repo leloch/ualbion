@@ -5,8 +5,19 @@
 > (every `PLACEHOLDER` / `TODO` marker), the RE docs, and the session logs. Update this
 > file as items land; nothing in it is tracked anywhere else.
 >
-> Verification gates for every change: `dotnet test src/ualbion.ci.sln` (493 green),
+> Verification gates for every change: `dotnet test src/ualbion.ci.sln` (587 green),
 > `_smoke_all_saves.ps1` (13/13), and a live harness check where behaviour is visible.
+>
+> **⮕ Expanded goal scope (2026-06-13): two axes, both in scope.** This file tracks
+> **axis 1 — 1:1 mechanic fidelity** vs MAIN.EXE. Its companion **`_TODO_100PCT.md`** tracks
+> **axis 2 — content-pipeline completeness**: can the engine drive the whole scripted game
+> start-to-finish (Toronto crash → Seed ending)? The project is intro-complete but
+> **finale-impossible** today. DONE now means *both*: every 1:1 item below resolved AND the
+> 6 playthrough blockers (B1–B6) in `_TODO_100PCT.md` cleared, each verified on a green
+> harness run (not code-complete). Order: finish the 1:1 remainder here, then execute the
+> `_TODO_100PCT.md` phase plan (Phase 0 harness-trace → P1 conversation/recruit dispatch →
+> P2 world-verb + economy → P3 mid/late run → P4 ending → P5 progression fidelity →
+> P6 bookends/day-night → P7 polish).
 
 ## 0. Current state in one line
 
