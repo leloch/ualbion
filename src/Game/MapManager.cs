@@ -86,6 +86,12 @@ public class MapManager : GameServiceComponent<IMapManager>, IMapManager
 
         if (!map.MapData.SongId.IsNone)
             Enqueue(new SongEvent(map.MapData.SongId));
+
+        // Per-map ambient bed (3D maps pair a Song with an Ambient loop). AmbientSongId was
+        // deserialized then dropped — the AudioManager has an On<AmbientEvent> handler that
+        // nothing raised. Fire it on load so the area ambience plays.
+        if (!map.MapData.AmbientSongId.IsNone)
+            Enqueue(new UAlbion.Formats.ScriptEvents.AmbientEvent(map.MapData.AmbientSongId));
     }
 
     IMap BuildMap(MapId mapId)
