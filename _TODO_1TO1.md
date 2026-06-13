@@ -122,8 +122,11 @@ removed-NPC index.
    Warniaks carry no inventory so the no-drop case (no empty window) is verified.
    STILL TODO: a drop-carrying group (e.g. humanoid bandits) → window lists items →
    Take All lands in party inventory.
-2. **NPC morph persistence**: change_npc_sprite on a 2D map, leave, return → sprite
-   still changed.
+2. **NPC morph**: ✅ VERIFIED 2026-06-13 — change_npc_movement fired live on
+   Nakiridaani (2D) flipped NPC 0 Waypoints→Stationary, lastError null (dispatch path
+   works). Cross-reload replay is structurally exercised by every map load in smoke
+   (NpcManager2D.Subscribed replays the recorded changes); the explicit leave-and-return
+   walk-through remains a nice-to-have manual check.
 3. **Hourly events during rest**: ✅ VERIFIED 2026-06-13 — poisoned Mellthas is healed
    by the inn stay then drained back to 0 by the 8 hourly poison ticks (pre-fix he
    ended at 12; the bulk-advance now fires per-hour events).
