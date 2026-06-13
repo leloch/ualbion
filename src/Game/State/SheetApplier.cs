@@ -389,13 +389,30 @@ public class SheetApplier : Component
             sheet.Combat.LifePoints.Apply(NumericOperation.AddAmount, hpGain);
         }
 
-        var spGain = sheet.SpellPointsPerLevel;
-        if (spGain > 0 && sheet.Magic?.SpellPoints != null)
+        // MaxSP per level = INT/30 + SpellPointsPerLevel (RE ApplyLevelUp: MaxSP =
+        // level·(EffStat(INT)/30 + w[0xE6]); additive-per-level here is equivalent). The
+        // INT/30 term was previously omitted. Casters only (SpellPoints attribute present).
+        if (sheet.Magic?.SpellPoints != null)
         {
-            sheet.Magic.SpellPoints.ApplyToMax(NumericOperation.AddAmount, spGain);
-            sheet.Magic.SpellPoints.Apply(NumericOperation.AddAmount, spGain);
+            int intBonus = (sheet.Attributes?.Intelligence?.Current ?? 0) / 30;
+            int spGain = sheet.SpellPointsPerLevel + intBonus;
+            if (spGain > 0)
+            {
+                sheet.Magic.SpellPoints.ApplyToMax(NumericOperation.AddAmount, (ushort)spGain);
+                sheet.Magic.SpellPoints.Apply(NumericOperation.AddAmount, (ushort)spGain);
+            }
         }
 
+        // Action points (strikes/round) are recomputed from the level on every level-up:
+        // clamp(level / LevelsPerActionPoint, 1, 4). Previously never granted — AP stayed at
+        // the sheet's starting value, so multi-strike never scaled (RE fcn.00037c22, +0x11).
+        if (sheet.Combat != null)
+            sheet.Combat.ActionPoints =
+                (byte)UAlbion.Game.Combat.CombatFormulas.ActionPointsForLevel(sheet.Level, sheet.LevelsPerActionPoint);
+
+        // Spell-learning points (RE +0xEA → SLP pool). The remake tracks no separate SLP
+        // pool yet, so this is accumulated into TrainingPoints as a documented approximation
+        // (the original spends SLP on spell-learning and TP on skill-training separately).
         var tpGain = sheet.TrainingPointsPerLevel;
         if (tpGain > 0)
             sheet.Combat.TrainingPoints = (ushort)System.Math.Min(ushort.MaxValue, sheet.Combat.TrainingPoints + tpGain);

@@ -68,4 +68,16 @@ public static class CombatFormulas
         int chance = skill * (100 - difficulty) / 100;
         return Math.Clamp(chance, 0, 100);
     }
+
+    /// <summary>
+    /// Combat action points (strikes/round) at a given level (RE: ApplyLevelUp fcn.00037c22,
+    /// sheet+0x11 = clamp(level / LevelsPerActionPoint(0xE2), 1, 4); divisor 0 ⇒ 1). AP is
+    /// recomputed on every level-up.
+    /// </summary>
+    public static int ActionPointsForLevel(int level, int levelsPerActionPoint)
+    {
+        if (levelsPerActionPoint <= 0)
+            return 1;
+        return Math.Clamp(level / levelsPerActionPoint, 1, 4);
+    }
 }
