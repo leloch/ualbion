@@ -319,6 +319,11 @@ public class SavedGame
 
         ApiUtil.Assert(s.Offset - headerOffset == 0x5b8c, $"Expected header to be 0x5b8c bytes, but it was {s.Offset - headerOffset:x}");
         save.Unknown5B8C = s.Bytes(nameof(Unknown5B8C), save.Unknown5B8C, 0x2C);
+        // The save stores each NPC's sprite as a raw, type-agnostic INDEX (the original engine
+        // picks small/large/object gfx from the loaded MAP, not the save). We can't know the map's
+        // type here without loading it, so deserialize the index as TwoD/NpcLargeGfx; the actual
+        // gfx type is applied authoritatively at map load (NpcManager2D re-keys to small/large,
+        // DungeonMap re-keys to ObjectGroup — all identity-mapped, so the index is preserved).
         var mapType = MapType.TwoD;
         s.ListWithContext(nameof(save.Npcs), save.Npcs, (mapType, mapping), NpcCountPerMap, NpcState.Serdes); // 5bb8
 

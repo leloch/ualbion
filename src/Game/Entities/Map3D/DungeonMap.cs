@@ -276,6 +276,13 @@ public class DungeonMap : GameComponent, IMap
             game.Npcs[index] = state;
         }
 
+        // Saved NpcState sprites come through the save serdes typed as NpcLargeGfx (SavedGame.cs
+        // hardcodes MapType.TwoD); on a 3D map they must be ObjectGroup. The stored value is a
+        // raw, type-agnostic index (all these gfx types are identity-mapped), so re-key to
+        // ObjectGroup preserving the id — the 3D counterpart of NpcManager2D's small/large re-key.
+        if (state.SpriteOrGroup.Type is AssetType.NpcLargeGfx or AssetType.NpcSmallGfx)
+            state.SpriteOrGroup = new AssetId(AssetType.ObjectGroup, state.SpriteOrGroup.Id);
+
         // The GROUP comes from the live NpcState (so change_npc_sprite morphs apply);
         // freshly initialised states carry the MapNpc's group.
         var group = state.SpriteOrGroup.IsNone ? npc.SpriteOrGroup : state.SpriteOrGroup;
