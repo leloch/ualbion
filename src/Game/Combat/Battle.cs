@@ -65,6 +65,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         OnAsync<BeginCombatRoundEvent>(BeginRoundAsync);
         OnAsync<ObserveCombatEvent>(Observe);
         On<QueueCombatActionEvent>(OnQueueAction);
+        On<CombatDamageEvent>(OnCombatDamage);
 
         _groupId = groupId;
         Mobs = _mobs;
@@ -103,6 +104,29 @@ public class Battle : GameComponent, IReadOnlyBattle
     void OnQueueAction(QueueCombatActionEvent e)
     {
         _pendingActions[e.Actor] = e;
+    }
+
+    // Diagnostic kill-injection (see CombatDamageEvent): routes through the real
+    // ApplyDirectDamage path (death → RemoveMonsterCorpse → CollectMonsterLoot), then runs
+    // the normal victory check so the loot pipeline fires exactly as it would after a strike.
+    void OnCombatDamage(CombatDamageEvent e)
+    {
+        if (_combatEnded)
+            return;
+
+        if (e.Tile < 0)
+        {
+            foreach (var m in LiveParticipants(forParty: false).ToList())
+                ApplyDirectDamage(m, e.Amount);
+        }
+        else if (e.Tile < _tiles.Length && _tiles[e.Tile] != null)
+        {
+            ApplyDirectDamage(_tiles[e.Tile], e.Amount);
+        }
+
+        CheckBattleOver(
+            LiveParticipants(forParty: true).Count(),
+            LiveParticipants(forParty: false).Count());
     }
 
     static readonly QueueCombatActionEvent DefaultAction = new(default, CombatAction.Melee, -1);
@@ -246,8 +270,19 @@ public class Battle : GameComponent, IReadOnlyBattle
             AwardExperience();
             if (_loot.Count > 0 || _lootGold > 0 || _lootRations > 0)
             {
+                // Show the booty window and only return to the map once it's dismissed. The
+                // original blocks here (fcn.0004e124); raising it fire-and-forget and then
+                // popping the combat scene (Complete) on the same tick tore the window down
+                // before it could render — the loot was collectable in code but never shown.
                 var items = _loot.Select(kvp => (kvp.Key, (ushort)Math.Min(ushort.MaxValue, kvp.Value))).ToList();
-                Raise(new ShowBattleLootEvent(items, _lootGold, _lootRations));
+                int gold = _lootGold, rations = _lootRations;
+                _ = WithFrozenClock(this, async x =>
+                {
+                    await x.RaiseA(new ShowBattleLootEvent(items, gold, rations));
+                    x.ClearCombatScopedConditions();
+                    x.Complete?.Invoke();
+                });
+                return;
             }
         }
         ClearCombatScopedConditions();
