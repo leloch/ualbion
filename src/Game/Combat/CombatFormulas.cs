@@ -80,4 +80,13 @@ public static class CombatFormulas
             return 1;
         return Math.Clamp(level / levelsPerActionPoint, 1, 4);
     }
+
+    /// <summary>
+    /// Spell mastery grows with use: mastery += MagicTalent on each cast, capped at the 10000
+    /// ceiling (M = max(1,(mastery+50)/100) ⇒ 100% at 10000). RE post-cast fcn.000603ae.
+    /// Negative talent is ignored.
+    /// </summary>
+    public const int MaxMastery = 10000;
+    public static ushort GrowMastery(int current, int magicTalent)
+        => (ushort)Math.Clamp(current + Math.Max(0, magicTalent), 0, MaxMastery);
 }
