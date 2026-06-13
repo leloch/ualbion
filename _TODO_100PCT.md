@@ -199,13 +199,21 @@ several are likely small fixes but each needs reproduction + a root-cause pass. 
    forward steps stop at a wall (~z 21.3) instead of clipping through.
 5. **2D mouse movement impossible** — 2D maps are keyboard-only; clicking the map does not move
    the party. (Matches the doc's "No 2D drag-to-walk" gap — but confirm even single click-to-step
-   is absent.) **XL (full path-to-click) or M (single-step).**
-6. **Party-leader switch has no effect** — selecting a different leader doesn't take; the new
-   leader's portrait/head should enlarge (the "bigger head" leader indicator) and party order/
-   leader-driven behaviour should update. Functional + visual. **M.**
-7. **World-map NPCs are giant** — on the 2D overworld (city-to-city travel) the wandering NPC
-   sprites render hugely oversized; the player party sprites are correctly sized. Sprite-scale /
-   world-map billboard sizing applied to NPCs only. **M.**
+   is absent.) **XL (full path-to-click) or M (single-step).** STILL OPEN.
+6. **Party-leader switch has no effect** — ✅ **FIXED** (`StatusBarPortrait.OnTimer`). Root: the
+   single-left-click leader path guarded on `inventoryManager?.ItemInHand.Item != null`, but
+   `.Item` is a non-nullable `ItemId` struct so the test was ALWAYS true — every click diverted to
+   "give item" and `SetPartyLeaderEvent` never fired. Now guards on `!…Item.IsNone`. Verified live
+   (`set_party_leader` Tom→Rainer takes; the leader portrait is raised 3px via `Leader.Id`). Note:
+   the indicator is a 3px raise, not an enlargement — if the original enlarges the head, that's a
+   separate render tweak.
+7. **World-map NPCs are giant** — INVESTIGATED, root not yet pinned. Asset-type resolution is
+   correct (`MapNpc.Serdes`: TwoDOutdoors→`NpcSmallGfx`, TwoD→`NpcLargeGfx`); both player
+   (`SmallPlayer`/`LargePlayer`) and `Npc2D` build a `MapSprite` with no explicit `.Size`, so both
+   fall back to native texture frame size (`Sprite.UpdateSprite` `_size ??= subImage.Size`). Needs
+   a **live visual pass** (load the overworld, dump `/npcs` sprite ids + sizes) to confirm whether
+   NPCs load large gfx at runtime or it's a frame-size/tile-scale mismatch — don't blind-fix (risks
+   regressing indoor 2D). **M.** STILL OPEN.
 
 ---
 

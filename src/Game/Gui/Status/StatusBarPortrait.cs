@@ -187,7 +187,10 @@ public class StatusBarPortrait : UiElement
         _isClickTimerPending = false;
 
         var inventoryManager = Resolve<IInventoryManager>();
-        if (inventoryManager?.ItemInHand.Item != null)
+        // ItemInHand.Item is a non-nullable ItemId struct, so the old `!= null` was ALWAYS
+        // true — the give-item branch always fired and "make leader" never ran. Only divert
+        // to give-item when an item is genuinely held.
+        if (inventoryManager != null && !inventoryManager.ItemInHand.Item.IsNone)
         {
             Raise(new InventoryGiveItemEvent(PartyMember.Id));
             return;
