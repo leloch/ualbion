@@ -44,6 +44,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         OnAsync<InventorySwapEvent>(OnSlotEvent);
         OnAsync<InventoryPickupEvent>(OnSlotEvent);
         On<InventoryGiveItemEvent>(OnGiveItem);
+        On<InventorySellEvent>(OnBuyFromMerchant);
         OnAsync<InventoryDiscardEvent>(OnDiscard);
         On<SetInventorySlotUiPositionEvent>(OnSetSlotUiPosition);
         On<ActivateItemEvent>(OnActivateItem);
@@ -80,6 +81,11 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
     {
         var slot = GetSlot(id);
         if (slot == null || slot.Id.Slot == ItemSlotId.None)
+            return InventoryAction.Nothing;
+
+        // Merchant stock is never free to grab — buying goes through the "Sell" context option
+        // (InventorySellEvent → OnBuyFromMerchant), which charges gold. Block the drag-pickup.
+        if (id.Id.Type == InventoryType.Merchant)
             return InventoryAction.Nothing;
 
         return (_hand.Item.Type, slot.Item.Type) switch
@@ -232,6 +238,64 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
                                    slot.Id.Slot.IsBodyPart();
                 return !curseActive;
             default: return true;
+        }
+    }
+
+    // Buy one unit of a merchant's wares (the merchant-slot "Sell" option = merchant sells to
+    // the player). Charges pooled party gold at the item's Value (per-shop multiplier
+    // RE-pending), gives the item to the leader, and only debits/decrements if it fit. This is
+    // the core gold-loop fix — buying used to be a free pickup with no debit and the event had
+    // no subscriber (B5).
+    void OnBuyFromMerchant(InventorySellEvent e)
+    {
+        var merchant = _getInventory(e.Id);
+        var slot = merchant?.GetSlot(e.SlotId);
+        if (slot == null || slot.Item.Type != AssetType.Item || slot.Amount == 0)
+            return;
+
+        var item = _getItem(slot.Item);
+        if (item == null)
+            return;
+
+        int price = MerchantPricing.BuyPrice(item.Value);
+        var party = TryResolve<IParty>();
+        if (party == null)
+            return;
+
+        var tf = TryResolve<ITextFormatter>();
+        if (party.TotalGold < price)
+        {
+            if (tf != null)
+                Raise(new HoverTextEvent(tf.Format(Base.SystemText.Shop_ThePartyDoesNotHaveEnoughGold)));
+            return;
+        }
+
+        // Hand the item to the leader; abort (no charge) if there's no room.
+        var leaderInv = new InventoryId(party.Leader.Id);
+        var donor = new ItemSlot(new InventorySlotId(InventoryType.Temporary, 0, ItemSlotId.None)) { Item = slot.Item, Amount = 1 };
+        ushort given = TryGiveItems(leaderInv, donor, 1);
+        if (given == 0)
+            return;
+
+        SpendPartyGold(price);
+        slot.Amount -= given;
+        if (slot.Amount == 0)
+            slot.Clear();
+        Update(e.Id);
+    }
+
+    // Pooled party-gold spend, member by member (mirrors PlaceActionManager.TrySpendGold).
+    void SpendPartyGold(int amount)
+    {
+        int remaining = amount;
+        foreach (var member in Resolve<IParty>().StatusBarOrder)
+        {
+            if (remaining <= 0) break;
+            int gold = member?.Effective?.Inventory?.Gold?.Amount ?? 0;
+            if (gold <= 0) continue;
+            int take = Math.Min(gold, remaining);
+            Raise(new DataChangeEvent(new TargetId(AssetType.PartyMember, member.Id.Id), ChangeProperty.Gold, NumericOperation.SubtractAmount, (ushort)take));
+            remaining -= take;
         }
     }
 
