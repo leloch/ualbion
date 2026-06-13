@@ -31,7 +31,7 @@ public class Party : ServiceComponent<IParty>, IParty
         _readOnlyWalkOrder = _walkOrder.AsReadOnly();
 
         On<AddPartyMemberEvent>(e => SetLastResult(AddMember(e.PartyMemberId)));
-        On<RemovePartyMemberEvent>(e => SetLastResult(RemoveMember(e.PartyMemberId)));
+        On<RemovePartyMemberEvent>(OnRemovePartyMember);
         On<SetPartyLeaderEvent>(e => SetLeader(e.PartyMemberId));
         On<SetPlayerCombatSlotEvent>(OnSetCombatSlot);
 
@@ -121,6 +121,18 @@ public class Party : ServiceComponent<IParty>, IParty
         AttachChild(player);
         Raise(new PartyChangedEvent());
         return true;
+    }
+
+    // RE 5D §6 (RemovePartyMember fcn.0003822d): leaving the party re-enables the member's
+    // home-map NPC by clearing its RemovedNpcs bit, so the NPC reappears at its scripted
+    // post. The recruit chain hid it via modify_npc_off; the leave event carries the same
+    // flat home index (mapId*96 + slot) in Unk6 (0 = no home NPC, nothing to restore).
+    void OnRemovePartyMember(RemovePartyMemberEvent e)
+    {
+        bool removed = RemoveMember(e.PartyMemberId);
+        if (removed && HomeNpcIndex.TryDecode(e.Unk6, out var map, out var slot))
+            Raise(new ModifyNpcOffEvent(SwitchOperation.Clear, slot, map));
+        SetLastResult(removed);
     }
 
     bool RemoveMember(PartyMemberId id)
