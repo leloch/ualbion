@@ -404,13 +404,13 @@ public class Conversation : GameComponent
             if (set.Events[x].Event is not ActionEvent action)
                 continue;
 
-            // Block 255 = "any" wildcard (RE _RE_STORY_ACTIONS.md; the field comment notes it).
-            // The matcher previously required an exact block, so wildcard-block chains never fired.
-            // (The Argument==32000/0x7D00 wildcard the RE also notes is left exact for now — it
-            // needs an AssetId-vs-raw-id comparison and is INFERRED; exact match is the safe subset.)
+            // Wildcards (RE _RE_STORY_ACTIONS.md): Block 255 = "any" (the field comment notes it),
+            // and Argument with raw id 32000 (0x7D00) = "any". The matcher previously required exact
+            // block+argument, so wildcard chains (e.g. the Tom endgame fallback) never fired.
+            const int ArgumentWildcard = 32000;
             if (action.ActionType == type
                 && (action.Block == block || action.Block == 255)
-                && action.Argument == argument)
+                && (action.Argument == argument || action.Argument.Id == ArgumentWildcard))
             {
                 return x;
             }
