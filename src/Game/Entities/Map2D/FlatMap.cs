@@ -208,7 +208,17 @@ public class FlatMap : GameComponent, IMap
         if (zone?.Node == null)
             return;
 
-        var source = new EventSource(_mapData.Id, e.Type, zone.X, zone.Y);
+        // For UseItem the EventSource must carry the held item id (not the map id) so the
+        // zone chain's `query used_item == X` matches (Querier.QueryUsedItem reads Source.AssetId).
+        AssetId sourceId = _mapData.Id;
+        if (e.Type == TriggerType.UseItem)
+        {
+            var held = TryResolve<UAlbion.Game.State.Player.IInventoryManager>()?.ItemInHand.Item ?? AssetId.None;
+            if (!held.IsNone)
+                sourceId = held;
+        }
+
+        var source = new EventSource(sourceId, e.Type, zone.X, zone.Y);
         Raise(new TriggerChainEvent(_logicalMap.EventSet, zone.EventIndex, source));
     }
 

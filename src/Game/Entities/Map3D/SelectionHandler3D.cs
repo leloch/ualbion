@@ -212,6 +212,18 @@ public sealed class SelectionHandler3D : GameComponent
                     new TriggerMapTileEvent(TriggerType.TalkTo, zone.X, zone.Y),
                     ContextMenuGroup.Actions));
             }
+
+            // Use-item (B4): offered only when holding an item and the zone accepts it
+            // (3D tool puzzles — Toronto endgame). DungeonMap carries the held item into the
+            // UseItem trigger's EventSource for the zone chain's query used_item.
+            if ((zone.Trigger & TriggerTypes.UseItem) != 0
+                && !(TryResolve<UAlbion.Game.State.Player.IInventoryManager>()?.ItemInHand.Item.IsNone ?? true))
+            {
+                options.Add(new ContextMenuOption(
+                    S(Base.SystemText.MapPopup_UseItem),
+                    new TriggerMapTileEvent(TriggerType.UseItem, zone.X, zone.Y),
+                    ContextMenuGroup.Actions));
+            }
         }
 
         // NPC on the selected tile → talk option (the 3D counterpart of Npc2D.OnRightClick).
