@@ -575,7 +575,13 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
 
     public ushort TryTakeItems(InventoryId id, ItemSlot acceptor, ItemId item, ushort? amount)
     {
-        ArgumentNullException.ThrowIfNull(acceptor);
+        // A null acceptor means "remove / destroy" rather than transfer to a slot — the
+        // items are absorbed into a throwaway scratch slot and discarded. Used by the
+        // ChangeItem subtract map-event path (SheetApplier.ApplyItem), which has no
+        // destination slot. Without this the subtract path would throw. The scratch is
+        // cleared between transfers so it never caps at MaxItemCount on large removals.
+        bool destroy = acceptor == null;
+        acceptor ??= new ItemSlot(new InventorySlotId(InventoryType.Temporary, 0, ItemSlotId.None));
 
         ushort totalTransferred = 0;
         ushort remaining = amount ?? ushort.MaxValue;
@@ -587,11 +593,12 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         if (item == AssetId.Rations)
             return acceptor.TransferFrom(inventory.Rations, remaining, _getItem);
 
-        for (int i = 0; i < (int)ItemSlotId.NormalSlotCount && amount != 0; i++)
+        for (int i = 0; i < (int)ItemSlotId.NormalSlotCount && remaining != 0; i++)
         {
-            if (inventory.Slots[i].Item != item) 
+            if (inventory.Slots[i].Item != item)
                 continue;
 
+            if (destroy) acceptor.Clear();
             ushort transferred = acceptor.TransferFrom(inventory.Slots[i], remaining, _getItem);
             totalTransferred += transferred;
             remaining -= transferred;

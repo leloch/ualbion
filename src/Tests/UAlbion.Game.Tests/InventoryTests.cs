@@ -192,6 +192,41 @@ public class InventoryTests : Component
         Assert.Equal(1, _rainer.Slots[2].Amount);
     }
 
+    [Fact]
+    public void TryTakeItems_WithAcceptor_TransfersToAcceptor()
+    {
+        _tom.Slots[0].Set(_torch.Id, 3);
+        var acceptor = new ItemSlot(new InventorySlotId(InventoryType.Temporary, 0, ItemSlotId.None));
+        ushort taken = _im.TryTakeItems(_tomInv, acceptor, _torch.Id, 2);
+        Assert.Equal(2, taken);
+        Assert.Equal(2, acceptor.Amount);
+        Assert.Equal(1, _tom.Slots[0].Amount);
+    }
+
+    [Fact]
+    public void TryTakeItems_NullAcceptor_DestroysItems()
+    {
+        // The ChangeItem subtract map-event path (SheetApplier.ApplyItem) passes a null
+        // acceptor = "remove/destroy". Regression guard: this used to throw
+        // ArgumentNullException, so a subtract map event crashed instead of removing.
+        _tom.Slots[0].Set(_torch.Id, 5);
+        ushort taken = _im.TryTakeItems(_tomInv, null, _torch.Id, 3);
+        Assert.Equal(3, taken);
+        Assert.Equal(2, _tom.Slots[0].Amount);
+    }
+
+    [Fact]
+    public void TryTakeItems_NullAcceptor_RemovesAcrossTwoSlots()
+    {
+        // Destroy more than one slot holds → spans slots (small amounts, the realistic case).
+        _tom.Slots[0].Set(_torch.Id, 4);
+        _tom.Slots[1].Set(_torch.Id, 4);
+        ushort taken = _im.TryTakeItems(_tomInv, null, _torch.Id, 6);
+        Assert.Equal(6, taken);
+        Assert.True(_tom.Slots[0].Item.IsNone);
+        Assert.Equal(2, _tom.Slots[1].Amount);
+    }
+
     [Fact] public void PartialPickupTest() { }
     [Fact] public void CoalesceWouldOverfillTest() { }
     [Fact] public void TakeAllFromChestTest() { }
