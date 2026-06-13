@@ -2,6 +2,7 @@
 using UAlbion.Api.Eventing;
 using UAlbion.Core.Events;
 using UAlbion.Formats.Assets;
+using UAlbion.Formats.MapEvents;
 using UAlbion.Game.Events;
 using UAlbion.Game.Gui.Controls;
 using UAlbion.Game.State;
@@ -51,8 +52,8 @@ public class MainMenu : Dialog
         elements.AddRange([
             new Spacing(0,4),
             new Button(Base.SystemText.MainMenu_Options).OnClick(Options),
-            new Button(Base.SystemText.MainMenu_ViewIntro),
-            new Button(Base.SystemText.MainMenu_Credits),
+            new Button(Base.SystemText.MainMenu_ViewIntro).OnClick(() => _ = PlayVideo(Base.Video.ApproachToAlbion)),
+            new Button(Base.SystemText.MainMenu_Credits).OnClick(() => _ = PlayVideo(Base.Video.Endgame4)),
             new Spacing(0,3),
             new Button(Base.SystemText.MainMenu_QuitGame).OnClick(() => Raise(new QuitEvent())),
             new Spacing(0,2)
@@ -60,6 +61,17 @@ public class MainMenu : Dialog
 
         var stack = new VerticalStacker(elements);
         AttachChild(new DialogFrame(stack));
+    }
+
+    // Replay a menu cinematic via the FLIC player (the buttons were previously dead). The
+    // menu is detached during playback and reattached after. ViewIntro = ApproachToAlbion;
+    // Credits has no dedicated enum entry, so it plays the final endgame FLIC (best available).
+    async AlbionTask PlayVideo(Base.Video video)
+    {
+        var exchange = Exchange;
+        Detach();
+        await RaiseA(new PlayAnimationEvent(video, 0, 0, 0, 0, 0, 0));
+        Attach(exchange);
     }
 
     async AlbionTask NewGame()
