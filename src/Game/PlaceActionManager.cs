@@ -31,9 +31,9 @@ namespace UAlbion.Game;
 ///   LearnCloseCombat — unk6 = gold per +1 skill point (costs 1 training point too)
 ///   LearnSpells — school = unk5; price = unk6 × spell level requirement; learning sets
 ///                 the known bit and initial mastery = 4 × MagicTalent
-/// Unk3 (confirm-text override) shows a YesNoPrompt before the service runs and Unk4
-/// (success text) is shown when it completes, both resolved against the firing event
-/// set's text set. Unk2's meaning is still undecoded (RE cluster D).
+/// Unk2 (intro/greeting text, RE 5D), Unk3 (confirm-text override) and Unk4 (success
+/// text) are all resolved against the firing event set's text set: Unk2 is shown when
+/// the service starts, Unk3 as a YesNoPrompt before it runs, Unk4 on completion.
 /// </summary>
 public class PlaceActionManager : GameComponent
 {

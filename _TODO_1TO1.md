@@ -72,16 +72,19 @@ removed-NPC index.
 | ~~AI ranged commit~~ | `Battle.cs` | DONE `f0015333` — real usability (typeid 6 + ammo) |
 | ~~Dead `TacticalSpriteId`~~ | — | DONE `021a3481` — removed from interface + impls |
 | ~~VideoManager positioned pics~~ | `VideoManager.cs` | DONE `9212f855` — non-zero x/y draws at native size at UI coords |
-| Selection3D per-tile picking | `Selection3D.cs:22` | Ground-plane intersection only; wall-face ray refinement |
+| Selection3D per-tile picking | `Selection3D.cs:22` | Ground-plane math present, scene wiring missing |
 | ~~Conversation default block~~ | `Conversation.cs` | RESOLVED `57bc62e5` — all four real BlockIds handled; default now warns on malformed data |
 | ~~Goddess' amulet / vital items~~ | `InventoryManager.cs` | DONE `78c13390` — PlotItem-flagged items can't be discarded (InvMsg 193) |
-| TextFormatter Damage token | `TextFormatter.cs:40` | Guessed semantics; scan game texts for actual usage to confirm |
-| Animated 3D meshes | `MapObject.cs:102` | 3D map objects don't animate |
-| Z-fighting hack | `MapObject.cs:178` | "still happens sometimes" |
-| Weight limit on give | `InventoryManager.cs:514` | Party members can exceed carry weight |
-| ChangeNpcMovement "other flags" | `NpcManager2D.cs` InitialiseState | Only SimpleMsg flag is mapped from MapNpcFlags |
-| Battle-view walk lerp | `BattleView.cs` | Multi-tile monster moves should WalkPath-lerp (N engine frames per tile, N = Move anim length) — state side done |
-| Ghost translucency (class 2) | `BattleView.cs` | Render kind 8 (translucent) for ghostly monsters |
+| TextFormatter Damage token | `TextFormatter.cs:40` | Guessed semantics; defensive fallback harmless — confirm token arg model via RE |
+| Animated 3D meshes | `MapObject.cs:102` | 3D map objects don't animate (needs RE 6) |
+| Z-fighting hack | `MapObject.cs:178` | "still happens sometimes" — cosmetic, harmless |
+| ~~Weight limit on give~~ | `InventoryManager.cs` | DONE `755a37f1` — TryGiveItems enforces MaxWeight |
+| ChangeNpcMovement "other flags" | `NpcManager2D.cs` | RE 5D: remaining bits non-behavioral; map the few that matter or document |
+| ~~Battle-view walk lerp~~ | `BattleView.cs` | DONE `6927f129` (also listed at section 3) — WalkPath lerp at Move-anim-length frames/tile |
+| ~~Ghost translucency (class 2)~~ | `BattleView.cs` | DONE `973b57a5` — renderClass==2 draws at 0.6 opacity |
+| SheetApplier ChangeItem subtract | `SheetApplier.cs:142` | Subtract/SubtractPercentage silently no-op (unreachable in base data; mod/script safety) |
+| Banish 62/63/64 area targeting | `InstantKillSpellEffects.cs:115` | Resolve single/row/all (reuse existing row-mask plumbing) |
+| Unknown1C HomeNpcIndex wiring | `CharacterSheet.cs:117` | Confirm/wire RemovedNpcs join/leave per _RE_5D.md §6 |
 
 ## 5. Doc drift / comment cleanups (5 minutes each, do with next touch)
 
@@ -119,8 +122,9 @@ removed-NPC index.
    Take All lands in party inventory.
 2. **NPC morph persistence**: change_npc_sprite on a 2D map, leave, return → sprite
    still changed.
-3. **Hourly events during rest**: poison drains and EveryHour chains fire across an
-   inn stay (clock-advance path).
+3. **Hourly events during rest**: ✅ VERIFIED 2026-06-13 — poisoned Mellthas is healed
+   by the inn stay then drained back to 0 by the 8 hourly poison ticks (pre-fix he
+   ended at 12; the bulk-advance now fires per-hour events).
 4. **Goto markers**: walk onto a Jirinaar marker tile → automap shows glyph 18 →
    Teleporter lists it; save/load → bit persists (offset 0x5972).
 5. **Shield pct**: cast MagicShield in combat → trace shows defense multiplied, spell

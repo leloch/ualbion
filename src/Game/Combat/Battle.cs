@@ -1413,8 +1413,9 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         // Weapon-type gate: a LongRangeWeapon (ItemType 6) in the weapon hand routes the
         // strike through the RANGED callback semantics (fcn.0004f057) — the to-hit roll
-        // uses LongRangeCombat instead of CloseRangeCombat. PLACEHOLDER: ammunition
-        // (AmmoType matching + consumption per shot) pending RE.
+        // uses LongRangeCombat instead of CloseRangeCombat. Ammunition (AmmoType match +
+        // one round consumed per strike before the to-hit roll) is handled in
+        // ResolveAttackAction via RangedUsable/CountAmmo/ConsumeAmmo (RE 5A).
         bool ranged = HasRangedWeapon(attacker);
 
         // 1. TO-HIT: the attacker's weapon skill vs 100 (RE'd from the attack completion
