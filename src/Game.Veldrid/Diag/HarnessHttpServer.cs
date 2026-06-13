@@ -49,6 +49,7 @@ namespace UAlbion.Game.Veldrid.Diag;
 ///   GET  /ui                            → list of visible UI elements with bounds
 ///   GET  /log    [?n=N&clear=1]         → recent on-screen text (combat/examine/hover messages)
 ///   GET  /combat                        → combat state: combatants, team, tile, hp, conditions
+///   GET  /inventory                     → party inventories: gold, rations, item counts (B5 trade testing)
 ///   GET  /npcs                          → NPC positions/movement on the current map
 ///   POST /event/raw   "load_game 7"     → fire any UAlbion event by its `-c` text form
 ///   POST /event       { name, args }    → same, but JSON-structured
@@ -202,6 +203,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /npcs":            WriteJson(ctx, BuildNpcsDump()); break;
             case "GET /log":             WriteJson(ctx, BuildLog(ctx)); break;
             case "GET /combat":          WriteJson(ctx, BuildCombatDump()); break;
+            case "GET /inventory":       WriteJson(ctx, BuildInventoryDump()); break;
             case "GET /pick":            WriteJson(ctx, BuildPickDump(ctx)); break;
             case "POST /key":            HandleKey(ctx); break;
             case "GET /lasterror":       WriteJson(ctx, $"{{\"detail\":{JsonString(_lastErrorDetail)}}}"); break;
@@ -787,6 +789,43 @@ public sealed class HarnessHttpServer : Component, IDisposable
             sb.Append($"\"conditions\":{JsonString(eff?.Combat?.Conditions.ToString())},");
             sb.Append($"\"alive\":{(hp > 0 ? "true" : "false")}");
             sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    // Party inventories: per member, pooled gold/rations and non-empty backpack slots. Lets the
+    // merchant economy (B5 buy/sell) be verified — read gold + item counts before/after a trade.
+    string BuildInventoryDump()
+    {
+        var party = TryResolve<IParty>();
+        var state = TryResolve<IGameState>();
+        if (party == null || state == null) return "{\"members\":[]}";
+
+        var sb = new StringBuilder();
+        sb.Append("{\"totalGold\":").Append(party.TotalGold).Append(",\"members\":[");
+        bool firstM = true;
+        foreach (var pm in party.StatusBarOrder)
+        {
+            if (pm == null) continue;
+            var inv = state.GetInventory(new UAlbion.Formats.Assets.Inv.InventoryId(pm.Id));
+            if (inv == null) continue;
+            if (!firstM) sb.Append(',');
+            firstM = false;
+            sb.Append('{');
+            sb.Append($"\"id\":{JsonString(pm.Id.ToString())},");
+            sb.Append($"\"gold\":{inv.Gold?.Amount ?? 0},");
+            sb.Append($"\"rations\":{inv.Rations?.Amount ?? 0},");
+            sb.Append("\"items\":[");
+            bool firstI = true;
+            foreach (var slot in inv.EnumerateAll())
+            {
+                if (slot == null || slot.Item.IsNone || slot.Item.Type != UAlbion.Config.AssetType.Item) continue;
+                if (!firstI) sb.Append(',');
+                firstI = false;
+                sb.Append($"{{\"item\":{JsonString(slot.Item.ToString())},\"amount\":{slot.Amount}}}");
+            }
+            sb.Append("]}");
         }
         sb.Append("]}");
         return sb.ToString();
