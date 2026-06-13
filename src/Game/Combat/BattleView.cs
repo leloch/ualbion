@@ -25,9 +25,10 @@ namespace UAlbion.Game.Combat;
 /// and freeze on the last frame as a corpse — all at the original's 6.67 fps animation
 /// rate (effects at 2 engine frames per gfx frame). Party members are never drawn (the
 /// original has no party battle sprites). Render classes 2/3/4 (MONCHAR +0x0D) get the
-/// RE'd sine hover bob (±4-6 world units, 3.0-4.95 s, random phase; 2/4 add an X sway).
-/// PLACEHOLDERs: soul-rise for demonic corpses / smooth walk paths / class-2
-/// translucency; shadows are 50 %-opacity silhouettes instead of the darkening LUT blit.
+/// RE'd sine hover bob (±4-6 world units, 3.0-4.95 s, random phase; 2/4 add an X sway);
+/// class 2 (ghostly) draws translucent; multi-tile moves WalkPath-lerp along their
+/// waypoints. PLACEHOLDER: soul-rise for demonic corpses (pending RE 6). Shadows are
+/// 50 %-opacity silhouettes instead of the darkening LUT blit (deliberate deviation).
 /// </summary>
 public class BattleView : GameComponent
 {
