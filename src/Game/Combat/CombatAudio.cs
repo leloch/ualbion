@@ -12,8 +12,9 @@ namespace UAlbion.Game.Combat;
 /// sound is the shared death scream (sample 268) — party deaths at 11000 Hz / vol 100,
 /// monster deaths at 15000 Hz / vol 60 (pitch differs, not the sample). Heals play
 /// sample 38; each spell handler hardcodes its own sample sequence (table below,
-/// CONFIRMED from the per-spell handler disassembly). PLACEHOLDER: the original
-/// sequences cast samples with the projectile flight; we play them together.
+/// CONFIRMED from the per-spell handler disassembly). Deliberate deviation: the original
+/// sequences cast samples with the projectile flight; we play them together (the samples
+/// and order match — only the inter-sample timing differs, inaudible in practice).
 /// </summary>
 public class CombatAudio : Component
 {

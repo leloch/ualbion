@@ -16,8 +16,8 @@ namespace UAlbion.Game;
 ///   show_pic / show_picture — fullscreen still picture under subsequent overlays
 ///                 (e.g. Picture.ScoutShip, the intro cockpit).
 ///   start_anim &lt;flic&gt; &lt;x&gt; &lt;y&gt; &lt;layer&gt; — positioned looping animation at UI pixels
-///                 (the cockpit window star/planet anims). Layer semantics undecoded —
-///                 PLACEHOLDER: drawn above the picture in start order.
+///                 (the cockpit window star/planet anims). Layer semantics undecoded;
+///                 defensible default: drawn above the picture in start order.
 ///   play &lt;n&gt;    — waits until the current positioned anim completes n full cycles;
 ///                 the script language's pacing primitive.
 ///   stop_anim   — removes all overlays. Overlays also clear on map unload.

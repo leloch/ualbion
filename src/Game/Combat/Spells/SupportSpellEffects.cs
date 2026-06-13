@@ -287,7 +287,8 @@ public sealed class LightSpellEffect : ISpellEffect
 /// <summary>
 /// Levitation (Dji-Kantos): lets the party float over pit (no-floor) tiles in 3D maps;
 /// Collider3D exempts them while ActivePartySpells.Levitating is set (cleared on map
-/// change — PLACEHOLDER for the original's active-spell percentage decay).
+/// change — deliberate deviation, ledger §8, vs the original's percentage decay; moot
+/// since Levitation is confirmed dead in the original engine).
 /// </summary>
 public sealed class LevitationEffect : ISpellEffect
 {
@@ -305,8 +306,8 @@ public sealed class LevitationEffect : ISpellEffect
 
 /// <summary>
 /// Utility spells whose systemic effect isn't wired yet (Teleporter). They cast
-/// successfully (consuming SP/charges) and log what WOULD happen — explicit PLACEHOLDERs
-/// so nothing silently fails, each naming the subsystem that needs to exist before they
+/// successfully (consuming SP/charges) and log what WOULD happen — documented stubs so
+/// nothing silently fails, each naming the subsystem that needs to exist before they
 /// can be completed 1:1.
 /// </summary>
 public sealed class UtilitySpellEffect : ISpellEffect

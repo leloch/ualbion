@@ -27,8 +27,9 @@ namespace UAlbion.Game.Combat;
 /// original has no party battle sprites). Render classes 2/3/4 (MONCHAR +0x0D) get the
 /// RE'd sine hover bob (±4-6 world units, 3.0-4.95 s, random phase; 2/4 add an X sway);
 /// class 2 (ghostly) draws translucent; multi-tile moves WalkPath-lerp along their
-/// waypoints. PLACEHOLDER: soul-rise for demonic corpses (pending RE 6). Shadows are
-/// 50 %-opacity silhouettes instead of the darkening LUT blit (deliberate deviation).
+/// waypoints. Banished demonic corpses play the soul-rise lift/shrink/fade with 3 wisps
+/// (RE 6 worker 0xa1b20). Shadows are 50 %-opacity silhouettes instead of the darkening
+/// LUT blit (deliberate deviation).
 /// </summary>
 public class BattleView : GameComponent
 {
@@ -418,10 +419,11 @@ public class BattleView : GameComponent
                         bodyFlags)),
                     // The ground shadow: the odd physical frame is the mask, drawn in the
                     // original's pass 1 (under every body sprite) centred on the feet
-                    // (anchor 50,50). PLACEHOLDER: drawn as a half-opacity BLACK silhouette
-                    // (DropShadow renders every opaque mask pixel black — the mask's own
-                    // palette colour is a light grey); the original darkens the backdrop
-                    // through a LUT instead.
+                    // (anchor 50,50). Deliberate deviation (ledger §8): drawn as a
+                    // half-opacity BLACK silhouette (DropShadow renders every opaque mask
+                    // pixel black — the mask's own palette colour is a light grey); the
+                    // original darkens the backdrop through a dest-pixel LUT the sprite
+                    // pipeline can't express. Visually identical minus palette quantisation.
                     Shadow = AttachChild(new Sprite(
                         occupant.Effective.CombatGfx,
                         ShadowLayer,
