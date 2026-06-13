@@ -5,25 +5,16 @@ namespace UAlbion.Formats.Assets;
 [Flags]
 public enum SpellEnvironments : byte
 {
-    // The first 4 always appear together: reversing of
-    // the exe will be required to see which is actually which
-    Indoors   = 1 << 0,
-    Outdoors  = 1 << 1,
-    Dungeon   = 1 << 2,
-    Inventory = 1 << 3,
+    // RE'd (RE 5B fcn.00060554): the castable-environment bit is selected by the environment
+    // index = 5 in combat, else (mapFlags & 0xC) >> 2 == (int)RestMode. The first four were
+    // previously mis-named Indoors/Outdoors/Dungeon/Inventory.
+    City       = 1 << 0, // RestMode.Wait
+    Dungeon    = 1 << 1, // RestMode.RestEightHours
+    Wilderness = 1 << 2, // RestMode.RestUntilDawn
+    Interior   = 1 << 3, // RestMode.NoResting
 
-    Unk4   = 1 << 4,
-    Combat = 1 << 5,
-    Unk6   = 1 << 6,
-    Unk7   = 1 << 7,
-
-    /* From early asm code:
-    0 City
-    1 Dungeon
-    2 Wilderness
-    3 Interior
-    4 Camp
-    5 Combat
-    6 Spaceship
-    */
+    Camp       = 1 << 4, // never produced by fcn.00060554 (dead)
+    Combat     = 1 << 5,
+    Spaceship  = 1 << 6, // only in dead school-5/6 records
+    Unk7       = 1 << 7,
 }
