@@ -55,14 +55,16 @@ PlaceAction Unk2 = intro text (shown); SetPartyLeader unk2/3 ignored; sheet+0x1C
 removed-NPC index.
 
 ## 3. Remaining implementation leftovers from the clusters
-- ~~Battle-view WALK lerp~~ DONE `6927f129` — combatants glide along their waypoints
-  (Move-anim-length frames per tile, anim stepping every frame; CombatWalkEvent).
-- ~~Fizzle SP timing~~ VERIFIED CORRECT `57bc62e5` (the fizzle return precedes the
-  SP charge — zero-target casts cost nothing).
-- 5D extras not yet wired: MapNpc V2 byte1 = ambient sound-set index (positional loop
-  samples, table 13×0x28 @0x13db10 — needs the table CONTENTS extracted from the
-  binary before wiring); NpcState ActiveSfx0-3 = the sample handles; MapNpc flag
-  0x40 = collision class 1; NoClip is really a collision-class selector.
+- ~~Battle-view WALK lerp~~ DONE `6927f129`.
+- ~~Fizzle SP timing~~ VERIFIED CORRECT `57bc62e5`.
+- ~~Soul-rise banish VFX~~ DONE `12ff1433` (RE 6 worker 0xa1b20 — body lift/shrink/fade
+  + 3 wisps; pre-gate descending orb omitted as a lead-in flourish).
+- ~~Ambient NPC sound-set~~ DONE `a5f7ff22` (RE 6 table @0x13db10 + keyed audio API +
+  cadence scheduler). **Audible output UNVERIFIED here** (no audio device in tests/
+  harness) — needs a listening pass on a real machine.
+- ~~Animated 3D meshes~~ N/A (RE 6: original has no mesh path) — closed.
+- 5D leftovers (low/cosmetic): MapNpc flag 0x40 = collision class 1 / NoClip is a
+  collision-class selector (RE says non-behavioral for the remaining bits).
 
 ## 4. Implementation possible NOW (no RE needed)
 
