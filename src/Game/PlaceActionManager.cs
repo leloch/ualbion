@@ -114,8 +114,9 @@ public class PlaceActionManager : GameComponent
             case PlaceActionType.Merchant:
             case PlaceActionType.ScrollMerchant:
                 // ScrollMerchant shares the Merchant handler verbatim in the original
-                // (identical function pointer); wares = the merchant inventory in Unk8.
-                Raise(new MerchantEvent(new MerchantId(AssetType.Merchant, e.Unk8), PartyMemberId.None));
+                // (identical function pointer); wares = the merchant inventory in Unk8. Unk6 is
+                // the per-shop buy/sell percent (RE _RE_MERCHANT.md), same as Repair/Identify use.
+                Raise(new MerchantEvent(new MerchantId(AssetType.Merchant, e.Unk8), PartyMemberId.None, e.Unk6));
                 break;
             default:
                 Info($"[PlaceAction] {e.Type} not implemented yet (unk2={e.Unk2} unk5={e.Unk5} unk6={e.Unk6})");
