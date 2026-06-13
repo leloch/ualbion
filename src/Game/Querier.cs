@@ -33,6 +33,16 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
         OnQuery<       QueryUsedItemEvent, bool>(q => ((EventContext)Context).Source.AssetId == (AssetId)q.ItemId);
         OnQuery<      QueryNpcActiveEvent, bool>(q => Resolve<IGameState>().IsNpcDisabled(MapId.None, q.Immediate));
         OnQuery<QueryScriptDebugModeEvent, bool>(_ => false);
+        // Leader character-attribute / day-count branches (previously threw at map load).
+        OnQuery<         QueryGenderEvent, bool>(q => FormatUtil.Compare(q.Operation, (int)Resolve<IGameState>().Party.Leader.Effective.Gender, q.Immediate));
+        OnQuery<          QueryClassEvent, bool>(q => FormatUtil.Compare(q.Operation, (int)Resolve<IGameState>().Party.Leader.Effective.PlayerClass, q.Immediate));
+        OnQuery<           QueryRaceEvent, bool>(q => FormatUtil.Compare(q.Operation, (int)Resolve<IGameState>().Party.Leader.Effective.Race, q.Immediate));
+        OnQuery<            QueryDayEvent, bool>(q =>
+        {
+            int days = (int)(Resolve<IGameState>().Time - UAlbion.Formats.Assets.Save.SavedGame.Epoch).TotalDays;
+            int modulo = q.Immediate == 0 ? 1 : q.Immediate;
+            return FormatUtil.Compare(q.Operation, days % modulo, q.Argument);
+        });
 
         OnQuery<QueryConsciousEvent, bool>(q =>
         {
