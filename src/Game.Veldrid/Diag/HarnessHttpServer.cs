@@ -45,7 +45,7 @@ namespace UAlbion.Game.Veldrid.Diag;
 /// Endpoints:
 /// <code>
 ///   GET  /healthz                       → { ok, fps, frame }
-///   GET  /state                         → JSON snapshot (map, party, dialogs, ...)
+///   GET  /state                         → JSON snapshot (map, mapType, tileset, useSmallSprites, party, ...)
 ///   GET  /ui                            → list of visible UI elements with bounds
 ///   GET  /log    [?n=N&clear=1]         → recent on-screen text (combat/examine/hover messages)
 ///   GET  /combat                        → combat state: combatants, team, tile, hp, conditions
@@ -254,10 +254,26 @@ public sealed class HarnessHttpServer : Component, IDisposable
             sb.Append($"\"map\":{JsonString(state.MapId.ToString())},");
             sb.Append($"\"time\":{JsonString(state.Time.ToString("O"))},");
             sb.Append($"\"tickCount\":{state.TickCount},");
+
+            // Map classification — to spot a misclassified outdoor map at a glance. mapType
+            // TwoDOutdoors ⇒ small NPC gfx; TwoD ⇒ large. tileset is what drives that decision
+            // (MapData2D.OutdoorTilesets); useSmallSprites is the resulting NPC-gfx selector.
+            var cur = TryResolve<UAlbion.Game.IMapManager>()?.Current;
+            if (cur != null)
+            {
+                sb.Append($"\"mapType\":{JsonString(cur.MapType.ToString())},");
+                sb.Append($"\"useSmallSprites\":{(cur.MapType == UAlbion.Formats.Assets.Maps.MapType.TwoDOutdoors ? "true" : "false")},");
+                var tileset = (cur.MapData as UAlbion.Formats.Assets.Maps.MapData2D)?.TilesetId.ToString();
+                sb.Append($"\"tileset\":{JsonString(tileset)},");
+            }
+            else
+            {
+                sb.Append("\"mapType\":null,\"useSmallSprites\":null,\"tileset\":null,");
+            }
         }
         else
         {
-            sb.Append("\"map\":null,\"time\":null,\"tickCount\":0,");
+            sb.Append("\"map\":null,\"time\":null,\"tickCount\":0,\"mapType\":null,\"useSmallSprites\":null,\"tileset\":null,");
         }
 
         var leader = party?.Leader;
