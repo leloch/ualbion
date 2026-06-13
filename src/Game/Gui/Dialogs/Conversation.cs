@@ -88,7 +88,7 @@ public class Conversation : GameComponent
         }
     }
 
-    async AlbionTask<bool> BlockClicked(BlockId blockId) // return true if conversation is complete
+    async AlbionTask<bool> BlockClicked(BlockId blockId, ushort promptNumber = 0) // return true if conversation is complete
     {
         switch (blockId)
         {
@@ -186,9 +186,22 @@ public class Conversation : GameComponent
 
             default:
                 {
-                    // All four real block ids (Profession/QueryWord/QueryItem/Farewell)
-                    // are handled above; MainText (-1) is a UiText filtering pseudo-id
-                    // never dispatched here. Anything else is malformed data.
+                    // Numbered conversation options (regular block ids start at 10) dispatch a
+                    // DialogueLine action keyed by (block, prompt-number). The prompt number is
+                    // the SubId of the text event that presented the options — RE'd shape:
+                    // `action DialogueLine <block> PromptNumber.<subId>` (AlbionDecompilerTests).
+                    // These chains carry the branching dialogue, recruitment (add_party_member
+                    // behind a prompt_player), quest beats, etc. — the bulk of conversation flow.
+                    if ((int)blockId >= 10)
+                    {
+                        var promptArg = new AssetId(AssetType.PromptNumber, promptNumber);
+                        if (!await TriggerAction(ActionType.DialogueLine, (byte)blockId, promptArg))
+                            Warn($"Conversation: no DialogueLine chain for block {(int)blockId} prompt {promptNumber}");
+                        break;
+                    }
+
+                    // MainText (-1) is a UiText filtering pseudo-id never dispatched here.
+                    // Anything else is malformed data.
                     Warn($"Conversation: unhandled block id {blockId}");
                     break;
                 }
@@ -252,11 +265,8 @@ public class Conversation : GameComponent
 
                     var standardOptions = BuildStandardOptions();
 
-                    // foreach (var blockId in blocks.Where(x => x > 0))
-                    //     options.Add((text, blockId, () => BlockClicked(blockId, mapTextEvent.SubId)));
-
                     var blockId = await _optionsWindow.GetOption(options, standardOptions);
-                    if (await BlockClicked(blockId))
+                    if (await BlockClicked(blockId, mapTextEvent.SubId))
                         Close();
 
                     return;
@@ -278,11 +288,8 @@ public class Conversation : GameComponent
                         .Select(x => (text, (BlockId?)x, x))
                         .ToArray();
 
-                    // foreach (var blockId in blocks.Where(x => x > 0))
-                    //     options.Add((text, blockId, () => BlockClicked(blockId, mapTextEvent.SubId)));
-
                     var blockId = await _optionsWindow.GetOption(options, null);
-                    if (await BlockClicked(blockId))
+                    if (await BlockClicked(blockId, mapTextEvent.SubId))
                         Close();
 
                     break;
