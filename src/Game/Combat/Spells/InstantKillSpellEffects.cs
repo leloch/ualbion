@@ -115,8 +115,8 @@ public sealed class GoddessWrathEffect : ISpellEffect
 /// single/row/all area difference is driven by each spell's SPELLDAT Targets byte
 /// (62 OneMonster / 63 RowOfMonsters / 64 AllMonsters), which Battle.CastQueuedSpell
 /// already enumerates — it calls this effect once per enemy in the area, each
-/// independently gated. (The soul-rise death animation is the one remaining PLACEHOLDER,
-/// pending RE 6.)
+/// independently gated. Banished corpses play the soul-rise animation (RE 6 worker
+/// 0xa1b20), driven via the SoulRise context hook into BattleView.
 /// </summary>
 public sealed class BanishDemonEffect : ISpellEffect
 {

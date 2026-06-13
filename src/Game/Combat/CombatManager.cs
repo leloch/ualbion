@@ -40,8 +40,9 @@ public class CombatManager : GameComponent
         // PALETTE is looked up from the background index. Monster combat gfx are painted
         // for the combat palettes (default pal.24 DungeonCombat), so without this fallback
         // any map lacking a CombatBackgroundId renders the monsters in the map palette
-        // (e.g. all-white in Jirinaar). PLACEHOLDER: Dungeon chosen as the generic fallback
-        // because it uses the monster gfx default palette; the original has no fallback at all.
+        // (e.g. all-white in Jirinaar). Deliberate deviation (ledger §8): Dungeon chosen as
+        // the generic fallback because it uses the monster gfx default palette; the original
+        // has no fallback at all (it fatally asserts) — fail-soft is strictly better here.
         if (backgroundId.IsNone)
             backgroundId = (SpriteId)(CombatBackgroundId)Base.CombatBackground.Dungeon;
 

@@ -120,6 +120,26 @@ Extracted the previously-untestable RE'd decision logic into pure statics and co
 - crit/instant-kill + equipment-break primitives already covered by `DamageCalculatorTests`
   (`PercentRoll`, range-agnostic) — documented, no new extraction needed.
 
+## 4c. TRUTH PASS (goal §1) — ✅ DONE 2026-06-13
+
+Swept every `PLACEHOLDER`/`TODO` in `src/Game` and reconciled stale comments against the
+actual code (build clean):
+- Removed stale soul-rise PLACEHOLDERs (`BattleView.cs` summary + `InstantKillSpellEffects.cs`)
+  — soul-rise is implemented (`12ff1433`).
+- Reworded the §8 deliberate-deviation comments so they read as **documented deviations**,
+  not open PLACEHOLDERs: 50%-black shadow (`BattleView.cs`), `CombatBackground.Dungeon`
+  fallback (`CombatManager.cs`), Levitation shared-collider exemption (`Collider3D.cs` +
+  `SupportSpellEffects.cs`), ActivePartySpells boolean tracking (`ActivePartySpells.cs`),
+  utility-spell stubs (`DjiKantosSpells.cs`), combat cast-sample timing (`CombatAudio.cs`),
+  positioned-anim layer default (`VideoManager.cs`).
+- Verified `PlaceActionManager` already documents Unk2/3/4 as shown (no stale comment), and
+  the ammo comment in `Battle.cs` already states ammo is wired.
+- Remaining `src/Game` TODOs are all captured QoL (§6) or `_TODO_100PCT.md` roadmap items
+  (NightPalettes day/night bug, trap application, conversation keyboard) — none are
+  undocumented 1:1 gaps.
+- monster-AI spell pick (uniform-random) and teleporter gating both **verified correct in
+  code** during the ultracode audit — closed.
+
 ## 5. Doc drift / comment cleanups (5 minutes each, do with next touch)
 
 - `Battle.cs:1037` + `InventoryManager.cs:705` — say "PLACEHOLDER until the battle-loot

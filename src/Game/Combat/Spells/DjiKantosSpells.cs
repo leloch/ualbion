@@ -30,7 +30,7 @@ public static class DjiKantosSpells
         // Status — Irritation maps cleanly to the Irritated condition
         SpellEffectRegistry.Register(new InflictStatusEffect(Base.Spell.Irritation, PlayerCondition.Irritated));
 
-        // Escape / utility (PLACEHOLDERs documented per-spell)
+        // Escape / utility (documented stubs per-spell where a subsystem is pending)
         SpellEffectRegistry.Register(new WithdrawEffect(Base.Spell.QuickWithdrawal)); // Ends combat as Retreat
         // Map View reveals the whole automap and opens it.
         SpellEffectRegistry.Register(new EventSpellEffect(Base.Spell.MapView,

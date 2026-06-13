@@ -32,8 +32,9 @@ public class Collider3D(LogicalMap3D logicalMap) : Component, IMovementCollider
             return true;
 
         // No floor below → void / unwalkable, unless the party is levitating
-        // (Levitation floats over pit tiles — PLACEHOLDER: the exemption also applies
-        // to NPC movement since the collider is shared; original gates per-mover).
+        // (Levitation floats over pit tiles — deliberate deviation (ledger §8): the
+        // exemption also applies to NPC movement since the collider is shared; original
+        // gates per-mover. Harmless: Levitation is confirmed dead in the original anyway.)
         var (floorIndex, _) = _logicalMap.GetFloor(toX, toY);
         if (floorIndex == 0 && !Magic.ActivePartySpells.Levitating)
             return true;
