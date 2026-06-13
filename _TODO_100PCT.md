@@ -11,12 +11,30 @@
 
 ## Bottom line
 
-Albion is **NOT yet completable** in ualbion. Engine + systems are strong and largely
-1:1, but the game is **intro-complete and finale-impossible**. The only recorded run
-(`_PLAYTHROUGH.md`) stops at the Hunter Clan handoff (~chapter a/b of ~11), and the
-canonical ending cannot fire (no `ask_surrender` handler). Two compounding problems:
-(a) a cluster of un-dispatched conversation/world-verb/ending events gating main-quest
-beats; (b) no empirical run past the intro, which is hiding further blockers.
+Albion is **NOT yet completable** in ualbion, but the dispatch layer is now largely
+unblocked. Engine + systems are strong and largely 1:1; the game is intro-complete and
+the finale is still unorchestrated.
+
+**Progress 2026-06-13 (this push — all gated green: build / 305 tests / smoke 13/13):**
+- **B1 conversation dispatch — DONE** (DialogueLine + AskToJoin/AskToLeave, verified live).
+- **B4 UseItem world-verb — DONE** (2D + 3D, item carried into the trigger source).
+- Major gaps: **AP-on-level-up**, **spell-mastery growth**, **non-melee trainers**,
+  **day/night palette** — all DONE + unit-tested.
+
+**Remaining, by why it's not yet done (do NOT mark done without a green check):**
+- **B5 merchant economy** — needs the buy/sell price formula RE'd (not quickly extractable
+  from disasm; `PlaceAction Merchant unk6=110` is a lead) + the buy-debit/sell-credit
+  transaction UI; merchants are unreachable in the headless harness so it needs a live run.
+- **B2 ask_surrender** — needs RE of the surrender → Seed-branch handler.
+- **B3 finale (EndSequence / Endgame1-4 / credits)** — XL; multi-step orchestration.
+- **B6 full mid/late playthrough** — live discovery across 179 maps; surfaces unknowns.
+- **Traps** — RE-BLOCKED: world `TrapEvent` fields (unk1/2/3/5/6) are undecoded and the
+  chest-lock `trapArmed` flag (+0x1E) isn't parsed. Needs a decode pass first.
+- **Keyword persistence** — RE-BLOCKED: the save-format offset for the known-words store
+  is undecoded (`SavedGame.cs:308` TODO); runtime-only carry is possible but partial.
+- **Presentation bookends** (fade/wipe transitions, intro cinematic, View Intro/Credits) —
+  need new full-screen-overlay rendering infra + the finale assets.
+- **Mouse navigation**, economy depth, and the minor-polish list — see below.
 
 ## Blockers — a playthrough is impossible/broken without these
 
