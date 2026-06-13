@@ -95,19 +95,19 @@ public class InventoryLockPane : UiElement
 
     bool CanPick(IPlayer player)
     {
-        // RE 5C (door.c, button cb 0x5ab33): effective Lockpicking >= difficulty →
-        // automatic success; else PercentRoll(skill·(100−difficulty)/100, 100) — i.e.
-        // rand()%100 <= chance. Difficulty >= 100 is rejected before this. Untrapped
-        // locks allow unlimited free retries (msg 538); a trapped lock rolls the
-        // leader's Dexterity to evade on failure (handled by the chest's trap chain).
+        // RE 5C (door.c, button cb 0x5ab33): see CombatFormulas.Lockpick*. Difficulty >=
+        // 100 unpickable; effective Lockpicking >= difficulty auto-succeeds; else a percent
+        // roll of skill·(100−difficulty)/100. Untrapped locks allow unlimited free retries
+        // (msg 538); a trapped lock rolls Dexterity to evade on failure (chest trap chain).
         int skill = player.Effective.Skills.LockPicking.Current;
-        if (skill <= 0)
+        int difficulty = _lockEvent.PickDifficulty;
+        if (UAlbion.Game.Combat.CombatFormulas.LockpickUnpickable(difficulty) || skill <= 0)
             return false;
-        if (skill >= _lockEvent.PickDifficulty)
+        if (UAlbion.Game.Combat.CombatFormulas.LockpickAutoSuccess(skill, difficulty))
             return true;
 
-        int chance = skill * (100 - _lockEvent.PickDifficulty) / 100;
-        return RaiseQuery(new QueryRandomChanceEvent((ushort)(chance + 1), QueryOperation.GreaterThan, 0));
+        int chance = UAlbion.Game.Combat.CombatFormulas.LockpickChancePercent(skill, difficulty);
+        return RaiseQuery(new QueryRandomChanceEvent((ushort)chance, QueryOperation.GreaterThan, 0));
     }
 
     void PickLock()

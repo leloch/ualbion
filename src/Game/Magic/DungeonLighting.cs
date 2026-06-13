@@ -41,20 +41,33 @@ public static class DungeonLighting
         return total;
     }
 
-    public static int EffectiveLight(IGameState state, IParty party, IMapData map, IAssetManager assets)
+    /// <summary>
+    /// The pure light combination (no DI): outside dungeon mode (mapFlags &amp; 3 != 1) it's
+    /// always full daylight; in mode 1 it's min(100, max(spellPct, lightItemTotal)) plus the
+    /// +25 Iskai night-sight bonus, clamped to 100.
+    /// </summary>
+    public static int EffectiveLight(int mode, int spellPct, int lightItemTotal, bool isIskaiLeader)
     {
-        int mode = map != null ? (int)map.Flags & 3 : 0;
         if (mode != 1)
             return 100; // outdoor / non-dungeon lighting
 
-        int spellPct = state?.AmbientLightSpellPct ?? 0;
-        int light = Math.Min(100, Math.Max(spellPct, PartyLightItemTotal(party, assets)));
-        if (state?.Leader?.Race == PlayerRace.Iskai)
+        int light = Math.Min(100, Math.Max(spellPct, lightItemTotal));
+        if (isIskaiLeader)
             light = Math.Min(100, light + 25);
         return light;
     }
 
+    public static int EffectiveLight(IGameState state, IParty party, IMapData map, IAssetManager assets)
+        => EffectiveLight(
+            map != null ? (int)map.Flags & 3 : 0,
+            state?.AmbientLightSpellPct ?? 0,
+            PartyLightItemTotal(party, assets),
+            state?.Leader?.Race == PlayerRace.Iskai);
+
     /// <summary>Query 0x21 semantics: light enough unless dungeon-lit and below 25.</summary>
+    public static bool IsLightEnough(int mode, int spellPct, int lightItemTotal, bool isIskaiLeader)
+        => EffectiveLight(mode, spellPct, lightItemTotal, isIskaiLeader) >= 25;
+
     public static bool IsLightEnough(IGameState state, IParty party, IMapData map, IAssetManager assets)
         => EffectiveLight(state, party, map, assets) >= 25;
 }
