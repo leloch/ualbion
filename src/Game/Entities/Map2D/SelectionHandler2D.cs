@@ -12,6 +12,7 @@ using UAlbion.Formats.Ids;
 using UAlbion.Game.Events;
 using UAlbion.Game.Gui.Controls;
 using UAlbion.Game.Scenes;
+using UAlbion.Game.State.Player;
 using UAlbion.Game.Text;
 
 namespace UAlbion.Game.Entities.Map2D;
@@ -146,6 +147,19 @@ public sealed class SelectionHandler2D : GameComponent
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.MapPopup_TalkTo),
                     new TriggerMapTileEvent(TriggerType.TalkTo, zone.X, zone.Y),
+                    ContextMenuGroup.Actions));
+            }
+
+            // Use-item: only when the player is holding an item and the zone accepts it
+            // (tool-on-obstacle puzzles — pick-axe/screwdriver/staff). The held item is
+            // carried into the UseItem trigger's EventSource by FlatMap so the zone chain's
+            // query used_item matches. (B4: was never offered, so these puzzles were dead.)
+            if ((zone.Trigger & TriggerTypes.UseItem) != 0
+                && !(TryResolve<IInventoryManager>()?.ItemInHand.Item.IsNone ?? true))
+            {
+                options.Add(new ContextMenuOption(
+                    S(Base.SystemText.MapPopup_UseItem),
+                    new TriggerMapTileEvent(TriggerType.UseItem, zone.X, zone.Y),
                     ContextMenuGroup.Actions));
             }
         }

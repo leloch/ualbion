@@ -314,12 +314,21 @@ public class DungeonMap : GameComponent, IMap
 
     void TileTriggered(TriggerMapTileEvent e)
     {
-        // Raised by SelectionHandler3D's context menu (Examine / Manipulate / Take / TalkTo)
+        // Raised by SelectionHandler3D's context menu (Examine / Manipulate / Take / TalkTo / UseItem)
         var zone = _logicalMap?.GetOffsetZone(e.X, e.Y);
         if (zone?.Node == null)
             return;
 
-        var source = new EventSource(_mapData.Id, e.Type, zone.X, zone.Y);
+        // UseItem carries the held item id as the source so `query used_item == X` matches.
+        AssetId sourceId = _mapData.Id;
+        if (e.Type == TriggerType.UseItem)
+        {
+            var held = TryResolve<UAlbion.Game.State.Player.IInventoryManager>()?.ItemInHand.Item ?? AssetId.None;
+            if (!held.IsNone)
+                sourceId = held;
+        }
+
+        var source = new EventSource(sourceId, e.Type, zone.X, zone.Y);
         Raise(new TriggerChainEvent(_mapData, zone.EventIndex, source));
     }
 
