@@ -17,10 +17,12 @@ public class LogicalInventorySlot : UiElement
 {
     readonly InventorySlotId _id;
     readonly VisualInventorySlot _visual;
+    readonly MerchantId _activeMerchant;
     int _version = 1;
 
-    public LogicalInventorySlot(InventorySlotId id)
+    public LogicalInventorySlot(InventorySlotId id, MerchantId activeMerchant = default)
     {
+        _activeMerchant = activeMerchant;
         On<InventoryChangedEvent>(e =>
         {
             if (e.Id == _id.Id)
@@ -224,6 +226,18 @@ public class LogicalInventorySlot : UiElement
                         tf.Format(
                             Base.SystemText.InvMsg_ThisIsAVitalItem))
                     : new InventorySellEvent(_id.Id, _id.Slot),
+                ContextMenuGroup.Actions,
+                isPlotItem));
+        }
+        else if (!_activeMerchant.IsNone && _id.Id.Type == InventoryType.Player)
+        {
+            // Backpack item while a merchant screen is open: offer "Sell" (B5). Plot items
+            // are vital and can't be sold (shown yellow, fires the warning instead).
+            options.Add(new ContextMenuOption(
+                S(Base.SystemText.InvPopup_Sell, isPlotItem),
+                isPlotItem
+                    ? new HoverTextEvent(tf.Format(Base.SystemText.InvMsg_ThisIsAVitalItem))
+                    : new InventorySellToMerchantEvent((InventoryId)_activeMerchant, _id.Id, _id.Slot),
                 ContextMenuGroup.Actions,
                 isPlotItem));
         }
