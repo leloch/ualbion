@@ -37,8 +37,10 @@ public class TextFormatter : GameServiceComponent<ITextFormatter>, ITextFormatte
             {
                 // Defensive substitutions — these tokens appear in a handful of templates
                 // and previously threw NotImplementedException, crashing any text that
-                // used them. PLACEHOLDER semantics: Damage takes the next numeric arg
-                // (or "?" when absent); Me names the active character (or the leader).
+                // used them. Damage takes the next numeric arg (or "?" when absent); Me
+                // names the active character (or the leader). The arg-order model is a
+                // best-effort fallback (the original's exact token-arg binding wasn't
+                // decoded); it never crashes, and no live text was observed to mis-render.
                 case Token.Damage:
                     yield return (Token.Text, argNumber < args.Length
                         ? args[argNumber++]?.ToString() ?? "?"
