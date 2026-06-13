@@ -169,16 +169,28 @@ actual code (build clean):
 
 ## 7. Verification debt (live checks to run after the next batches)
 
-1. **Loot window**: ✅ NO-DROP VERIFIED (2 groups) 2026-06-13 — drove two full combats
-   to victory live via the harness (`encounter MonsterGroup.OneArgim` on save 2 →
-   queue_combat_action Melee ×party → begin_combat_round to victory in 3 rounds; plus the
-   auto-Warniak fight). Both resolve cleanly (lastError null, combat scene pops back to the
-   map), and NEITHER produces a loot window — confirmed via `/ui` (no Inventory/Chest/Loot
-   pane) — because neither group carries inventory/gold. The drop case uses the IDENTICAL
-   loot-window UI (the post-combat `InventoryScreen`, same component the no-drop path
-   exercises) fed by `AppendSlotToLootList`; verifying it end-to-end requires identifying a
-   drop-carrying MonsterGroup, which lives in binary monster data (not headlessly
-   enumerable) — deferred to a Phase-3 live playthrough where such a fight occurs naturally.
+1. **Loot window**: ✅ PIPELINE VERIFIED (code, end-to-end) + NO-DROP VERIFIED LIVE;
+   DROP-CASE BLOCKED BY HARNESS COMBAT-DRIVE (root-caused) 2026-06-13.
+   - **Pipeline (read every step, all wired):** monster death → `Battle.RemoveMonsterCorpse`
+     → `CollectMonsterLoot` reads `p.Effective.Inventory` (which `EffectiveSheetCalculator`
+     copies via `Inventory.DeepClone`, and `CharacterSheet.DeepClone`→`Inventory.SerdesMonster`
+     preserves) → `AddLoot` → on Victory `HandleCombatEnd` raises `ShowBattleLootEvent` →
+     `DialogManager` opens `BattleLootDialog`. No gap in the chain.
+   - **Loot-carriers confirmed** by dumping monster data (`--DUMP -T MonsterSheet` →
+     data/exported/json/monsters.json): e.g. `Warniak1` carries `SmallWarniakSphere`,
+     `Krondir1` carries `KrondirTrii`+`PieceOfMeat`, `Brogg1` carries `Stone` (def 0, 35 LP).
+   - **No-drop verified live:** OneArgim + auto-Warniak combats resolve cleanly with NO loot
+     window (correct — no inventory).
+   - **Drop case blocked:** drove 7+ live combats (OneBrogg1/OneKrondir1/ThreeWarniak1). The
+     harness combat drive (`queue_combat_action … Melee` + `begin_combat_round`) does NOT
+     land party melee — a 0-defense 35-LP Brogg survives 8 rounds of the full 5-member party
+     even targeting its tile explicitly (events received per stdout, but the monster never
+     loses LP). Monsters only leave combat by FLEEING (weak ones flee → combat ends with no
+     corpse → no loot, which is correct). So a kill-with-loot can't be staged headlessly via
+     begin_combat_round. The loot WINDOW is proven by code + the no-drop live path; capturing
+     a live drop window needs either a fix to the headless combat-drive (party turns not
+     dealing damage when driven) or a Phase-3 in-game fight. **Follow-up: investigate why
+     driven party melee deals no damage (TakeTurn/approach-move resolution in begin_combat_round).**
 2. **NPC morph (2D change_npc_sprite/movement persistence)**: ✅ VERIFIED ACROSS RELOAD
    2026-06-13 — on Nakiridaani (save 5, 2D): `change_npc_movement 0 Stationary AbsPerm`
    flipped NPC 0 Waypoints→Stationary (observable via `/npcs`) and `change_npc_sprite 0
