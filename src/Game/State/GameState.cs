@@ -123,12 +123,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyMTicksEvent>(OnModifyMTicks);
         On<RestEvent>(OnRest);
         OnAsync<PartyWaitEvent>(OnWait);
-        On<HourElapsedEvent>(_ =>
-        {
-            if (_game == null) return;
-            if (_game.HoursSinceResting < ushort.MaxValue) _game.HoursSinceResting++; // fatigue clock (rest resets it)
-            _game.TickActiveSpells(); // shield/light entries decay hourly (fcn.000605ed)
-        });
+        On<HourElapsedEvent>(_ => ProcessHourElapsed());
         On<ResetFatigueEvent>(_ => { if (_game != null) _game.HoursSinceResting = 0; }); // Recuperation = magical full rest
         On<AddActiveSpellEvent>(e =>
         {
@@ -313,9 +308,20 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             var before = Time;
             _game.ElapsedTime += TimeSpan.FromHours(1);
             Raise(HourElapsedEvent.Instance);
+            // STATE-01: EventExchange.Raise skips the sender's OWN subscriptions, so GameState's
+            // per-hour handler (fatigue + spell-duration decay) never ran for bulk-advanced hours.
+            // Invoke it directly here; the Raise above still drives the other components.
+            ProcessHourElapsed();
             if (Time.Date != before.Date)
                 Raise(DayElapsedEvent.Instance);
         }
+    }
+
+    void ProcessHourElapsed()
+    {
+        if (_game == null) return;
+        if (_game.HoursSinceResting < ushort.MaxValue) _game.HoursSinceResting++; // fatigue clock (rest resets it)
+        _game.TickActiveSpells(); // shield/light entries decay hourly (fcn.000605ed)
     }
 
     static bool SetFlag(SwitchOperation operation, bool value) =>

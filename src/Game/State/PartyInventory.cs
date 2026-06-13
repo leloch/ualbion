@@ -25,7 +25,9 @@ public class PartyInventory : Component
         On<InventoryTakeAllEvent>(TakeAll);
         On<ModifyGoldEvent>(e => ChangePartyItemAmount(AssetId.Gold, e.Operation, e.Amount));
         On<ModifyRationsEvent>(e => ChangePartyItemAmount(AssetId.Rations, e.Operation, e.Amount));
-        On<ModifyItemCountEvent>(e => GiveToParty(e.ItemId, e.Amount));
+        // SCRIPT-01: honour the NumericOperation (Subtract must REMOVE, SetToMinimum clears) like
+        // the sibling ChangeItemEvent — the old GiveToParty ignored it and always added.
+        On<ModifyItemCountEvent>(e => ChangePartyItemAmount(e.ItemId, e.Operation, e.Amount));
         On<ChangeItemEvent>(e =>
         {
             var amount = e.IsRandom ? (ushort)Resolve<IRandom>().Generate(e.Amount) : e.Amount;

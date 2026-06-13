@@ -5,7 +5,10 @@ namespace UAlbion.Formats.Assets.Sheets;
 [Flags]
 public enum PlayerConditions : ushort
 {
-    UnconsciousMask = Unconscious | Poisoned | Asleep,
+    // CMB-01: Poison is damage-over-time (StatusConditionTicker drains LP), NOT incapacitation —
+    // a poisoned-but-conscious combatant acts normally and reads as conscious. Only Unconscious
+    // (0 LP) and Asleep block acting here.
+    UnconsciousMask = Unconscious | Asleep,
 
     None        =    0x0,
     Unconscious =    0x1, // Unconscious

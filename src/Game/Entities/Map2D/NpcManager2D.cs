@@ -219,7 +219,7 @@ class NpcManager2D : Component
 
     void DispatchNpcEvent(INpcEvent npcEvent)
     {
-        if (npcEvent.NpcNum > _npcs.Length)
+        if (npcEvent.NpcNum >= _npcs.Length) // MAP-01: == Length indexed one past the end and crashed
             return;
 
         var npc = _npcs[npcEvent.NpcNum];

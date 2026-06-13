@@ -737,12 +737,11 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         if (textId.IsNone)
             return;
 
+        // INV-02: show the specific activation message (was Item_Add "Add"), and do NOT consume
+        // the item — Compass/Clock/Monster-Eye are permanent toggleable HUD items.
         var tf = Resolve<ITextFormatter>();
         Raise(new SetSpecialItemActiveEvent(item.Id, true));
-        Raise(new HoverTextEvent(tf.Format(Base.SystemText.Item_Add)));
-
-        slot.Amount--;
-        Update(e.SlotId.Id);
+        Raise(new HoverTextEvent(tf.Format(textId)));
     }
 
     void OnActivateItemSpell(ActivateItemSpellEvent e)
