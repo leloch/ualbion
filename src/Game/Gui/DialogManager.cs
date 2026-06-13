@@ -35,7 +35,17 @@ public class DialogManager  : ServiceComponent<IDialogManager>, IDialogManager
         On<LoadMapPromptEvent>(OnMapNumberPrompt);
         On<ShowCombatPositionsDialogEvent>(_ => AttachChild(new CombatPositionDialog(MaxLayer + 1)));
         On<CombatDialogEvent>(e => AttachChild(new CombatDialog(MaxLayer + 1, e.Battle)));
-        On<ShowBattleLootEvent>(e => AttachChild(new BattleLootDialog(MaxLayer + 1, e.Items, e.Gold, e.Rations)).Show());
+        OnAsync<ShowBattleLootEvent>(OnShowBattleLoot);
+    }
+
+    // The post-combat booty window. Must be awaited (the battle's combat-end flow blocks on
+    // it before popping the combat scene — otherwise the scene teardown tears the window down
+    // before it renders), so this is an async handler, not a fire-and-forget Show().
+    async AlbionTask OnShowBattleLoot(ShowBattleLootEvent e)
+    {
+        var dialog = AttachChild(new BattleLootDialog(MaxLayer + 1, e.Items, e.Gold, e.Rations));
+        await dialog.Show();
+        dialog.Remove();
     }
 
     AlbionTask<bool> OnYesNoPrompt(YesNoPromptEvent e)
