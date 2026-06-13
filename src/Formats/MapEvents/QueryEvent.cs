@@ -39,6 +39,7 @@ public abstract class QueryEvent : MapEvent, IBranchingEvent
             QueryType.Class => QueryClassEvent.Serdes((QueryClassEvent)e, s),
             QueryType.Race => QueryRaceEvent.Serdes((QueryRaceEvent)e, s),
             QueryType.Day => QueryDayEvent.Serdes((QueryDayEvent)e, s),
+            QueryType.IsCurrentMap2D => QueryIsCurrentMap2DEvent.Serdes((QueryIsCurrentMap2DEvent)e, s),
             QueryType.Leader => QueryLeaderEvent.Serdes((QueryLeaderEvent)e, mapping, s),
             QueryType.Ticker => QueryTickerEvent.Serdes((QueryTickerEvent)e, mapping, s),
             QueryType.Map => QueryMapEvent.Serdes((QueryMapEvent)e, mapping, s),
