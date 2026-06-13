@@ -59,14 +59,14 @@ public class FlagSet
             return;
         }
 
-        if (i > BitsPerMap)
+        if (i >= BitsPerMap) // STATE-06: == BitsPerMap is the next map's first bit
         {
             ApiUtil.Assert($"Tried to set bit {i} for map {mapId}, but each map only contains {BitsPerMap}");
             return;
         }
 
         int index = mapId.Id * BitsPerMap + i;
-        if (index > Count)
+        if (index >= Count) // STATE-06: == Count is one past the end
         {
             ApiUtil.Assert($"Tried to set bit {i} for map {mapId} (num {mapId.Id}), but there are only enough bits allocated for {Count/BitsPerMap} maps");
             return;

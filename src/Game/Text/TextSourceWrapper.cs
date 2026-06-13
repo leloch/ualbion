@@ -19,7 +19,9 @@ public class TextSourceWrapper : IText
         }
     }
 
-    public int Version => _version + (_source?.Version ?? 0 - _baseSourceVersion);
+    // TXT-05: ?? binds looser than -, so the old form parsed as _version + (Version ?? (0 - base))
+    // and never subtracted _baseSourceVersion for a non-null source. Parenthesise the coalesce.
+    public int Version => _version + (_source?.Version ?? 0) - _baseSourceVersion;
     public IEnumerable<TextBlock> GetBlocks() =>
         _source == null
             ? []

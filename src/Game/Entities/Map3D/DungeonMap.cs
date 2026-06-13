@@ -166,9 +166,11 @@ public class DungeonMap : GameComponent, IMap
 
         var palette = Assets.LoadPalette(_logicalMap.PaletteId);
         uint backgroundColour = palette.GetPaletteAtTime(0)[_labyrinthData.BackgroundColour];
+        // MAP-04: >> binds tighter than &, so without parens green/blue both read the red byte
+        // (0xff00>>8 == 0xff). Parenthesise the masks.
         _backgroundRed = (backgroundColour & 0xff) / 255.0f;
-        _backgroundGreen = (backgroundColour & 0xff00 >> 8) / 255.0f;
-        _backgroundBlue = (backgroundColour & 0xff0000 >> 16) / 255.0f;
+        _backgroundGreen = ((backgroundColour & 0xff00) >> 8) / 255.0f;
+        _backgroundBlue = ((backgroundColour & 0xff0000) >> 16) / 255.0f;
 
         //if (_labyrinthData.CameraHeight != 0)
         //    Debugger.Break();
