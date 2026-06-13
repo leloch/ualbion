@@ -140,6 +140,30 @@ actual code (build clean):
 - monster-AI spell pick (uniform-random) and teleporter gating both **verified correct in
   code** during the ultracode audit — closed.
 
+## 4d. §2 GENUINE 1:1 GAPS — empirically re-verified 2026-06-13 (code-line evidence)
+
+All five confirmed against the actual code, not comments:
+1. **Banish 62/63/64 area targeting** — `Base.Spell.BanishDemon=62 / BanishDemons=63 /
+   DemonExodus=64` all registered with `BanishDemonEffect` (`DruidSpells.cs:36-38`); SPELLDAT
+   `Targets` (dumped via `--DUMP -T Spell`): 62=`OneMonster`, 63=`RowOfMonsters`,
+   64=`AllMonsters`; `Battle.CastQueuedSpell` reads `spell.Targets` → `SpellTargeting.Classify`
+   (Row/AllMonsters → area) → runs the effect per enemy in the area. Unit-tested by
+   `SpellTargetingTests`. (`2c5570cc` + the `1b428558` SpellTargeting extraction.)
+2. **ChangeItem Subtract/SubtractPercentage** — `SheetApplier.ApplyItem` (`SheetApplier.cs:142-144`)
+   routes both to `TryTakeItems(inventoryId, null, …)` (null acceptor = destroy). Covered by
+   `InventoryTests.TryTakeItems_NullAcceptor_*`. (`1b64eb47`.)
+3. **Unknown1C HomeNpcIndex** — join is script `modify_npc_off`; leave re-enables via
+   `Party.OnRemovePartyMember` → `HomeNpcIndex.TryDecode` → `ModifyNpcOffEvent(Clear)`.
+   `HomeNpcIndexTests`. (`56a7a05e`.)
+4. **Selection3D per-tile** — `Selection3D` does scene-geometry `RayIntersect` (`Selection3D.cs:23`);
+   per-TILE picking is `SelectionHandler3D` (ray-marches the tile grid → zones/NPCs/context
+   menu, `:212`/`:284`); the redundant dead ground-plane block was removed. (`edd368a7`.)
+5. **TextFormatter Damage token** — `TextFormatter.cs:44` handles `Token.Damage` with a
+   documented defensive fallback (next numeric arg, or "?"). **ChangeNpcMovement flags** —
+   `NpcManager2D.cs:41` records+applies movement; remaining `MapNpc` flags documented at
+   `:173-174` as non-behavioral except 0x40 = collision class (via `NpcState.NoClip`, `:159`).
+   (`edd368a7` / `dc3014fe`.)
+
 ## 5. Doc drift / comment cleanups (5 minutes each, do with next touch)
 
 - `Battle.cs:1037` + `InventoryManager.cs:705` — say "PLACEHOLDER until the battle-loot
