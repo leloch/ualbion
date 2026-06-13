@@ -854,32 +854,20 @@ public class Battle : GameComponent, IReadOnlyBattle
     bool MoraleBroken(ICombatParticipant m)
     {
         var sheet = m?.Effective;
-        if (sheet == null || (sheet.UnknownE & 0x80) != 0)
+        if (sheet == null)
             return false;
 
-        int living = LiveParticipants(forParty: false).Count();
-        int total = Math.Max(1, _initialMonsterCount);
-        int lp = LifePoints(m);
-        int maxLp = Math.Max(1, (int)(sheet.Combat?.LifePoints?.Max ?? 1));
-
-        switch (sheet.UnkownC)
-        {
-            case 2: // fights only while no monster has died yet
-                return living < total;
-            case 7: // outnumbered + LP threshold: deeper rows give up sooner
-            {
-                int row = Math.Max(0, TileOf(m)) / SavedGame.CombatColumns;
-                int party = LiveParticipants(forParty: true).Count();
-                bool fight = living >= party && lp * 100 / maxLp >= (row + 1) * 25;
-                return !fight;
-            }
-            default:
-            {
-                int deadPct = 100 - living * 100 / total;
-                int lostPct = 100 - lp * 100 / maxLp;
-                return (deadPct + lostPct) / 2 >= sheet.Morale;
-            }
-        }
+        int row = Math.Max(0, TileOf(m)) / SavedGame.CombatColumns;
+        return CombatFormulas.MoraleBroken(
+            classBits: sheet.UnknownE,
+            strategy: sheet.UnkownC,
+            livingMonsters: LiveParticipants(forParty: false).Count(),
+            totalMonsters: _initialMonsterCount,
+            livingParty: LiveParticipants(forParty: true).Count(),
+            lp: LifePoints(m),
+            maxLp: sheet.Combat?.LifePoints?.Max ?? 1,
+            row: row,
+            morale: sheet.Morale);
     }
 
     /// <summary>
@@ -1126,40 +1114,43 @@ public class Battle : GameComponent, IReadOnlyBattle
                                && registered is Spells.GoddessWrathEffect;
 
         var recipients = new List<ICombatParticipant>();
-        if (!selfManagedArea && (targets & UAlbion.Formats.Assets.SpellTargets.AllMonsters) != 0)
+        switch (SpellTargeting.Classify(targets, selfManagedArea))
         {
-            recipients.AddRange(EnumerateTilesRowMajor(enemyOf: caster));
-        }
-        else if (!selfManagedArea && (targets & UAlbion.Formats.Assets.SpellTargets.RowOfMonsters) != 0)
-        {
-            int row = targetTile >= 0
-                ? targetTile / SavedGame.CombatColumns
-                : TileOf(LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault());
-            if (row >= 0)
-                foreach (var p in EnumerateTilesRowMajor(enemyOf: caster))
-                    if (TileOf(p) / SavedGame.CombatColumns == row)
-                        recipients.Add(p);
-        }
-        else if (!selfManagedArea && (targets & UAlbion.Formats.Assets.SpellTargets.DeadParty) != 0)
-        {
-            // 0x04 = whole living party (the "DeadParty" name predates the RE).
-            recipients.AddRange(LiveParticipants(forParty: IsParty(caster)));
-        }
-        else
-        {
-            var single = targetTile >= 0 && targetTile < _tiles.Length ? _tiles[targetTile] : null;
-            if (single == null || LifePoints(single) <= 0)
+            case SpellArea.AllMonsters:
+                recipients.AddRange(EnumerateTilesRowMajor(enemyOf: caster));
+                break;
+
+            case SpellArea.Row:
             {
-                // Empty / dead tile picked: monster-targeting spells retarget the
-                // nearest live enemy (like melee); party-targeting ones self-cast.
-                bool offensive = (targets & (UAlbion.Formats.Assets.SpellTargets.OneMonster
-                                            | UAlbion.Formats.Assets.SpellTargets.RowOfMonsters
-                                            | UAlbion.Formats.Assets.SpellTargets.AllMonsters)) != 0;
-                single = offensive
-                    ? LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault() ?? caster
-                    : caster;
+                int row = targetTile >= 0
+                    ? targetTile / SavedGame.CombatColumns
+                    : TileOf(LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault());
+                if (row >= 0)
+                    foreach (var p in EnumerateTilesRowMajor(enemyOf: caster))
+                        if (TileOf(p) / SavedGame.CombatColumns == row)
+                            recipients.Add(p);
+                break;
             }
-            recipients.Add(single);
+
+            case SpellArea.WholeParty:
+                // 0x04 = whole living party (the "DeadParty" name predates the RE).
+                recipients.AddRange(LiveParticipants(forParty: IsParty(caster)));
+                break;
+
+            default: // SpellArea.SingleTarget
+            {
+                var single = targetTile >= 0 && targetTile < _tiles.Length ? _tiles[targetTile] : null;
+                if (single == null || LifePoints(single) <= 0)
+                {
+                    // Empty / dead tile picked: monster-targeting spells retarget the
+                    // nearest live enemy (like melee); party-targeting ones self-cast.
+                    single = SpellTargeting.IsOffensive(targets)
+                        ? LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault() ?? caster
+                        : caster;
+                }
+                recipients.Add(single);
+                break;
+            }
         }
 
         if (recipients.Count == 0 && !selfManagedArea)

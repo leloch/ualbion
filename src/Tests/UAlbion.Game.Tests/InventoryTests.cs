@@ -7,6 +7,7 @@ using UAlbion.Config;
 using UAlbion.Core;
 using UAlbion.Formats.Assets.Inv;
 using UAlbion.Formats.Ids;
+using UAlbion.Game.Events;
 using UAlbion.Game.Events.Inventory;
 using UAlbion.Game.State.Player;
 
@@ -16,6 +17,7 @@ public class InventoryTests : Component
 {
     readonly ItemData _sword; // A non-stackable item
     readonly ItemData _torch; // A stackable item
+    readonly ItemData _arrow; // Stackable ammunition (TypeId Ammo)
     readonly Inventory _tom;
     readonly Inventory _rainer;
     readonly InventoryManager _im;
@@ -27,11 +29,12 @@ public class InventoryTests : Component
         {
             case { } when id == Base.Item.Sword: return _sword;
             case { } when id == Base.Item.Torch: return _torch;
+            case { } when id == Base.Item.Arrow: return _arrow;
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(id),
                     id,
-                    "Only the sword and torch items are supported in this test");
+                    "Only the sword, torch and arrow items are supported in this test");
         }
     }
 
@@ -50,6 +53,12 @@ public class InventoryTests : Component
         _torch = new ItemData(Base.Item.Torch)
         {
             TypeId = ItemType.Misc,
+            Flags = ItemFlags.Stackable
+        };
+        _arrow = new ItemData(Base.Item.Arrow)
+        {
+            TypeId = ItemType.Ammo,
+            AmmoType = AmmunitionType.Arrow,
             Flags = ItemFlags.Stackable
         };
 
@@ -225,6 +234,36 @@ public class InventoryTests : Component
         Assert.Equal(6, taken);
         Assert.True(_tom.Slots[0].Item.IsNone);
         Assert.Equal(2, _tom.Slots[1].Amount);
+    }
+
+    [Fact]
+    public void ConsumeAmmo_SpendsOneRound_BackpackFirst_InSlotOrder()
+    {
+        // RE 5A (fcn.0004f3e2): each ranged strike burns one round; the backpack stack
+        // depletes before the equipped one, and backpack slots drain in index order.
+        _tom.Slots[0].Set(_arrow.Id, 2);
+        _tom.Slots[1].Set(_arrow.Id, 2);
+        var member = new PartyMemberId(AssetType.PartyMember, (int)Base.PartyMember.Tom);
+
+        Raise(new ConsumeAmmoEvent(member, AmmunitionType.Arrow));
+        Assert.Equal(1, _tom.Slots[0].Amount); // first slot, one round
+        Assert.Equal(2, _tom.Slots[1].Amount); // untouched
+
+        Raise(new ConsumeAmmoEvent(member, AmmunitionType.Arrow));
+        Assert.True(_tom.Slots[0].Item.IsNone); // emptied
+        Assert.Equal(2, _tom.Slots[1].Amount);  // still untouched until slot 0 is dry
+
+        Raise(new ConsumeAmmoEvent(member, AmmunitionType.Arrow));
+        Assert.Equal(1, _tom.Slots[1].Amount); // now the next slot starts draining
+    }
+
+    [Fact]
+    public void ConsumeAmmo_WrongType_DoesNothing()
+    {
+        _tom.Slots[0].Set(_arrow.Id, 3);
+        var member = new PartyMemberId(AssetType.PartyMember, (int)Base.PartyMember.Tom);
+        Raise(new ConsumeAmmoEvent(member, AmmunitionType.Bolt)); // no bolts in pack
+        Assert.Equal(3, _tom.Slots[0].Amount);
     }
 
     [Fact] public void PartialPickupTest() { }

@@ -88,6 +88,27 @@ removed-NPC index.
 | ~~Banish 62/63/64 area targeting~~ | `InstantKillSpellEffects.cs` | ALREADY DONE — Battle.CastQueuedSpell enumerates row/all by the Targets byte and calls BanishDemonEffect per enemy (verified `dc3014fe`-era; comment was stale). |
 | Unknown1C HomeNpcIndex wiring | `Party.cs:90/126` | DEFERRED (scoped): RE 5D §6 — join sets sheet+0x1C=(mapId−1)*96+slot + RemovedNpcs bit, leave clears it. AddMember/RemoveMember currently don't; faithful fix needs AddPartyMemberEvent to carry the source map+NPC-slot (not present) and mutates save-state. Recruit/dismiss is rare and recruitment scripts already npc_off the source. M [needs-design], save-compat risk — do deliberately, not rushed. |
 
+## 4b. Test hardening (goal §4) — ✅ LANDED
+
+Extracted the previously-untestable RE'd decision logic into pure statics and covered them
+(587 tests green, was 502; smoke 13/13):
+- `CombatFormulas.cs` (NEW) — monster morale flight (strategy 2/7/default + class-bit-0x80
+  never-flee) and lock-picking (unpickable ≥100 / auto-success / `skill·(100−diff)/100`
+  percent). `Battle.MoraleBroken` + `InventoryLockPane.CanPick` now delegate. **Fixed a
+  lockpick off-by-one**: the chance roll was `(ushort)(chance+1)` → now `(ushort)chance`
+  (`IRandom.Generate(100)` is 0..99, so `roll < chance` is exactly `chance%`). `CombatFormulasTests`.
+- `AutomapGlyphs.cs` (NEW) — connection-mask packing, wall-glyph selection (type 1 = 560+mask,
+  2..19 markers, degrade past region count), party-marker/goto glyph indices; `AutomapDialog`
+  delegates. Filled the empty `AutomapTests`.
+- `DungeonLighting.EffectiveLight`/`IsLightEnough` — added pure `(mode, spellPct, itemTotal,
+  isIskai)` overloads; `DungeonLightingTests`.
+- `SpellTargeting.cs` (NEW) — `Classify(Targets, selfManaged)` (All>Row>WholeParty>Single
+  priority) + `IsOffensive`; `Battle.CastQueuedSpell` switches on it. `SpellTargetingTests`.
+- Query-opcode comparator (`FormatUtil.Compare`) — `QueryComparisonTests`.
+- Ammo consumption (backpack-first, one round/strike) — `InventoryTests` ConsumeAmmo cases.
+- crit/instant-kill + equipment-break primitives already covered by `DamageCalculatorTests`
+  (`PercentRoll`, range-agnostic) — documented, no new extraction needed.
+
 ## 5. Doc drift / comment cleanups (5 minutes each, do with next touch)
 
 - `Battle.cs:1037` + `InventoryManager.cs:705` — say "PLACEHOLDER until the battle-loot

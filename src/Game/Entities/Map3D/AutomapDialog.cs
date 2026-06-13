@@ -250,7 +250,7 @@ public class AutomapDialog : GameComponent
 
                 int region = PickTileRegion(x, y, tiles.Regions.Count);
                 if (x == partyX && y == partyY)
-                    region = PartyMarkerRegion(tiles.Regions.Count);
+                    region = AutomapGlyphs.PartyMarkerRegion(tiles.Regions.Count);
 
                 if (region < 0)
                     continue;
@@ -262,7 +262,7 @@ public class AutomapDialog : GameComponent
         // Goto-point markers (glyph 18) for visited markers — fcn.0005e7e5 draws them
         // when switch(7, MarkerId) is set (stepping on the tile sets it).
         var state = TryResolve<IGameState>();
-        if (state != null && _mapData.Automap != null && GotoGlyph < tiles.Regions.Count)
+        if (state != null && _mapData.Automap != null && AutomapGlyphs.GotoGlyph < tiles.Regions.Count)
         {
             foreach (var marker in _mapData.Automap)
             {
@@ -270,7 +270,7 @@ public class AutomapDialog : GameComponent
                     continue;
                 if (marker.X >= _map.Width || marker.Y >= _map.Height)
                     continue;
-                BlitRegion(tiles, GotoGlyph, buffer, marker.X * TilePx, marker.Y * TilePx, w);
+                BlitRegion(tiles, AutomapGlyphs.GotoGlyph, buffer, marker.X * TilePx, marker.Y * TilePx, w);
             }
         }
 
@@ -291,9 +291,6 @@ public class AutomapDialog : GameComponent
         Info($"[Automap] shown for {_mapData.Id} ({_map.Width}x{_map.Height}, party at {partyX},{partyY})");
     }
 
-    const int WallMaskGlyphBase = 560; // AUTOGFX 0x230 + connection mask (fcn.0005e8a1)
-    const int GotoGlyph = 18;          // goto-point marker glyph (fcn.0005e7e5)
-
     readonly Dictionary<byte, byte[]> _floorMinis = [];
 
     /// <summary>
@@ -308,17 +305,7 @@ public class AutomapDialog : GameComponent
     {
         var (wallIndex, wall) = _map.GetWall(x, y);
         if (wallIndex != 0 && wall != null)
-        {
-            int glyph = wall.AutoGfxType switch
-            {
-                1 => WallMaskGlyphBase + WallConnectionMask(x, y),
-                >= 2 and <= 19 => wall.AutoGfxType,
-                _ => -1
-            };
-            if (glyph >= regionCount)
-                glyph = Math.Min(regionCount - 1, 8); // set lacks the frame — degrade gracefully
-            return glyph;
-        }
+            return AutomapGlyphs.WallGlyph(wall.AutoGfxType, WallConnectionMask(x, y), regionCount);
 
         var group = _map.GetObject(x, y);
         if (group != null && group.AutoGraphicsId > 0 && group.AutoGraphicsId < regionCount)
@@ -334,12 +321,9 @@ public class AutomapDialog : GameComponent
     /// </summary>
     int WallConnectionMask(int x, int y)
     {
-        int mask = 0;
-        if (Connectable(x, y - 1)) mask |= 1;
-        if (Connectable(x + 1, y)) mask |= 2;
-        if (Connectable(x, y + 1)) mask |= 4;
-        if (Connectable(x - 1, y)) mask |= 8;
-        return mask;
+        return AutomapGlyphs.ConnectionMask(
+            Connectable(x, y - 1), Connectable(x + 1, y),
+            Connectable(x, y + 1), Connectable(x - 1, y));
 
         bool Connectable(int nx, int ny) =>
             nx >= 0 && ny >= 0 && nx < _map.Width && ny < _map.Height
@@ -385,11 +369,6 @@ public class AutomapDialog : GameComponent
             from.CopyTo(to);
         }
     }
-
-    // The original doesn't blit a party glyph into the compose buffer (the UI cursor
-    // marks the position); the remake draws one as a usability affordance.
-    static int PartyMarkerRegion(int regionCount)
-        => Math.Min(regionCount - 1, 213);
 
     static void BlitRegion(IReadOnlyTexture<byte> tiles, int region, ImageBuffer<byte> dest, int dx, int dy, int destWidth)
     {
