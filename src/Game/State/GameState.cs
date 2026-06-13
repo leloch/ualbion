@@ -726,6 +726,9 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         }
 
         // var key = new AssetId(AssetType.SavedGame, id);
+        // Serialize NPC sprites with the LIVE map's gfx type — 3D NPCs are ObjectGroup and must NOT
+        // go through the SpriteId path (which throws). Defaults to TwoD if no map is loaded.
+        var npcMapType = TryResolve<IMapManager>()?.Current?.MapType ?? UAlbion.Formats.Assets.Maps.MapType.TwoD;
         using var stream = disk.OpenWriteTruncate(IdToPath(id));
         using var aw = AlbionSerdes.CreateWriter(stream);
         // Must use the same mapping the loader uses (ModApplier loads saves with
@@ -738,11 +741,11 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             using var annotationStream = disk.OpenWriteTruncate(IdToPath(id) + ".write.txt");
             using var annotationWriter = new System.IO.StreamWriter(annotationStream);
             using var annotated = new SerdesNet.AnnotationProxySerdes(aw, annotationWriter);
-            SavedGame.Serdes(_game, AssetMapping.Global, annotated, spellManager);
+            SavedGame.Serdes(_game, AssetMapping.Global, annotated, spellManager, npcMapType);
         }
         else
         {
-            SavedGame.Serdes(_game, AssetMapping.Global, aw, spellManager);
+            SavedGame.Serdes(_game, AssetMapping.Global, aw, spellManager, npcMapType);
         }
     }
 
