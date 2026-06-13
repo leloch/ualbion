@@ -29,7 +29,8 @@ public class InventoryScreen : Dialog
             };
 
         var middlePane = new InventoryMidPane(activeCharacter);
-        var rightPane = new InventoryRightPane(activeCharacter, modeEvent is MerchantEvent);
+        var merchant = modeEvent as MerchantEvent;
+        var rightPane = new InventoryRightPane(activeCharacter, merchant != null, merchant?.MerchantId ?? MerchantId.None);
 
         // var frameDivider = new FrameDivider(135, 0, 4, 192);
 

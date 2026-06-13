@@ -45,6 +45,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         OnAsync<InventoryPickupEvent>(OnSlotEvent);
         On<InventoryGiveItemEvent>(OnGiveItem);
         On<InventorySellEvent>(OnBuyFromMerchant);
+        On<InventorySellToMerchantEvent>(OnSellToMerchant);
         OnAsync<InventoryDiscardEvent>(OnDiscard);
         On<SetInventorySlotUiPositionEvent>(OnSetSlotUiPosition);
         On<ActivateItemEvent>(OnActivateItem);
@@ -282,6 +283,47 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         if (slot.Amount == 0)
             slot.Clear();
         Update(e.Id);
+    }
+
+    // Sell one unit of an owned backpack item to the active merchant (the backpack "Sell"
+    // option = player sells to merchant). Pays the resell value (33% of item.Value, per-shop
+    // multiplier RE-pending), deposits the ware into the merchant so it can be bought back,
+    // and only removes/credits if the merchant had room. Mirror of OnBuyFromMerchant (B5).
+    void OnSellToMerchant(InventorySellToMerchantEvent e)
+    {
+        if (e.Merchant.Type != InventoryType.Merchant)
+            return;
+
+        var slot = GetSlot(new InventorySlotId(e.Id, e.SlotId));
+        if (slot == null || slot.Item.Type != AssetType.Item || slot.Amount == 0)
+            return;
+
+        var item = _getItem(slot.Item);
+        if (item == null || (item.Flags & ItemFlags.PlotItem) != 0) // vital items can't be sold
+            return;
+
+        // Deposit one unit into the merchant first; abort (no payment) if there's no room.
+        var merchantInv = e.Merchant;
+        var donor = new ItemSlot(new InventorySlotId(InventoryType.Temporary, 0, ItemSlotId.None)) { Item = slot.Item, Amount = 1 };
+        ushort taken = TryGiveItems(merchantInv, donor, 1);
+        if (taken == 0)
+            return;
+
+        slot.Amount -= taken;
+        if (slot.Amount == 0)
+            slot.Clear();
+
+        int price = MerchantPricing.SellPrice(item.Value);
+        if (price > 0)
+        {
+            var party = TryResolve<IParty>();
+            var leaderId = party?.Leader?.Id ?? PartyMemberId.None;
+            if (!leaderId.IsNone)
+                Raise(new DataChangeEvent(new TargetId(AssetType.PartyMember, leaderId.Id), ChangeProperty.Gold, NumericOperation.AddAmount, (ushort)price));
+        }
+
+        Update(e.Id);
+        Update(merchantInv);
     }
 
     // Pooled party-gold spend, member by member (mirrors PlaceActionManager.TrySpendGold).

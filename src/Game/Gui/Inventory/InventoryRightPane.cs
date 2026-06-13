@@ -16,7 +16,7 @@ public class InventoryRightPane : UiElement
     const int InventoryHeight = 6;
 
 #pragma warning disable CA1506 // '.ctor' is coupled with '41' different types from '15' different namespaces. Rewrite or refactor the code to decrease its class coupling below '41'.
-    public InventoryRightPane(PartyMemberId activeCharacter, bool showTotalPartyGold)
+    public InventoryRightPane(PartyMemberId activeCharacter, bool showTotalPartyGold, MerchantId activeMerchant = default)
     {
         var header = new Header(Base.SystemText.Inv_Backpack);
 
@@ -28,7 +28,7 @@ public class InventoryRightPane : UiElement
             for (int i = 0; i < InventoryWidth; i++)
             {
                 int index = j * InventoryWidth + i;
-                slotsInRow[i] = new LogicalInventorySlot(new InventorySlotId(sheetId, (ItemSlotId)((int)ItemSlotId.Slot0 + index)));
+                slotsInRow[i] = new LogicalInventorySlot(new InventorySlotId(sheetId, (ItemSlotId)((int)ItemSlotId.Slot0 + index)), activeMerchant);
             }
             slotSpans[j] = new HorizontalStacker(slotsInRow);
         }
