@@ -35,6 +35,9 @@ public class PartyMember : GameComponent, IPlayer
         if (e.Target != _base.Id)
             return;
 
+        if (_base.Magic.KnownSpells.Contains(e.Spell)) // STAT-02: no duplicate (mirrors ApplySpells)
+            return;
+
         _base.Magic.KnownSpells.Add(e.Spell);
         UpdateSheet();
     }

@@ -39,7 +39,7 @@ public class LogicalMap3D : LogicalMap
     protected override void ChangeCeiling(byte x, byte y, ushort value)
     {
         var index = Index(x, y);
-        if (index < 0 || index >= _mapData.Floors.Length)
+        if (index < 0 || index >= _mapData.Ceilings.Length) // MAP-05: was Floors.Length (copy-paste)
         {
             Error($"Tried to update invalid ceiling index {index} (max {_mapData.Ceilings.Length}");
         }

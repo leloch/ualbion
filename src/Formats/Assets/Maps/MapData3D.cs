@@ -32,14 +32,14 @@ public class MapData3D : BaseMapData
     public byte[] BuildObjectArray() => Contents.Select(x => x < LabyrinthData.WallOffset ? x : (byte)0).ToArray();
     public byte GetWall(int index)
     {
-        if (index < 0 || index > Contents.Length) return 0;
+        if (index < 0 || index >= Contents.Length) return 0; // MAP-06: == Length read past the end
         var contents = Contents[index];
         return (byte)(contents >= LabyrinthData.WallOffset ? contents - LabyrinthData.WallOffset : 0);
     }
 
     public byte GetObject(int index)
     {
-        if (index < 0 || index > Contents.Length) return 0;
+        if (index < 0 || index >= Contents.Length) return 0; // MAP-06: == Length read past the end
         var contents = Contents[index];
         return contents < LabyrinthData.WallOffset ? contents : (byte)0;
     }

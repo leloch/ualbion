@@ -198,7 +198,7 @@ public class SavedGame
     public bool IsDoorOpen(DoorId id) => id.Id is < 0 or >= DoorCount || _unlockedDoors.GetFlag(id.Id);
     public void SetChestOpen(ChestId id, bool value)
     {
-        if (id.Id is < 0 or >= DoorCount) return;
+        if (id.Id is < 0 or >= ChestCount) return; // STATE-07: was DoorCount (copy-paste from SetDoorOpen)
         _unlockedChests.SetFlag(id.Id, value);
     }
     public void SetDoorOpen(DoorId id, bool value)
