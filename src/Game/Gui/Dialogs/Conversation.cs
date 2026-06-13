@@ -64,13 +64,38 @@ public class Conversation : GameComponent
         _itemWindow = dialogs.AddDialog(depth => new ConversationItemWindow(depth) { IsActive = false });
     }
 
-    (IText, BlockId?, BlockId)[] BuildStandardOptions() =>
-    [
-        (_tf.Format(Base.SystemText.Dialog_WhatsYourProfession), null, BlockId.Profession),
-        (_tf.Format(Base.SystemText.Dialog_WhatDoYouKnowAbout), null, BlockId.QueryWord),
-        (_tf.Format(Base.SystemText.Dialog_WhatDoYouKnowAboutThisItem), null, BlockId.QueryItem),
-        (_tf.Format(Base.SystemText.Dialog_ItsBeenNiceTalkingToYou), null, BlockId.Farewell)
-    ];
+    (IText, BlockId?, BlockId)[] BuildStandardOptions()
+    {
+        var options = new List<(IText, BlockId?, BlockId)>
+        {
+            (_tf.Format(Base.SystemText.Dialog_WhatsYourProfession), null, BlockId.Profession),
+            (_tf.Format(Base.SystemText.Dialog_WhatDoYouKnowAbout), null, BlockId.QueryWord),
+            (_tf.Format(Base.SystemText.Dialog_WhatDoYouKnowAboutThisItem), null, BlockId.QueryItem),
+        };
+
+        // Recruitment / dismissal are offered only when the NPC's set actually has the chain
+        // (ActionType 0x4 / 0x5). The chain bodies do the real add/remove_party_member.
+        if (HasAction(ActionType.AskToJoin))
+            options.Add((_tf.Format(Base.SystemText.Dialog_WouldYouLikeToJoinUs), null, BlockId.AskToJoin));
+        if (HasAction(ActionType.AskToLeave))
+            options.Add((_tf.Format(Base.SystemText.Dialog_IWouldLikeYouToLeaveUs), null, BlockId.AskToLeave));
+
+        options.Add((_tf.Format(Base.SystemText.Dialog_ItsBeenNiceTalkingToYou), null, BlockId.Farewell));
+        return options.ToArray();
+    }
+
+    // True when the conversing NPC's event set (or word set) has a chain headed by this
+    // action type with the default block/argument (AskToJoin/AskToLeave carry neither).
+    bool HasAction(ActionType type)
+    {
+        if (!_npc.EventSetId.IsNone && Assets.LoadEventSet(_npc.EventSetId) is { } set
+            && FindActionChain(set, type, 0, AssetId.None) != null)
+            return true;
+        if (!_npc.WordSetId.IsNone && Assets.LoadEventSet(_npc.WordSetId) is { } wordSet
+            && FindActionChain(wordSet, type, 0, AssetId.None) != null)
+            return true;
+        return false;
+    }
 
     public async AlbionTask Run()
     {
@@ -170,6 +195,25 @@ public class Conversation : GameComponent
                         _textWindow.Show(text, BlockId.MainText);
                         await _textWindow.Closed();
                     }
+                    break;
+                }
+
+            case BlockId.AskToJoin:
+                {
+                    // The AskToJoin chain runs the prompt + add_party_member (and shows the
+                    // "party complete" / recruit-response text itself). Only offered when the
+                    // chain exists, so a false return here is unexpected — log via the default.
+                    if (!await TriggerAction(ActionType.AskToJoin, 0, AssetId.None))
+                        Warn("Conversation: AskToJoin offered but no chain ran");
+                    break;
+                }
+
+            case BlockId.AskToLeave:
+                {
+                    // The AskToLeave chain runs the prompt + remove_party_member (which clears
+                    // the member's home-NPC RemovedNpcs bit — see Party.OnRemovePartyMember).
+                    if (!await TriggerAction(ActionType.AskToLeave, 0, AssetId.None))
+                        Warn("Conversation: AskToLeave offered but no chain ran");
                     break;
                 }
 

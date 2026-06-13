@@ -22,7 +22,7 @@ beats; (b) no empirical run past the intro, which is hiding further blockers.
 
 | # | Item | Evidence | Effort |
 |---|---|---|---|
-| B1 | **Conversation dispatch half-wired.** `Conversation.cs` dispatches only action types 0x0/0x1/0x6/0x7; `BlockClicked` understands only block ids 0–3. `DialogueLine`(0x8) branches, `AskToJoin`/`AskToLeave`(0x4/0x5), special scenes (`PartySleeps`0x3D, Sira 0x17/0x2D, Tom 0xE, pay 0x2) never fire. **Gates the entire recruitable roster + quest scenes.** | `Conversation.cs:246-285`, `ActionType.cs`, grep: TriggerAction never gets 0x4/0x5/0x8 | L — **IN PROGRESS.** ✅ DialogueLine(0x8) dispatch done: numbered options (block≥10) now fire `TriggerAction(DialogueLine, block, PromptNumber.<textSubId>)` instead of warning (matches the original author's commented `BlockClicked(blockId, mapTextEvent.SubId)` design and the live-dumped chain shape — Rabir has `DialogueLine block=10 PromptNumber.4` → PlaceAction Merchant). Conversation runs clean (greeting→options→profession/word verified live, no errors). **Still TODO:** AskToJoin/AskToLeave(0x4/0x5), special scenes (0x3D/0x17/0x2D/0xE/0x2); end-to-end click-through of a numbered option (needs an NPC whose gating words are auto-known — Phase 3 live run). |
+| B1 | **Conversation dispatch.** | `Conversation.cs`, `ActionType.cs`, `BlockId.cs` | ✅ **CONVERSATION MENU DONE** (`f03de98c` + this batch). **DialogueLine(0x8)** numbered options (block≥10) fire `TriggerAction(DialogueLine, block, PromptNumber.<textSubId>)` — **verified live end-to-end** on Konny (clicked "Well, a couple." → branched to "Oh, you're just being modest…", no error). **AskToJoin(0x4)/AskToLeave(0x5)** offered as conditional standard options (`Dialog_WouldYouLikeToJoinUs`/`IWouldLikeYouToLeaveUs`) only when the NPC's set has the chain (`HasAction`); **verified live** — Konny's join option appeared and running the chain produced his scripted decline. **Remaining (event-triggered scenes, NOT conversation-menu):** PartySleeps 0x3D (rest), Sira 0x17/0x2D (spell scenes), Tom 0xE (endgame), pay 0x2 — fire from game events, tracked under the finale/B2/B3 wiring. |
 | B2 | **Canonical ending can't trigger.** `AskSurrenderEvent` parses to `Unk1..Unk8`, no handler. Final boss (~4500 LP) is intentionally unkillable; win is surrender/Seed branch only. End scripts exist in data, can't run. | `AskSurrenderEvent.cs`; grep AskSurrender → only serdes, no `src/Game` | M |
 | B3 | **No terminal state.** `MapExitType.EndSequence`/`Shuttle` exist but `MapManager.Teleport` ignores `Unk4`; no credits/outro/win consumer in `src/Game`. Finale (Endgame1-4, Seed deploy, credits) unorchestrated. | `MapManager.cs:107`, `TeleportEvent.cs:15`, `Base/Video.cs` | M + **XL** finale |
 | B4 | **UseItem world-verb never dispatched.** `SelectionHandler2D/3D` build only Examine/Manipulate/Take/TalkTo. Kills tool-on-obstacle puzzles (pick-axe/screwdriver/staff) — gates **Toronto endgame** + Gratogel library. | `SelectionHandler2D.cs:120-150,218`; grep: no live `TriggerType.UseItem` dispatch | L |
@@ -54,6 +54,34 @@ the gossip/trade-topics loop.
 **Traps unapplied:** decoded in `_RE_5C.md` but `triggeredTrap` hardcoded `false`
 (`InventoryScreenManager.cs:118`); world `TrapEvent` parse-only, no handler. Unlimited free
 chest retries, no damage. Pressure-plate/lever→wall-passability chains unverified.
+
+**3D-dungeon event opcodes parse-only (no `src/Game` handler)** — found 2026-06-13,
+verified by grep (each serdes'd in `Formats` but never subscribed in `Game`):
+- **`Spinner` (MapEventType 5)** — `SpinnerEvent.cs` parses `Unk1` (RE notes: still
+  unknown), zero refs in `src/Game`. The original rotates the party's facing on these
+  tiles (a deliberate disorientation mechanic); without it, affected 3D dungeons map
+  differently than the original. 1:1 navigation-fidelity gap; not a hard completion
+  blocker. Effort **S** (rotate facing by `Unk1` on 3D tile entry) — needs `Unk1`
+  semantics RE'd first.
+- **`CreateTransport` (0x13)** — `CreateTransportEvent.cs` parse-only, fields still
+  `Unk1..Unk8` undecoded, no handler. Spawns transports (ship/raft/flying transport) onto
+  a map — the mechanism for crossing water / reaching other parts of the world. **Verify
+  whether any mandatory world-traversal transport is script-spawned vs save-state-created;
+  if scripted, this is a navigation BLOCKER.** Effort **M** (RE the fields first).
+
+**Riddlemouths unverified (possible progression blocker):** the automap glyph exists
+(`Automap_RiddleMouth = 168`) but `QueryType.PromptPlayer` (0x1F) is wired only as a
+**Yes/No** prompt (`Querier.cs:60`) and there is **no word/string-answer query type** in
+`QueryType` (only `PromptPlayer`=yes/no and `PromptPlayerNumeric`=0x2B). Riddle-doors that
+gate dungeon progress on a typed WORD answer may not be answerable. Trace a real
+riddlemouth and confirm it opens; if word-answer riddles route nowhere, this blocks any
+dungeon they gate. Effort **S–M** (verify; add a string-answer prompt path if missing).
+
+**Conversation action-dispatch surface is larger than B1's named few:** `ActionType` has a
+big undecoded `Unk9`–`0x3C` range (`ActionType.cs`) beyond the 0x4/0x5/0x8/0x3D/0x17/0x2D/
+0xE/0x2 called out in B1 — several tagged to real NPCs (Riko/Gerwad 0x9, etc.). B1's fix
+unblocks the known story beats, but expect further RE-blocked action types to surface
+during the Phase 3 live run.
 
 **Economy depth:** no merchant gold pool / stock depletion / restock (`Inventory.cs:100`).
 
