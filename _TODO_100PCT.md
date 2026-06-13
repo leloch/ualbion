@@ -223,8 +223,12 @@ several are likely small fixes but each needs reproduction + a root-cause pass. 
    passed. With no active set it fell back to literal "{NAME}". Fix: context tokens now accept a
    directly-provided entity (`p ?? GameState.X`), and `ShowCombatMessage` passes the combatant as an
    implicit `Combatant` token. (Other `{NAME}`/`{SUBJECT}` placeholders may exist — watch for more.)
-9. **Combat: no target-selection highlight** — selecting a monster to attack gives no visual cue
-   (expected: an outline on the target's grid cell for the queued action). **M.** STILL OPEN.
+9. **Combat: no target-selection highlight** — ✅ **FIXED (wired; visual to confirm)**. Queuing
+   an action now broadcasts `CombatTargetHighlightEvent` for the tile it will hit (melee
+   auto-target resolved via `AdjacentEnemy`/first-enemy, mirroring execution); `VisualCombatTile`
+   tints that tile (`BlueTint`, distinct from the active-turn `Highlight`). Cleared when the round
+   runs. Combat verified end-to-end via harness (queue→round, no errors); the on-grid tint colour
+   is a user-visual confirm (a proper border sprite would be a nicer indicator later).
 
 ---
 
