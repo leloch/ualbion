@@ -1191,7 +1191,8 @@ public class Battle : GameComponent, IReadOnlyBattle
             GetActiveSpellPct = LookupActiveSpellPct,
             // Instant kill = LP wipe through the normal damage path so death / corpse /
             // XP-pool handling resolve identically (the original's fcn.0004e247).
-            InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
+            InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p))),
+            SoulRise = p => Raise(new CombatSoulRiseEvent(TileOf(p))) // banish dissolve VFX
         };
 
         var outcome = SpellCastOutcome.Resisted;
@@ -1262,7 +1263,8 @@ public class Battle : GameComponent, IReadOnlyBattle
             HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
             ModifySp = ModifySpellPoints,
             GetActiveSpellPct = LookupActiveSpellPct,
-            InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p)))
+            InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p))),
+            SoulRise = p => Raise(new CombatSoulRiseEvent(TileOf(p)))
         };
 
         var outcome = SpellEffectRegistry.Cast(pending.Spell, context);

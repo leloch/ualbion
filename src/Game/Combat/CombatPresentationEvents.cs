@@ -22,6 +22,13 @@ public record CombatHitEvent(int TileIndex, int Amount, bool Killed, bool Heal) 
 public record CombatCastEvent(UAlbion.Formats.Ids.SpellId SpellId) : EventRecord, IVerboseEvent;
 
 /// <summary>
+/// Round-playback presentation: the occupant of TileIndex was banished (a Banish-demon
+/// spell killed it) — the battle view plays the soul-rise dissolve (RE 6 worker 0xa1b20)
+/// instead of the normal Die-and-freeze. Raised before the kill's CombatHitEvent.
+/// </summary>
+public record CombatSoulRiseEvent(int TileIndex) : EventRecord, IVerboseEvent;
+
+/// <summary>
 /// Round-playback presentation: a combatant walks a (possibly multi-tile) path.
 /// The battle state has already committed the final tile; the view lerps the sprite
 /// along the waypoints (RE 5A: N engine frames per tile, N = Move anim length, with

@@ -84,6 +84,13 @@ public sealed class SpellCastContext
     public System.Action<ICombatParticipant> InstantKill { get; init; }
 
     /// <summary>
+    /// Play the soul-rise dissolve VFX on a combatant before banishing it (RE 6: the
+    /// bespoke visual of the Banish-demon spells, worker 0xa1b20). Call before
+    /// <see cref="InstantKill"/>. Null outside combat / in tests.
+    /// </summary>
+    public System.Action<ICombatParticipant> SoulRise { get; init; }
+
+    /// <summary>
     /// All combatants on the CASTER's side (in combat) or the whole party (outside) —
     /// used by party-wide spells (Recuperation). Null when unavailable.
     /// </summary>
