@@ -40,7 +40,12 @@ public sealed class InflictStatusEffect : ISpellEffect
         if (!SpellSuccessGate.Lands(context, context.Target))
             return SpellCastOutcome.Resisted;
 
-        if (context.RaiseEvent != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
+        // Apply via the combat hook so it lands on monsters too (the hook routes party →
+        // persistent sheet, monster → the battle condition shadow). Falls back to the
+        // party-only ChangeStatusEvent path when cast outside combat (no ApplyCondition hook).
+        if (context.ApplyCondition != null)
+            context.ApplyCondition(context.Target, Condition);
+        else if (context.RaiseEvent != null && context.Target?.SheetId.Type == UAlbion.Config.AssetType.PartySheet)
         {
             var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);
             context.RaiseEvent(new ChangeStatusEvent(targetId, Condition, NumericOperation.AddAmount, 1));

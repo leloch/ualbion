@@ -41,6 +41,10 @@ public class Battle : GameComponent, IReadOnlyBattle
     // members read/write their persistent sheets via Mana events instead. Without this,
     // monster casts never drained SP and repeated casts were free.
     readonly Dictionary<SheetId, int> _liveSp = [];
+    // Condition shadow for MONSTERS — status spells (Sleep/Paralyse/Blind/Panic) must land on
+    // enemies too, but monster clones aren't in GameState.Sheets so ChangeStatusEvent can't
+    // reach them. Party conditions live on their Effective sheet; monster conditions live here.
+    readonly Dictionary<SheetId, UAlbion.Formats.Assets.Sheets.PlayerConditions> _liveConditions = [];
     // Combatants removed from the battle (fled via Retreat — fcn.0004b49e); excluded
     // from LiveParticipants. _fledParty drives the "party escaped" outcome.
     readonly HashSet<SheetId> _removed = [];
@@ -194,7 +198,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             {
                 // The original announces why the turn is lost (SYSTEXTS 762..773 via
                 // fcn.000363c2) — show the line and give the player a beat to read it.
-                var conds = attacker?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
+                var conds = Conditions(attacker);
                 var message = ConditionMessage(conds);
                 if (message != null)
                 {
@@ -437,12 +441,16 @@ public class Battle : GameComponent, IReadOnlyBattle
         foreach (var p in _mobs)
         {
             if (LifePoints(p) <= 0) continue;
-            var combat = p?.Effective?.Combat;
-            if (combat == null) continue;
-            if ((combat.Conditions & UAlbion.Formats.Assets.Sheets.PlayerConditions.Asleep) == 0) continue;
+            if ((Conditions(p) & UAlbion.Formats.Assets.Sheets.PlayerConditions.Asleep) == 0) continue;
             var target = TryToTarget(p);
-            if (target == null) continue; // monster — sleep state lives on the Effective clone, not in GameState.Sheets
-            Raise(new ChangeStatusEvent(target.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Asleep, NumericOperation.SubtractAmount, 1));
+            if (target != null)
+            {
+                Raise(new ChangeStatusEvent(target.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Asleep, NumericOperation.SubtractAmount, 1));
+            }
+            else if (_liveConditions.TryGetValue(p.SheetId, out var c)) // monster — wake via the shadow
+            {
+                _liveConditions[p.SheetId] = c & ~UAlbion.Formats.Assets.Sheets.PlayerConditions.Asleep;
+            }
         }
     }
 
@@ -494,7 +502,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         // Honour the per-combatant status gate FIRST (fcn.0004bf77): Asleep skips the
         // turn; Panicking is auto-piloted into flight toward its own back edge (party
         // members too — flag+4 bit2 puts them under AI control); Insane acts randomly.
-        var conds = attacker?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
+        var conds = Conditions(attacker);
         var outcome = MonsterAi.ResolveStatusBehavior(conds);
         if (outcome == MonsterAi.StatusOutcome.SkipTurn)
             return;
@@ -1218,7 +1226,8 @@ public class Battle : GameComponent, IReadOnlyBattle
             // Instant kill = LP wipe through the normal damage path so death / corpse /
             // XP-pool handling resolve identically (the original's fcn.0004e247).
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p))),
-            SoulRise = p => Raise(new CombatSoulRiseEvent(TileOf(p))) // banish dissolve VFX
+            SoulRise = p => Raise(new CombatSoulRiseEvent(TileOf(p))), // banish dissolve VFX
+            ApplyCondition = (p, c) => ApplyCondition(p, c) // status debuffs land on monsters too
         };
 
         var outcome = SpellCastOutcome.Resisted;
@@ -1334,9 +1343,39 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// Insane combatants still act but with random behaviour (which our auto-resolve
     /// already approximates with a deterministic melee swing).
     /// </summary>
-    static bool CanAct(ICombatParticipant p)
+    // Merged conditions: the Effective sheet (party + monster base) plus the monster shadow.
+    UAlbion.Formats.Assets.Sheets.PlayerConditions Conditions(ICombatParticipant p)
     {
         var conds = p?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
+        if (p != null && _liveConditions.TryGetValue(p.SheetId, out var extra))
+            conds |= extra;
+        return conds;
+    }
+
+    // Apply a status condition to any combatant: party → persistent sheet via ChangeStatusEvent;
+    // monster → the transient _liveConditions shadow. Returns true if newly applied.
+    bool ApplyCondition(ICombatParticipant p, UAlbion.Formats.Assets.Sheets.PlayerCondition condition)
+    {
+        if (p == null) return false;
+        var flag = UAlbion.Formats.Assets.Sheets.PlayerConditionExtensions.ToFlag(condition);
+        if ((Conditions(p) & flag) != 0) return false; // already present
+
+        var target = TryToTarget(p);
+        if (target != null)
+        {
+            Raise(new ChangeStatusEvent(target.Value, condition, NumericOperation.AddAmount, 1));
+        }
+        else
+        {
+            _liveConditions.TryGetValue(p.SheetId, out var cur);
+            _liveConditions[p.SheetId] = cur | flag;
+        }
+        return true;
+    }
+
+    bool CanAct(ICombatParticipant p)
+    {
+        var conds = Conditions(p);
         // UnconsciousMask = Unconscious | Poisoned | Asleep — none of these can act.
         if ((conds & UAlbion.Formats.Assets.Sheets.PlayerConditions.UnconsciousMask) != 0)
             return false;
