@@ -117,7 +117,21 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<SwitchEvent>(OnSwitch);
         On<TickerEvent>(OnTicker);
         // word_known map event: mark a keyword discovered so it carries to other NPCs.
-        On<WordKnownEvent>(e => { if (e.Operation != SwitchOperation.Clear) DiscoverWord(e.Word); });
+        On<WordKnownEvent>(e =>
+        {
+            // TXT-03: honour the SwitchOperation — Clear removes, Set adds, Toggle flips. The old
+            // form treated Set AND Toggle as "add" and Clear as a no-op, so a word could never be
+            // un-known.
+            if (e.Word.IsNone) return;
+            switch (e.Operation)
+            {
+                case SwitchOperation.Clear: _discoveredWords.Remove(e.Word); break;
+                case SwitchOperation.Set: _discoveredWords.Add(e.Word); break;
+                case SwitchOperation.Toggle:
+                    if (!_discoveredWords.Remove(e.Word)) _discoveredWords.Add(e.Word);
+                    break;
+            }
+        });
         On<ModifyDaysEvent>(OnModifyDays);
         On<ModifyHoursEvent>(OnModifyHours);
         On<ModifyMTicksEvent>(OnModifyMTicks);

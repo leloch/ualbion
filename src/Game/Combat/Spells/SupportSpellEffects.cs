@@ -118,8 +118,13 @@ public sealed class StealMagicEffect : ISpellEffect
             return SpellCastOutcome.Failed;
 
         int maxSp = context.Target?.Effective?.Magic?.SpellPoints?.Max ?? 0;
+        int currentSp = context.Target?.Effective?.Magic?.SpellPoints?.Current ?? 0;
         int pct = Math.Max(1, context.MasteryMultiplier * _k / 100);
         int amount = Math.Max(1, maxSp * pct / 100);
+        // SPL-01: the caster gains only what the target actually had — clamp to current SP
+        // (the original applies a branchless min(amount, currentSP), fcn @ 0xa80e3). Without
+        // this, Steal Magic against a near-empty target mints SP from nothing.
+        amount = Math.Min(amount, currentSp);
 
         if (context.ModifySp != null)
         {

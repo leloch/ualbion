@@ -154,11 +154,16 @@ public class Conversation : GameComponent
                     if (!wordId.IsNone)
                     {
                         var lookup = Resolve<IWordLookup>();
+                        bool triggered = false;
                         foreach (var homonym in lookup.GetHomonyms(wordId))
                         {
-                            if (await TriggerWordAction(homonym))
-                                break;
+                            if (await TriggerWordAction(homonym)) { triggered = true; break; }
                         }
+                        // TXT-04: mark the CLICKED topic (its _topics key is wordId, the first
+                        // homonym from WordLookup.Parse) as discussed — not the homonym that owned
+                        // the chain, which may be a different id and leave the clicked row Mentioned.
+                        if (triggered)
+                            _topics[wordId] = WordStatus.Discussed;
                     }
                     break;
                 }
@@ -387,12 +392,9 @@ public class Conversation : GameComponent
 
     async AlbionTask<bool> TriggerWordAction(WordId wordId)
     {
-        var result = await TriggerAction(ActionType.Word, 0, wordId);
-
-        if (result)
-            _topics[wordId] = WordStatus.Discussed;
-
-        return result;
+        // TXT-04: the "Discussed" mark is applied by the caller against the CLICKED topic key, not
+        // here against the (possibly different) homonym that owned the chain.
+        return await TriggerAction(ActionType.Word, 0, wordId);
     }
 
     static ushort? FindActionChain(EventSet set, ActionType type, byte block, AssetId argument)

@@ -1306,24 +1306,29 @@ public class Battle : GameComponent, IReadOnlyBattle
         Info($"[Combat] {caster.SheetId} casts {spellId} at tile {targetTile} ({recipients.Count} target(s)): {outcome}");
         TraceLog.Emit("combat_cast", ("actor", caster.SheetId), ("spell", spellId), ("tile", targetTile), ("targets", recipients.Count), ("outcome", outcome));
 
+        // CMB-02: a Failed outcome is a documented no-op (heal at full HP, cure of an absent
+        // status, re-inflict of an existing debuff) — it must charge no SP and grow no mastery,
+        // matching the field-menu path (PartyMagicMenu returns early on Failed). Resisted is a
+        // real attempt and still consumes SP per the original.
         if (outcome != SpellCastOutcome.Failed)
+        {
             Raise(new CombatCastEvent(spellId)); // cast SFX (CombatAudio)
 
-        // SP is consumed when the cast is attempted, regardless of resist — matches the
-        // original engine's charge/SP handling for unfulfilled casts.
-        if (cost > 0)
-        {
-            var casterTarget = TryToTarget(caster);
-            if (casterTarget != null)
-                Raise(new DataChangeEvent(casterTarget.Value, ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
-            else
-                _liveSp[caster.SheetId] = Math.Max(0, SpellPoints(caster) - cost); // monster SP shadow
-        }
+            // SP is consumed when the cast is attempted, regardless of resist.
+            if (cost > 0)
+            {
+                var casterTarget = TryToTarget(caster);
+                if (casterTarget != null)
+                    Raise(new DataChangeEvent(casterTarget.Value, ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
+                else
+                    _liveSp[caster.SheetId] = Math.Max(0, SpellPoints(caster) - cost); // monster SP shadow
+            }
 
-        // Mastery improves with use (RE post-cast fcn.000603ae: mastery += MagicTalent, cap
-        // 10000). Persisted on the caster's base sheet — party casters only; GetSheet returns
-        // null for transient monster clones, so their mastery stays fixed.
-        GrowSpellMastery(caster, spellId);
+            // Mastery improves with use (RE post-cast fcn.000603ae: mastery += MagicTalent, cap
+            // 10000). Persisted on the caster's base sheet — party casters only; GetSheet returns
+            // null for transient monster clones, so their mastery stays fixed.
+            GrowSpellMastery(caster, spellId);
+        }
     }
 
     void GrowSpellMastery(ICombatParticipant caster, SpellId spellId)

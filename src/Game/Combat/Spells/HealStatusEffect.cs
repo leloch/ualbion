@@ -49,8 +49,13 @@ public sealed class HealStatusEffect : ISpellEffect
         {
             var targetId = new TargetId(UAlbion.Config.AssetType.PartyMember, context.Target.SheetId.Id);
             raise(new ChangeStatusEvent(targetId, Condition, NumericOperation.SubtractAmount, 1));
+            return SpellCastOutcome.Hit;
         }
-        return SpellCastOutcome.Hit;
+
+        // SPL-02: we can only route a cure to a party target. For anything else (e.g. a monster
+        // with the condition on its base sheet) we can't clear it — return Failed so the cast/SP
+        // isn't consumed for a no-op (the original only ever cured party members).
+        return SpellCastOutcome.Failed;
     }
 
     /// <summary>
