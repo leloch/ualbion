@@ -55,6 +55,13 @@ public class Conversation : GameComponent
         var dialogs = Resolve<IDialogManager>();
         var sheet = game?.GetSheet(_partyMemberId.ToSheet()) ?? Assets.LoadSheet(_partyMemberId.ToSheet());
 
+        // Seed this conversation's topic list with every keyword the party has already
+        // discovered (from any NPC) so words carry across the whole roster, not just within
+        // one chat. New words found here are shared back via DiscoverTopics → DiscoverWord.
+        if (game != null)
+            foreach (var word in game.DiscoveredWords)
+                _topics.TryAdd(word, WordStatus.Mentioned);
+
         AttachChild(new ConversationParticipantLabel(sheet, false));
         AttachChild(new ConversationParticipantLabel(_npc, true));
 
@@ -269,10 +276,13 @@ public class Conversation : GameComponent
 
     void DiscoverTopics(IEnumerable<WordId> topics)
     {
+        var state = TryResolve<IGameState>();
         foreach (var topic in topics)
         {
             if (!_topics.TryGetValue(topic, out var currentStatus) || currentStatus == WordStatus.Unknown)
                 _topics[topic] = WordStatus.Mentioned;
+            // Share the discovery across NPCs so the word stays askable elsewhere.
+            state?.DiscoverWord(topic);
         }
     }
 

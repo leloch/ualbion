@@ -49,6 +49,12 @@ public interface IGameState
     bool IsChainDisabled(MapId mapId, ushort chain);
     bool IsNpcDisabled(MapId mapId, byte npcNum);
     bool IsEventUsed(AssetId eventSetId, ActionEvent action);
+
+    /// <summary>Conversation keywords the party has discovered, shared across all NPCs so a
+    /// word learnt from one carries to the next (the gossip/trade-topics loop). Runtime store
+    /// — carries within a session; cross-save persistence pends the save-format word offset.</summary>
+    IReadOnlyCollection<WordId> DiscoveredWords { get; }
+    void DiscoverWord(WordId word);
     ICharacterSheet Leader { get; }
     ICharacterSheet Subject { get; }
     ICharacterSheet CurrentInventory { get; }

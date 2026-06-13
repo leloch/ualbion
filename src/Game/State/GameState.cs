@@ -68,6 +68,13 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public IDictionary<AutomapId, byte[]> Automaps => _game.Automaps;
     public bool IsChainDisabled(MapId mapId, ushort chain) => _game.IsChainDisabled(mapId, chain);
     public bool IsNpcDisabled(MapId mapId, byte npcNum) => _game.IsNpcDisabled(mapId, npcNum);
+
+    // Conversation keywords discovered by the party, shared across every NPC so a word learnt
+    // from one carries to the next. Runtime store (carries within a session); cross-save
+    // persistence pends the decoded save-format word offset.
+    readonly HashSet<WordId> _discoveredWords = [];
+    public IReadOnlyCollection<WordId> DiscoveredWords => _discoveredWords;
+    public void DiscoverWord(WordId word) { if (!word.IsNone) _discoveredWords.Add(word); }
     public bool IsAutomapMarkerFound(int markerId) => _game?.IsAutomapMarkerFound(markerId) ?? false;
     public void SetAutomapMarkerFound(int markerId) => _game?.SetAutomapMarkerFound(markerId, true);
 
@@ -107,6 +114,8 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<LoadMapEvent>(OnLoadMap);
         On<SwitchEvent>(OnSwitch);
         On<TickerEvent>(OnTicker);
+        // word_known map event: mark a keyword discovered so it carries to other NPCs.
+        On<WordKnownEvent>(e => { if (e.Operation != SwitchOperation.Clear) DiscoverWord(e.Word); });
         On<ModifyDaysEvent>(OnModifyDays);
         On<ModifyHoursEvent>(OnModifyHours);
         On<ModifyMTicksEvent>(OnModifyMTicks);
