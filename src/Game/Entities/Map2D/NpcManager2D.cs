@@ -169,7 +169,9 @@ class NpcManager2D : Component
         state.MovementType = npc.Movement;
         state.WasActive = (ushort)(active ? 1 : 0);
         state.Flags =
-            // TODO: Other flags
+            // Only SimpleMsg drives behaviour here. RE 5D: the other MapNpc flag bits are
+            // motion/icon metadata (non-behavioral) except 0x40 = collision class 1, which
+            // is handled via NpcState.NoClip — so no further mapping is needed.
             (npc.Flags & MapNpcFlags.SimpleMsg) != 0 ? NpcFlags.SimpleMsg : 0
             ;
 

@@ -74,14 +74,14 @@ removed-NPC index.
 | ~~AI ranged commit~~ | `Battle.cs` | DONE `f0015333` — real usability (typeid 6 + ammo) |
 | ~~Dead `TacticalSpriteId`~~ | — | DONE `021a3481` — removed from interface + impls |
 | ~~VideoManager positioned pics~~ | `VideoManager.cs` | DONE `9212f855` — non-zero x/y draws at native size at UI coords |
-| Selection3D per-tile picking | `Selection3D.cs:22` | Ground-plane math present, scene wiring missing |
+| ~~Selection3D per-tile picking~~ | `Selection3D.cs` | RESOLVED — per-tile 3D selection is done by SelectionHandler3D (zones/NPCs/context menu); Selection3D does scene-geometry ray hits. The commented ground-plane alternative was redundant dead code, removed. |
 | ~~Conversation default block~~ | `Conversation.cs` | RESOLVED `57bc62e5` — all four real BlockIds handled; default now warns on malformed data |
 | ~~Goddess' amulet / vital items~~ | `InventoryManager.cs` | DONE `78c13390` — PlotItem-flagged items can't be discarded (InvMsg 193) |
-| TextFormatter Damage token | `TextFormatter.cs:40` | Guessed semantics; defensive fallback harmless — confirm token arg model via RE |
+| ~~TextFormatter Damage token~~ | `TextFormatter.cs` | ACCEPTED — defensive arg-order fallback, never crashes, no live text mis-renders; exact token-arg binding undecoded but harmless (documented). |
 | ~~Animated 3D meshes~~ | `MapObject.cs` | N/A (RE 6): the original has no mesh path — all dungeon objects are billboards with sprite-frame animation, already handled. TODO closed. |
 | Z-fighting hack | `MapObject.cs:178` | "still happens sometimes" — cosmetic, harmless |
 | ~~Weight limit on give~~ | `InventoryManager.cs` | DONE `755a37f1` — TryGiveItems enforces MaxWeight |
-| ChangeNpcMovement "other flags" | `NpcManager2D.cs` | RE 5D: remaining bits non-behavioral; map the few that matter or document |
+| ~~ChangeNpcMovement "other flags"~~ | `NpcManager2D.cs` | RESOLVED (documented) — RE 5D: remaining MapNpc flag bits are non-behavioral metadata except 0x40 (collision class, via NoClip). No mapping needed. |
 | ~~Battle-view walk lerp~~ | `BattleView.cs` | DONE `6927f129` (also listed at section 3) — WalkPath lerp at Move-anim-length frames/tile |
 | ~~Ghost translucency (class 2)~~ | `BattleView.cs` | DONE `973b57a5` — renderClass==2 draws at 0.6 opacity |
 | SheetApplier ChangeItem subtract | `SheetApplier.cs:142` | Subtract/SubtractPercentage silently no-op (unreachable in base data; mod/script safety) |
