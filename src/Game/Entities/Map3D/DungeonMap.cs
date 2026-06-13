@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using UAlbion.Api;
 using UAlbion.Api.Eventing;
 using UAlbion.Config;
 using UAlbion.Core;
@@ -46,7 +47,33 @@ public class DungeonMap : GameComponent, IMap
         On<PlayerEnteredTileEvent>(OnPlayerEnteredTile);
         On<ChangeNpcMovementEvent>(OnChangeNpcMovement);
         On<ChangeNpcSpriteEvent>(OnChangeNpcSprite);
+        On<ChangeIconEvent>(ChangeIcon);
         // On<UnloadMapEvent>(_ => Unload());
+    }
+
+    // Wall/floor/ceiling changes (levers, pressure plates → portcullis/wall-dissolve in
+    // Drinno/Kounos/Kenget Kamulos/Toronto). 2D had this; 3D did not, so those chains were
+    // silent no-ops — a physical hard-stop (gap-audit §2). LogicalMap3D.ChangeWall/Floor/
+    // Ceiling already exist and Collider3D reads passability live, so this handler is the
+    // only missing link. Same logic as FlatMap.ChangeIcon.
+    void ChangeIcon(ChangeIconEvent e)
+    {
+        if (_logicalMap == null)
+            return;
+
+        var context = (EventContext)Context;
+        bool relative = e.Scope is EventScope.RelPerm or EventScope.RelTemp;
+        bool temp = e.Scope is EventScope.AbsTemp or EventScope.RelTemp;
+
+        if (relative && context.Source.AssetId.Type != AssetType.Map)
+        {
+            ApiUtil.Assert($"Event {e} must be triggered from a map event if using relative coordinates");
+            return;
+        }
+
+        byte x = relative ? (byte)(e.X + context.Source.X) : (byte)e.X;
+        byte y = relative ? (byte)(e.Y + context.Source.Y) : (byte)e.Y;
+        _logicalMap.Modify(x, y, e.ChangeType, temp, e.Layers, e.Value);
     }
 
     void OnPlayerEnteredTile(PlayerEnteredTileEvent e)
