@@ -12,6 +12,7 @@ using UAlbion.Formats.Ids;
 using UAlbion.Game.Events;
 using UAlbion.Game.Gui.Controls;
 using UAlbion.Game.Scenes;
+using UAlbion.Game.State;
 using UAlbion.Game.State.Player;
 using UAlbion.Game.Text;
 
@@ -26,11 +27,14 @@ public sealed class SelectionHandler2D : GameComponent
     readonly DebugMapTileHit _debugMapTileHit = new();
     Func<object, string> _formatChain;
     int _lastHighlightIndex;
+    UAlbion.Game.Input.CursorMode _cursorMode = UAlbion.Game.Input.CursorMode.Normal;
 
     public SelectionHandler2D(LogicalMap2D map, MapRenderable2D renderable)
     {
         On<WorldCoordinateSelectEvent>(OnSelect);
         On<ShowMapMenuEvent>(_ => ShowMapMenu());
+        On<CursorModeEvent>(e => _cursorMode = e.Mode);
+        On<UiLeftClickEvent>(OnLeftClick); // #5: click-to-walk (single step toward the clicked tile)
         On<UiRightClickEvent>(e =>
         {
             e.Propagating = false;
@@ -39,6 +43,28 @@ public sealed class SelectionHandler2D : GameComponent
 
         _map = map ?? throw new ArgumentNullException(nameof(map));
         _renderable = renderable;
+    }
+
+    // #5: left-clicking the 2D map steps the party one tile toward the clicked tile (the original's
+    // click-to-walk; 2D was keyboard-only). Single-step per click — only in the Normal/PathFinding
+    // cursor mode (the verb modes Examine/Manipulate/Take/Talk go through the right-click menu).
+    void OnLeftClick(UiLeftClickEvent e)
+    {
+        if (_cursorMode is not (UAlbion.Game.Input.CursorMode.Normal or UAlbion.Game.Input.CursorMode.PathFinding))
+            return;
+        var leader = TryResolve<IParty>()?.Leader;
+        if (leader == null)
+            return;
+
+        var pos = leader.GetPosition();
+        int lx = (int)MathF.Round(pos.X), ly = (int)MathF.Round(pos.Y);
+        int cx = _lastHighlightIndex % _map.Width, cy = _lastHighlightIndex / _map.Width;
+        int dx = Math.Sign(cx - lx), dy = Math.Sign(cy - ly);
+        if (dx == 0 && dy == 0)
+            return;
+
+        e.Propagating = false;
+        Raise(new UAlbion.Formats.ScriptEvents.PartyMoveEvent(dx, dy)); // +y = south, matches the W/S keybinds
     }
 
     public event EventHandler<int> HighlightIndexChanged;
