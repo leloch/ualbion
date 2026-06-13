@@ -28,11 +28,12 @@ public class ConversationTopicWindow : ModalDialog
         OnQueryAsync<EnterWordEvent, WordId>(_ => PromptForWord());
         On<RespondEvent>(e =>
         {
-            int index = e.Option - 1;
-            if (_currentWords.Count <= e.Option)
+            // TXT-01: Option is 1-based. The old guard mixed it with the 0-based Count, making
+            // the last word unselectable and crashing on `respond 0` (index -1).
+            if (e.Option < 1 || e.Option > _currentWords.Count)
                 return;
 
-            OnWordSelected(_currentWords[index]);
+            OnWordSelected(_currentWords[e.Option - 1]);
         });
     }
 

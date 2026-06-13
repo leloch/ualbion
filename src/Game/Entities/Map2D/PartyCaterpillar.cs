@@ -84,6 +84,15 @@ public class PartyCaterpillar : ServiceComponent<IMovement>, IMovement
 
             _state.X = (ushort)e.X;
             _state.Y = (ushort)e.Y;
+
+            // MAP-03: clear any in-flight step, else a same-map teleport landing mid-walk lerps
+            // from the new tile toward the STALE target and slides onto the wrong tile (firing
+            // PlayerEnteredTile there). Snap solidly to the destination.
+            _state.HasTarget = false;
+            _state.MoveToX = (ushort)e.X;
+            _state.MoveToY = (ushort)e.Y;
+            _state.PixelX = _settings.TileWidth * e.X;
+            _state.PixelY = _settings.TileHeight * e.Y;
         });
 
         On<PartyTurnEvent>(e =>

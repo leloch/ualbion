@@ -92,8 +92,12 @@ public class TextFormatter : GameServiceComponent<ITextFormatter>, ITextFormatte
                 case Token.Weapon: active = p ?? Resolve<IGameState>().Weapon; break;
 
                 case Token.Parameter:
-                    yield return (Token.Text, args[argNumber].ToString());
-                    argNumber++;
+                    // TXT-02: degrade gracefully when a %s/%d/%u placeholder has no matching arg
+                    // (or a null arg), mirroring the hardened {DAMG} case above — was an
+                    // unchecked args[argNumber].ToString() that threw on too-few/ null args.
+                    yield return (Token.Text, argNumber < args.Length
+                        ? args[argNumber++]?.ToString() ?? "?"
+                        : "?");
                     break;
 
                 default: yield return (token, p); break;

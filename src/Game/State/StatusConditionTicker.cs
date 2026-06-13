@@ -37,8 +37,10 @@ public class StatusConditionTicker : GameComponent
         if (party == null || state == null)
             return;
 
-        // The original runs the fatigue block on odd game hours only (every 2 h).
-        _oddHour = !_oddHour;
+        // STATE-04: the original gates the fatigue block on the game-clock hour-of-day parity
+        // (fcn.00043acc, 0x153b2e % 2), NOT a per-event toggle — a load or odd-count bulk advance
+        // permanently flipped the phase relative to the real clock. Read it off Time.Hour.
+        _oddHour = (state.Time.Hour & 1) != 0;
 
         if (_oddHour && state.HoursSinceResting > 24 && state.HoursSinceResting <= 48)
         {
