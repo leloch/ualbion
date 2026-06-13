@@ -59,7 +59,12 @@ public class FlatMap : GameComponent, IMap
 
         AttachChild(new ScriptManager());
         AttachChild(new Collider2D(
-            (x, y) => _logicalMap.GetPassability(_logicalMap.Index(x, y)),
+            // MAP-02: off-map tiles must read as Solid. Index(x,y)=y*Width+x is unclamped, so a
+            // negative/overflowing X wrapped to a valid index on an adjacent row (the party could
+            // walk off the west/east edge). Reject out-of-bounds before indexing.
+            (x, y) => (x < 0 || y < 0 || x >= _logicalMap.Width || y >= _logicalMap.Height)
+                ? UAlbion.Formats.Assets.Maps.Passability.Solid
+                : _logicalMap.GetPassability(_logicalMap.Index(x, y)),
             !_logicalMap.UseSmallSprites));
 
         // The renderable and selector are children of the Scene, so we don't render the map when the player is in the main menu / inventory screen / combat

@@ -38,7 +38,9 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
         });
         // change_used_item: transform/consume the tool a UseItem puzzle is checking.
         On<UAlbion.Formats.MapEvents.ChangeUsedItemEvent>(e => { if (Context is EventContext c) c.UsedItemOverride = (AssetId)e.ItemId; });
-        OnQuery<      QueryNpcActiveEvent, bool>(q => Resolve<IGameState>().IsNpcDisabled(MapId.None, q.Immediate));
+        // SCRIPT-02: "active" = NOT disabled (was un-negated), and key on the NPC index q.NpcNum
+        // (was q.Immediate, the comparison byte, so it always tested NPC 0). Mirrors line ~109.
+        OnQuery<      QueryNpcActiveEvent, bool>(q => !Resolve<IGameState>().IsNpcDisabled(MapId.None, (byte)q.NpcNum));
         OnQuery<QueryScriptDebugModeEvent, bool>(_ => false);
         OnQuery<  QueryIsCurrentMap2DEvent, bool>(_ =>
         {

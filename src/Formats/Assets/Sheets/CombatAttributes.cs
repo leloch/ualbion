@@ -38,6 +38,12 @@ public class CombatAttributes : ICombatAttributes
         ActionPoints = other.ActionPoints;
         BaseDefense = other.BaseDefense;
         BonusDefense = other.BonusDefense;
+        // STAT-01: the attack/magic fields were omitted, so every DeepClone'd Effective sheet
+        // had attack = 0 and combat damage collapsed to Strength/25 + buffs (party AND monsters).
+        BaseAttack = other.BaseAttack;
+        BonusAttack = other.BonusAttack;
+        MagicAttack = other.MagicAttack;
+        MagicDefense = other.MagicDefense;
         Conditions = other.Conditions;
         return this;
     }
