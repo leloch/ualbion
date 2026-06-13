@@ -154,6 +154,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         AttachChild(new InventoryManager(GetWriteableInventory, GetItem));
         _sheetApplier = AttachChild(new SheetApplier());
         AttachChild(new StatusConditionTicker());
+        AttachChild(new UAlbion.Game.Audio.AmbientSoundManager());
 
         // Populate the spell-effect registry. Currently only Dji-Kas heal-status spells (16..19)
         // are implemented — every other spell still falls through to the registry's "Failed"
