@@ -16,6 +16,7 @@ public interface IMapData : IEventSet
         ((Flags & MapFlags.SubMode2) != 0 ? 2 : 0));
     MapType MapType { get; }
     SongId SongId { get; }
+    SongId AmbientSongId => SongId.None; // per-map ambient loop (3D maps); None = no ambient bed
     int Width { get;  }
     int Height { get;  }
     CombatBackgroundId CombatBackgroundId { get;  }
