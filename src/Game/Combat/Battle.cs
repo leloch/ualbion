@@ -108,6 +108,51 @@ public class Battle : GameComponent, IReadOnlyBattle
     void OnQueueAction(QueueCombatActionEvent e)
     {
         _pendingActions[e.Actor] = e;
+        RefreshTargetHighlights();
+    }
+
+    // Show, on the combat grid, which tile each queued action will hit — so the player can see
+    // who they've ordered an attack/spell against before committing the round (#9). Recomputes
+    // the full set each time so changing one member's order keeps the display consistent.
+    void RefreshTargetHighlights()
+    {
+        Raise(new CombatTargetHighlightEvent(-1)); // clear all
+        foreach (var kvp in _pendingActions)
+        {
+            var actor = _mobs.FirstOrDefault(m => m?.SheetId == kvp.Key);
+            if (actor == null) continue;
+            int tile = DisplayTargetTile(actor, kvp.Value);
+            if (tile >= 0)
+                Raise(new CombatTargetHighlightEvent(tile));
+        }
+    }
+
+    // The tile a queued action will affect, for the planning-phase target marker. Mirrors the
+    // execution-time target selection (ResolveAttackAction): explicit tile wins; melee otherwise
+    // auto-targets the adjacent enemy; ranged the first live enemy. None/Retreat have no target.
+    int DisplayTargetTile(ICombatParticipant actor, QueueCombatActionEvent action)
+    {
+        switch (action.Action)
+        {
+            case CombatAction.None:
+            case CombatAction.Retreat:
+                return -1;
+
+            case CombatAction.Move:
+                return action.TargetTile; // the destination tile
+
+            case CombatAction.Melee:
+            {
+                if (action.TargetTile >= 0 && action.TargetTile < _tiles.Length
+                    && _tiles[action.TargetTile] != null && LifePoints(_tiles[action.TargetTile]) > 0)
+                    return action.TargetTile;
+                var auto = RangedUsable(actor) ? LiveParticipants(forParty: false).FirstOrDefault() : AdjacentEnemy(actor);
+                return TileOf(auto);
+            }
+
+            default: // CastSpell / UseItem etc. — use the chosen target tile if any
+                return action.TargetTile;
+        }
     }
 
     // Diagnostic kill-injection (see CombatDamageEvent): routes through the real
@@ -173,6 +218,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (_roundInProgress || _combatEnded)
             return;
         _roundInProgress = true;
+        Raise(new CombatTargetHighlightEvent(-1)); // planning marks clear as the round executes
         try
         {
             await RunRound();

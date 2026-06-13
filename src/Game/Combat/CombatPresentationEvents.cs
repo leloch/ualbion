@@ -10,6 +10,13 @@ namespace UAlbion.Game.Combat;
 public record CombatTurnHighlightEvent(int TileIndex) : EventRecord, IVerboseEvent;
 
 /// <summary>
+/// Planning-phase presentation: marks TileIndex as the target a queued action will hit, so
+/// the player can see who they've ordered an attack/spell against before the round runs.
+/// TileIndex -1 clears all target marks. Distinct from the active-turn highlight.
+/// </summary>
+public record CombatTargetHighlightEvent(int TileIndex) : EventRecord, IVerboseEvent;
+
+/// <summary>
 /// Round-playback presentation: damage/heal feedback for the occupant of a tile.
 /// Amount 0 with Heal false is a miss (shown as "0" with no flash).
 /// </summary>

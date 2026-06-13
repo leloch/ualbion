@@ -48,6 +48,15 @@ public class VisualCombatTile : UiElement
                 : _sprite.Flags & ~SpriteFlags.Highlight;
             ClearHitFeedback();
         });
+        On<CombatTargetHighlightEvent>(e =>
+        {
+            // Planning-phase marker: tint the tile a queued action targets (distinct from the
+            // active-turn Highlight). -1 clears every tile's mark.
+            if (e.TileIndex == _tileIndex)
+                _sprite.Flags |= SpriteFlags.BlueTint;
+            else if (e.TileIndex == -1)
+                _sprite.Flags &= ~SpriteFlags.BlueTint;
+        });
         On<CombatHitEvent>(e =>
         {
             if (e.TileIndex != _tileIndex)
