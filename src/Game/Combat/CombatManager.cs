@@ -26,6 +26,7 @@ public class CombatManager : GameComponent
     {
         On<EncounterEvent>(e => BeginCombat(e.GroupId, e.BackgroundId));
         OnAsync<EndCombatEvent>(OnCombatEnded);
+        OnAsync<GameCompleteEvent>(_ => PlayEndgameAsync());
     }
 
     Battle _currentBattle;
@@ -74,6 +75,12 @@ public class CombatManager : GameComponent
     {
         if (e.Result == CombatResult.PartyKilled)
             return PartyWipedAsync();
+        // The final boss "asks for surrender" once the party is mostly downed (combat outcome 4,
+        // _RE_ASK_SURRENDER.md) — that IS the win. Drive the canonical endgame terminal. The boss
+        // map's continuation chain still runs (it pops back to the map), but the surrender outcome
+        // is the engine-side signal that the game is won, so we sequence the ending here. (B3.)
+        if (e.Result == CombatResult.Surrender)
+            return PlayEndgameAsync();
         return AlbionTask.CompletedTask;
     }
 
@@ -81,6 +88,16 @@ public class CombatManager : GameComponent
     {
         // Animation x/y/unk are unused for full-screen videos like GameOver — pass 0s.
         await RaiseA(new PlayAnimationEvent(Base.Video.GameOver, 0, 0, 0, 0, 0, 0));
+        Raise(new PushSceneEvent(SceneId.MainMenu));
+    }
+
+    // The end-of-game sequence: the four Endgame FLICs (Seed detonation / outro / credits) in
+    // order, then a terminal return to the main menu. Mirrors PartyWipedAsync's video→menu shape.
+    // Reached on boss surrender or an explicit game_complete script opcode. (B3 terminal win-state.)
+    async AlbionTask PlayEndgameAsync()
+    {
+        foreach (var video in new[] { Base.Video.Endgame1, Base.Video.Endgame2, Base.Video.Endgame3, Base.Video.Endgame4 })
+            await RaiseA(new PlayAnimationEvent(video, 0, 0, 0, 0, 0, 0));
         Raise(new PushSceneEvent(SceneId.MainMenu));
     }
 }
