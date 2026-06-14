@@ -1189,10 +1189,22 @@ public class Battle : GameComponent, IReadOnlyBattle
         var spell = Assets.LoadSpell(spellId);
         int cost = spell?.Cost ?? 0;
         int sp = SpellPoints(caster);
+        // Over-cast (RE'd fcn.0006042c, _RE_FIDELITY1.md): a caster short on SP does NOT refuse — it
+        // pays the SP shortfall in Stamina-scaled LIFE POINTS (all SP is spent, then LP). Higher
+        // Stamina is cheaper (Stamina 100 = ½ LP per missing SP; Stamina 0 = 2 LP). Refuse ONLY when
+        // even the caster's LP can't cover it (the cast would kill them). The LP is charged alongside
+        // SP in the not-Failed block below.
+        int lpSurcharge = 0;
         if (cost > 0 && sp < cost)
         {
-            Info($"[Combat] {caster.SheetId} lacks SP for {spellId} ({sp}/{cost})");
-            return;
+            int stamina = caster.Effective?.Attributes?.Stamina?.Current ?? 0;
+            int staminaFactor = Math.Max(1, (100 - stamina) * 3 / 2 + 50);
+            lpSurcharge = (cost - sp) * staminaFactor / 100;
+            if (lpSurcharge > LifePoints(caster))
+            {
+                Info($"[Combat] {caster.SheetId} can't afford {spellId} even in LP ({sp}/{cost} SP, surcharge {lpSurcharge} > LP {LifePoints(caster)})");
+                return;
+            }
         }
 
         // RE'd mastery multiplier M = max(1, (mastery+50)/100); mastery is the per-spell
@@ -1322,6 +1334,11 @@ public class Battle : GameComponent, IReadOnlyBattle
                     Raise(new DataChangeEvent(casterTarget.Value, ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
                 else
                     _liveSp[caster.SheetId] = Math.Max(0, SpellPoints(caster) - cost); // monster SP shadow
+
+                // Over-cast surcharge: pay the SP shortfall in LP (computed at the cost check). SP is
+                // already floored at 0 by the SubtractAmount/Max(0,..) above.
+                if (lpSurcharge > 0)
+                    ApplyDirectDamage(caster, lpSurcharge);
             }
 
             // Mastery improves with use (RE post-cast fcn.000603ae: mastery += MagicTalent, cap
@@ -1670,6 +1687,36 @@ public class Battle : GameComponent, IReadOnlyBattle
             ("damage",   amount),
             ("hp",       next),
             ("max",      d.LifePoints.Max));
+
+        // Post-strike final-boss surrender check (the WIN condition). Covers melee + ranged since
+        // both route through here.
+        TryBossSurrender(attacker);
+    }
+
+    // Final-boss "asks for surrender" = combat outcome 4 = the canonical WIN (_RE_ASK_SURRENDER.md).
+    // The final AI is unkillable by design; instead, after a behaviour-strategy-9 monster (MONCHAR
+    // strategy byte, sheet UnkownC == 9 — the unique surrender behaviour, table row 8) lands a hit,
+    // if the party has been downed to <= max(1, partySize-2) conscious members it surrenders. Only
+    // that one boss behaviour can trigger it, so normal fights are unaffected. Drives
+    // CombatResult.Surrender → CombatManager plays the endgame terminal (B2/B3).
+    void TryBossSurrender(ICombatParticipant attacker)
+    {
+        if (_combatEnded || attacker == null || attacker.SheetId.Type == AssetType.PartySheet)
+            return;
+        if ((attacker.Effective?.UnkownC ?? 0) != 9)
+            return;
+
+        int partySize = _mobs.Count(IsParty);
+        if (partySize == 0)
+            return;
+        int conscious = LiveParticipants(forParty: true).Count(); // LP>0, not removed = conscious
+        if (!CombatFormulas.ShouldRequestSurrender(partySize, conscious))
+            return;
+
+        Info($"[Combat] {attacker.SheetId} requests surrender ({conscious}/{partySize} conscious) — party wins");
+        TraceLog.Emit("boss_surrender", ("boss", attacker.SheetId), ("conscious", conscious), ("partySize", partySize));
+        Raise(new EndCombatEvent(CombatResult.Surrender));
+        HandleCombatEnd(CombatResult.Surrender); // Raise() skips own handlers
     }
 
     /// <summary>

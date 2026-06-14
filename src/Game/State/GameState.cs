@@ -531,7 +531,42 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         if (_game == null)
             return AlbionTask.CompletedTask;
 
+        LoadDiscoveredWords(IdToPath(id));
         return InitialiseGame();
+    }
+
+    // Discovered conversation words are runtime-only in the original (the savegame has no field for
+    // them — confirmed by RE in _RE_WORD_SAVE.md). To keep word-gated quests from breaking across a
+    // save/reload (the revival goal), we persist them in a SIDECAR file next to the save — a
+    // deliberate QoL deviation with ZERO risk to the vanilla save format / round-trip (the 13 stock
+    // saves simply have no sidecar). One numeric WordId per line.
+    void LoadDiscoveredWords(string savePath)
+    {
+        _discoveredWords.Clear();
+        try
+        {
+            var disk = Resolve<IFileSystem>();
+            var path = savePath + ".words";
+            if (!disk.FileExists(path))
+                return;
+            foreach (var line in disk.ReadAllLines(path))
+                if (int.TryParse(line.Trim(), out var wid) && wid > 0)
+                    _discoveredWords.Add(new WordId(AssetType.Word, wid));
+        }
+        catch (Exception ex) { Error($"[words] sidecar read failed: {ex.Message}"); }
+    }
+
+    void SaveDiscoveredWords(IFileSystem disk, string savePath)
+    {
+        try
+        {
+            var path = savePath + ".words";
+            if (_discoveredWords.Count > 0)
+                disk.WriteAllText(path, string.Join("\n", _discoveredWords.Select(w => w.Id)));
+            else if (disk.FileExists(path))
+                disk.DeleteFile(path);
+        }
+        catch (Exception ex) { Error($"[words] sidecar write failed: {ex.Message}"); }
     }
 
     /// <summary>
@@ -723,6 +758,19 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             _game.PartyX = (ushort)pos.X;
             // 2D maps put the tile Y in pos.Y; 3D maps use pos.Z (Y is the camera height).
             _game.PartyY = (ushort)(map?.MapType == UAlbion.Formats.Assets.Maps.MapType.ThreeD ? pos.Z : pos.Y);
+
+            // 3D facing wasn't being persisted (always saved the default), so reloading a dungeon
+            // restored the wrong direction. Derive it from the camera's quantised yaw (the
+            // grid-step model keeps it on a quadrant): N=0 E=90 S=180 W=270 → Direction 0..3.
+            if (map?.MapType == UAlbion.Formats.Assets.Maps.MapType.ThreeD)
+            {
+                var cam = TryResolve<UAlbion.Core.Visual.ICamera>();
+                if (cam != null)
+                {
+                    int q = ((int)MathF.Round(cam.Yaw / (MathF.PI / 2f)) % 4 + 4) % 4;
+                    _game.PartyDirection = (UAlbion.Formats.Direction)q;
+                }
+            }
         }
 
         // var key = new AssetId(AssetType.SavedGame, id);
@@ -747,6 +795,8 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         {
             SavedGame.Serdes(_game, AssetMapping.Global, aw, spellManager, npcMapType);
         }
+
+        SaveDiscoveredWords(disk, IdToPath(id));
     }
 
     async AlbionTask InitialiseGame()
