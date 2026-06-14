@@ -29,12 +29,23 @@ public sealed class SelectionHandler2D : GameComponent
     int _lastHighlightIndex;
     UAlbion.Game.Input.CursorMode _cursorMode = UAlbion.Game.Input.CursorMode.Normal;
 
+    // Click-to-walk path state: the remaining waypoints (tiles) the party auto-walks toward,
+    // plus a stuck-watchdog so a blocked path can't spin forever issuing moves into a wall.
+    readonly List<(int X, int Y)> _path = new();
+    int _stuckTicks;
+    int _lastTileX = int.MinValue, _lastTileY = int.MinValue;
+
     public SelectionHandler2D(LogicalMap2D map, MapRenderable2D renderable)
     {
         On<WorldCoordinateSelectEvent>(OnSelect);
         On<ShowMapMenuEvent>(_ => ShowMapMenu());
         On<CursorModeEvent>(e => _cursorMode = e.Mode);
-        On<UiLeftClickEvent>(OnLeftClick); // #5: click-to-walk (single step toward the clicked tile)
+        On<UiLeftClickEvent>(OnLeftClick); // #5: click-to-walk (A* path to the clicked tile)
+        On<UAlbion.Game.Events.FastClockEvent>(_ => FollowPath());
+        // Cancel an auto-walk the instant the player steers manually. EventExchange.Raise SKIPS the
+        // sender's own subscriptions, so FollowPath's own PartyMoveEvent never triggers this — only
+        // a keyboard/other-source move does.
+        On<UAlbion.Formats.ScriptEvents.PartyMoveEvent>(_ => _path.Clear());
         On<UiRightClickEvent>(e =>
         {
             e.Propagating = false;
@@ -59,12 +70,127 @@ public sealed class SelectionHandler2D : GameComponent
         var pos = leader.GetPosition();
         int lx = (int)MathF.Round(pos.X), ly = (int)MathF.Round(pos.Y);
         int cx = _lastHighlightIndex % _map.Width, cy = _lastHighlightIndex / _map.Width;
-        int dx = Math.Sign(cx - lx), dy = Math.Sign(cy - ly);
-        if (dx == 0 && dy == 0)
+        if ((cx == lx && cy == ly) || cx < 0 || cy < 0 || cx >= _map.Width || cy >= _map.Height)
             return;
 
         e.Propagating = false;
-        Raise(new UAlbion.Formats.ScriptEvents.PartyMoveEvent(dx, dy)); // +y = south, matches the W/S keybinds
+
+        // Faithful 2D click-to-walk: route to the clicked tile with A* (8-directional, walkability
+        // via the registered Collider2D). FollowPath then steps the party tile-by-tile each tick.
+        // If no route exists (unreachable / off-map), fall back to a single greedy step so a click
+        // still nudges the party (the original behaviour before pathing).
+        var path = FindPath(lx, ly, cx, cy);
+        _path.Clear();
+        _stuckTicks = 0;
+        if (path != null && path.Count > 0)
+        {
+            _path.AddRange(path);
+            return;
+        }
+
+        int dx = Math.Sign(cx - lx), dy = Math.Sign(cy - ly);
+        if (dx != 0 || dy != 0)
+            Raise(new UAlbion.Formats.ScriptEvents.PartyMoveEvent(dx, dy)); // +y = south
+    }
+
+    // Step the party toward the next waypoint each tick. Issues a PartyMoveEvent (a per-tick
+    // direction intent the caterpillar integrates) toward the next path tile; pops the waypoint
+    // when reached. A keyboard move or a new click replaces/ends the path. A stuck-watchdog
+    // abandons the path if the party makes no tile progress for a while (e.g. an NPC blocks it).
+    void FollowPath()
+    {
+        if (_path.Count == 0)
+            return;
+
+        var leader = TryResolve<IParty>()?.Leader;
+        if (leader == null) { _path.Clear(); return; }
+
+        var pos = leader.GetPosition();
+        int lx = (int)MathF.Round(pos.X), ly = (int)MathF.Round(pos.Y);
+
+        // Stuck detection: no tile change for ~40 ticks → give up on the path.
+        if (lx == _lastTileX && ly == _lastTileY)
+        {
+            if (++_stuckTicks > 40) { _path.Clear(); _stuckTicks = 0; return; }
+        }
+        else { _stuckTicks = 0; _lastTileX = lx; _lastTileY = ly; }
+
+        // Drop any waypoints we've already reached (including the immediate one).
+        while (_path.Count > 0 && _path[0].X == lx && _path[0].Y == ly)
+            _path.RemoveAt(0);
+        if (_path.Count == 0)
+            return;
+
+        int dx = Math.Sign(_path[0].X - lx), dy = Math.Sign(_path[0].Y - ly);
+        if (dx == 0 && dy == 0)
+            return;
+        Raise(new UAlbion.Formats.ScriptEvents.PartyMoveEvent(dx, dy));
+    }
+
+    // A* over the tile grid (8-connected). Walkability per directed edge comes from the registered
+    // ICollisionManager (Collider2D), so it respects map passability exactly as keyboard movement
+    // does. Returns the waypoint list (excluding the start), or null if unreachable. Bounded node
+    // budget so a huge open map can't stall a click.
+    List<(int X, int Y)> FindPath(int sx, int sy, int gx, int gy)
+    {
+        var detector = TryResolve<ICollisionManager>();
+        if (detector == null)
+            return null;
+
+        const int MaxNodes = 20000;
+        var open = new PriorityQueue<(int X, int Y), int>();
+        var cameFrom = new Dictionary<(int, int), (int, int)>();
+        var gScore = new Dictionary<(int, int), int> { [(sx, sy)] = 0 };
+        open.Enqueue((sx, sy), Heuristic(sx, sy, gx, gy));
+        int expanded = 0;
+
+        while (open.Count > 0 && expanded++ < MaxNodes)
+        {
+            var cur = open.Dequeue();
+            if (cur.X == gx && cur.Y == gy)
+                return Reconstruct(cameFrom, cur);
+
+            for (int ddy = -1; ddy <= 1; ddy++)
+            for (int ddx = -1; ddx <= 1; ddx++)
+            {
+                if (ddx == 0 && ddy == 0) continue;
+                int nx = cur.X + ddx, ny = cur.Y + ddy;
+                if (nx < 0 || ny < 0 || nx >= _map.Width || ny >= _map.Height) continue;
+                if (detector.IsOccupied(cur.X, cur.Y, nx, ny)) continue;
+                // Diagonal: require both orthogonal neighbours open so we don't cut corners.
+                if (ddx != 0 && ddy != 0 &&
+                    (detector.IsOccupied(cur.X, cur.Y, cur.X + ddx, cur.Y) ||
+                     detector.IsOccupied(cur.X, cur.Y, cur.X, cur.Y + ddy)))
+                    continue;
+
+                int tentative = gScore[(cur.X, cur.Y)] + ((ddx != 0 && ddy != 0) ? 14 : 10);
+                var nkey = (nx, ny);
+                if (gScore.TryGetValue(nkey, out var g) && tentative >= g)
+                    continue;
+                gScore[nkey] = tentative;
+                cameFrom[nkey] = (cur.X, cur.Y);
+                open.Enqueue((nx, ny), tentative + Heuristic(nx, ny, gx, gy));
+            }
+        }
+        return null;
+    }
+
+    static int Heuristic(int x, int y, int gx, int gy)
+    {
+        int dx = Math.Abs(x - gx), dy = Math.Abs(y - gy);
+        return 10 * (dx + dy) - 6 * Math.Min(dx, dy); // octile distance ×10
+    }
+
+    static List<(int X, int Y)> Reconstruct(Dictionary<(int, int), (int, int)> cameFrom, (int X, int Y) cur)
+    {
+        var path = new List<(int X, int Y)>();
+        while (cameFrom.TryGetValue((cur.X, cur.Y), out var prev))
+        {
+            path.Add(cur);
+            cur = prev;
+        }
+        path.Reverse();
+        return path;
     }
 
     public event EventHandler<int> HighlightIndexChanged;
