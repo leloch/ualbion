@@ -53,6 +53,17 @@ public abstract class QueryEvent : MapEvent, IBranchingEvent
             QueryType.NpcXCoord => QueryNpcXEvent.Serdes((QueryNpcXEvent)e, s),
             QueryType.NpcYCoord => QueryNpcYEvent.Serdes((QueryNpcYEvent)e, s),
             QueryType.PromptPlayerNumeric => PromptPlayerNumericEvent.Serdes((PromptPlayerNumericEvent)e, s),
+            // Undecoded query subtypes — round-trip via the standard 6-byte body so a real map
+            // using one loads instead of throwing FormatException at deserialize (Phase-0 crash
+            // guard, see QueryUndecodedEvents.cs). Semantics still pending RE.
+            QueryType.Unk8 => QueryUnk8Event.Serdes((QueryUnk8Event)e, s),
+            QueryType.UnkB => QueryUnkBEvent.Serdes((QueryUnkBEvent)e, s),
+            QueryType.UnkD => QueryUnkDEvent.Serdes((QueryUnkDEvent)e, s),
+            QueryType.Unk13 => QueryUnk13Event.Serdes((QueryUnk13Event)e, s),
+            QueryType.Unk24 => QueryUnk24Event.Serdes((QueryUnk24Event)e, s),
+            QueryType.Unk25 => QueryUnk25Event.Serdes((QueryUnk25Event)e, s),
+            QueryType.Unk26 => QueryUnk26Event.Serdes((QueryUnk26Event)e, s),
+            QueryType.Unk27 => QueryUnk27Event.Serdes((QueryUnk27Event)e, s),
             _ => throw new FormatException($"Unexpected query type \"queryType\"")
         };
     }
