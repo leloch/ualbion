@@ -61,11 +61,21 @@ bool-queries to false; the QueryType parse-throws are guarded (Phase 0); the Npc
 autosave crash is fixed. So an unimplemented opcode in a player-triggered chain DEGRADES to a no-op
 (content gap), never a crash/soft-unload.
 
+MORE polish resolved this pass:
+- **2D click-to-walk full pathing** — DONE (A* in SelectionHandler2D, verified live: click → party
+  walks the route → stops; keyboard cancels). Replaces the single-step.
+- **SLP economy** — RE'd (_RE_FIDELITY2.md): there is NO separate spell-learning pool; the +0x16
+  pool IS TrainingPoints (already serialized), spell-learning is gold-only, +0xE8 is dead data →
+  the remake is **already 1:1** (only the comment was corrected).
+- **Trapped chests** — RE'd (_RE_FIDELITY2.md): the lockpick RETRY behaviour is already correct
+  (unlimited+free skill picks); the trap fires a per-chest content-script on a failed pick + failed
+  DEXTERITY evade (no Thief's-Amulet; item path bypasses). The trap-trigger needs the chest data's
+  trap-armed source byte, which the RE couldn't pin down → left for a data dump (niche, non-blocking).
+
 REMAINING (genuinely human-QA, not automatable): the chapter-by-chapter narrative playthrough —
 verifying each quest gate / conversation / puzzle / transition produces the RIGHT content (engine
-robustness is proven; content correctness needs a human to play with choices). Minor fidelity
-(SP-shortfall LP, trapped chests, encumbrance penalty, separate SLP pool) are deviations/niche and
-mostly need their own RE; none blocks completion.
+robustness is proven; content correctness needs a human to play with choices). Open fidelity:
+SP-shortfall LP and encumbrance penalty (RE in flight); none blocks completion.
 
 ---
 
