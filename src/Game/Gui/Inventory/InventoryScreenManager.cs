@@ -14,6 +14,7 @@ namespace UAlbion.Game.Gui.Inventory;
 public class InventoryScreenManager : Component
 {
     AlbionTaskCore<bool> _source;
+    bool _lockIsTrapped; // the current chest/door has a false-branch (trap) chain — RE _RE_CHEST_TRAP.md
     IEvent _modeEvent = new InventoryOpenEvent(PartyMemberId.None); // Should never be null.
     InventoryPage _page;
     PartyMemberId _activeCharacter;
@@ -34,6 +35,7 @@ public class InventoryScreenManager : Component
         });
         On<InventoryCloseEvent>(_ => InventoryClosed(false, false));
         On<LockOpenedEvent>(_ => LockOpened());
+        On<LockPickFailedEvent>(_ => OnLockPickFailed());
         On<TakeAllEvent>(_ =>
         {
             if (_modeEvent is ChestEvent chest)
@@ -53,6 +55,7 @@ public class InventoryScreenManager : Component
     {
         _source?.SetResult(false);
         _source = new AlbionTaskCore<bool>("InventoryScreenManager.OpenDoor");
+        _lockIsTrapped = CurrentLockIsTrapped();
         Raise(new PushSceneEvent(SceneId.Inventory));
         SetMode(e);
         return _source.Task;
@@ -62,9 +65,36 @@ public class InventoryScreenManager : Component
     {
         _source?.SetResult(false);
         _source = new AlbionTaskCore<bool>("InventoryScreenManager.OpenChest");
+        _lockIsTrapped = CurrentLockIsTrapped();
         Raise(new PushSceneEvent(SceneId.Inventory));
         SetMode(e);
         return _source.Task;
+    }
+
+    // A chest/door is "trapped" iff its event node has a false branch — the per-chest trap chain
+    // (RE'd _RE_CHEST_TRAP.md: there is no trap byte; the NextIfFalse link IS the arm signal). The
+    // chain interpreter parks this node on the context while the open query is awaited, so it's
+    // readable here. Returning false from the query (triggeredTrap) routes the chain down that
+    // false branch, exactly as the original fires the trap.
+    static bool CurrentLockIsTrapped() =>
+        (Context as EventContext)?.Node is IBranchNode branch && branch.NextIfFalse != null;
+
+    // A failed SKILL pick (LockPickFailedEvent): trapped locks roll the leader's Dexterity to evade
+    // (PercentRoll(Dex,100), fcn at door.c 0x5ab33); a failed evade springs the trap = close with
+    // triggeredTrap so the event chain takes the false (trap) branch. Untrapped locks no-op here →
+    // unlimited free retries. The key/Lockpick-item path never reaches this (it bypasses the trap).
+    void OnLockPickFailed()
+    {
+        if (!_lockIsTrapped)
+            return;
+
+        var leader = Resolve<IParty>().Leader;
+        int dex = leader?.Effective?.Attributes?.Dexterity?.Current ?? 0;
+        int roll = Resolve<UAlbion.Game.IRandom>().Generate(100);
+        if (UAlbion.Game.Combat.DamageCalculator.PercentRoll(dex, roll))
+            return; // evaded — free retry
+
+        InventoryClosed(triggeredTrap: true, unlocked: false); // springs the trap (false branch)
     }
 
     void SetMode(IEvent e)
@@ -115,6 +145,8 @@ public class InventoryScreenManager : Component
         var source = _source;
         _source = null;
         ((EventContext)Context).LastEventResult = unlocked;
-        source?.SetResult(!triggeredTrap); // TODO: Test with trapped chests / doors
+        // triggeredTrap=false → query returns true → chain takes the Next branch (normal). A sprung
+        // trap returns false → the chain takes NextIfFalse (the trap chain). RE _RE_CHEST_TRAP.md.
+        source?.SetResult(!triggeredTrap);
     }
 }

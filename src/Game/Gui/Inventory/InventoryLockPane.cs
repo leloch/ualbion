@@ -128,6 +128,10 @@ public class InventoryLockPane : UiElement
         else
         {
             Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Lock_LeaderCannotPickThisLock)));
+            // A failed SKILL pick springs the trap on a trapped lock (the manager rolls Dexterity to
+            // evade and, on failure, fires the chest/door's trap chain). Untrapped locks ignore this
+            // and allow unlimited free retries. RE: _RE_CHEST_TRAP.md.
+            Raise(new LockPickFailedEvent());
         }
     }
 
