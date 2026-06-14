@@ -165,7 +165,7 @@ public class DungeonMap : GameComponent, IMap
 
         AttachChild(new ScriptManager());
         AttachChild(new Collider3D(_logicalMap));
-        AttachChild(new Movement3D());
+        AttachChild(new Movement3D(_camera));
 
         if (!_labyrinthData.BackgroundId.IsNone)
         {
