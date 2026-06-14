@@ -72,10 +72,20 @@ MORE polish resolved this pass:
   DEXTERITY evade (no Thief's-Amulet; item path bypasses). The trap-trigger needs the chest data's
   trap-armed source byte, which the RE couldn't pin down → left for a data dump (niche, non-blocking).
 
+Final fidelity pass (RE'd in _RE_FIDELITY1.md):
+- **SP-shortfall** — DONE: casts now over-cast (deduct all SP, pay the shortfall in Stamina-scaled
+  LP, refuse only if it would kill) per fcn.0006042c, replacing the wrong "refuse" (Battle.cs).
+- **Encumbrance** — confirmed the remake is **already correct** (original has a hard weight cap and
+  NO graded speed/AP penalty); no change.
+- **Finale B2 VERIFIED IN THE REAL BOSS FIGHT** — the surrender boss is MonsterSheet 52 "AI"
+  (4950 LP, UnkownC==9, unique). Live: encounter MonsterGroup.OneAI → it downs a party member →
+  "requests surrender (1/2 conscious) - party wins" → EndCombatEvent{Surrender} → Endgame FLICs.
+  The literal 100% checkpoint fires correctly with the real final boss.
+
 REMAINING (genuinely human-QA, not automatable): the chapter-by-chapter narrative playthrough —
 verifying each quest gate / conversation / puzzle / transition produces the RIGHT content (engine
-robustness is proven; content correctness needs a human to play with choices). Open fidelity:
-SP-shortfall LP and encumbrance penalty (RE in flight); none blocks completion.
+robustness is proven; the win condition is proven; content correctness needs a human playing with
+choices). The trapped-chest trap-trigger needs a chest-data byte dump (niche, non-blocking).
 
 ---
 
