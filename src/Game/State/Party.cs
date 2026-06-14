@@ -30,7 +30,21 @@ public class Party : ServiceComponent<IParty>, IParty
         _readOnlyStatusBarOrder = _statusBarOrder.AsReadOnly();
         _readOnlyWalkOrder = _walkOrder.AsReadOnly();
 
-        On<AddPartyMemberEvent>(e => SetLastResult(AddMember(e.PartyMemberId)));
+        On<AddPartyMemberEvent>(e =>
+        {
+            // A full party (6) can't take a new member. Show the original's "the party seems to be
+            // complete" message (SYSTEXTS 508) instead of failing silently, so the player knows to
+            // dismiss someone via the party screen before retrying. (The original shows this text and
+            // leaves party management to the player — no auto-dismiss prompt, which would be a
+            // deviation.) The recruit chain still sees LastResult=false and can take its own branch.
+            bool full = _statusBarOrder.Count >= SavedGame.MaxPartySize
+                        && _statusBarOrder.All(x => x.Id != e.PartyMemberId);
+            bool added = AddMember(e.PartyMemberId);
+            if (!added && full)
+                Raise(new DescriptionTextEvent(
+                    Resolve<ITextFormatter>().Format(UAlbion.Base.SystemText.Dialog_ThePartySeemsToBeComplete)));
+            SetLastResult(added);
+        });
         On<RemovePartyMemberEvent>(OnRemovePartyMember);
         On<SetPartyLeaderEvent>(e => SetLeader(e.PartyMemberId));
         On<SetPlayerCombatSlotEvent>(OnSetCombatSlot);
