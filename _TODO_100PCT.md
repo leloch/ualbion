@@ -22,7 +22,36 @@
 >   starting work.** Treat as a hypothesis, not a fact.
 > - **[RISK]** — a latent crash/soft-lock that depends on real map data we haven't extracted.
 
-## Bottom line
+## STATUS UPDATE 2026-06-14 (supersedes much of the body below — re-audited against live code)
+
+Most of the "blocker spine" below is now DONE; this doc (2026-06-13) over-states what remains.
+Verified against current code + a live harness pass:
+- **B5 economy — DONE.** Buy debits gold + affordability, sell credits gold, per-shop pricing
+  (MerchantPricing), price-hover UI all implemented and **verified live** (buy −95g, sell +1g).
+  The "merchant purse" is correctly ABSENT (RE'd: Albion has none, _RE_MERCHANT.md).
+- **B7 3D ChangeIcon — DONE** (556f297b). **B1′ PartySleeps rest — DONE.**
+- **Finale B2/B3 — DONE.** `CombatResult.Surrender` is produced (Battle.TryBossSurrender, behaviour
+  9 / UnkownC==9) and consumed → `game_complete`/CombatManager plays Endgame1-4 → main menu
+  terminal (committed 292371e2; endgame sequence **verified live**). (B2 hook is in the working
+  tree pending the cockpit-branch merge — see project memory.)
+- **Monster-side status conditions — DONE** (Battle.ApplyCondition shadow; committed).
+- **change_used_item, TrapEvent (world), ExecuteEvent, AmbientEvent (+ MapManager raises it),
+  FillScreen / FadeToBlack / FadeFromBlack — all DONE.** (FadeToWhite/FromWhite events don't exist.)
+- **QueryType map-load crash [RISK] — FIXED** (b6c0a6c7): all 8 undecoded subtypes round-trip.
+- **NpcState save-crash on map transition — FIXED** (6ea39ab8); found via a full 166-map load
+  shakeout: **ALL 166 story maps now load clean** (incl. their map-init event chains).
+- **Polish already done:** M keybind (show_automap), Epoch (2230-09-08), SpellEnvironments bit
+  order, MainMenu ViewIntro/Credits buttons, night-palette fallback.
+
+GENUINELY REMAINING: SignalEvent (needs RE — handler 0x3af2d), CreateTransport (large; necessity
+unverified — likely teleport-driven), word save-persistence (needs the save-offset RE), Joe
+forced-swap prompt (LastResult mechanism exists; full prompt unwritten), and the **interactive
+chapter-by-chapter playthrough** (map LOAD is proven; story PROGRESSION still needs manual driving).
+Minor fidelity: SP-shortfall, trapped chests, encumbrance, SLP economy.
+
+---
+
+## Bottom line (ORIGINAL 2026-06-13 — see status update above; several items now resolved)
 
 Albion is **NOT yet completable** in ualbion. The engine + 1:1 systems are strong, and the
 audit's panic was overblown — several "blockers" are already done. But after hand-verifying,
