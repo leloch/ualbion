@@ -43,11 +43,29 @@ Verified against current code + a live harness pass:
 - **Polish already done:** M keybind (show_automap), Epoch (2230-09-08), SpellEnvironments bit
   order, MainMenu ViewIntro/Credits buttons, night-palette fallback.
 
-GENUINELY REMAINING: SignalEvent (needs RE — handler 0x3af2d), CreateTransport (large; necessity
-unverified — likely teleport-driven), word save-persistence (needs the save-offset RE), Joe
-forced-swap prompt (LastResult mechanism exists; full prompt unwritten), and the **interactive
-chapter-by-chapter playthrough** (map LOAD is proven; story PROGRESSION still needs manual driving).
-Minor fidelity: SP-shortfall, trapped chests, encumbrance, SLP economy.
+NOW RESOLVED (RE'd this pass):
+- **SignalEvent (0x0F)** — RE'd (_RE_SIGNAL.md): a transient conversation-driver message with no
+  consumer until a faithful conversation driver exists → the current silent no-op is correct.
+- **CreateTransport (0x13)** — RE'd (_RE_TRANSPORT.md): **vestigial**, zero usage in any converted
+  map (sea crossings are teleport/MapExit-driven), like ask_surrender 0x1C → parse-only no-op correct.
+- **Word save-persistence** — RE'd (_RE_WORD_SAVE.md): the original keeps words runtime-only;
+  implemented as a zero-risk SIDECAR (save.NNN.words), verified live round-trip (working tree).
+- **Joe forced-swap** — full party now shows the original's "party seems complete" text (508);
+  faithful (the original leaves party management to the player), verified live.
+- **Intro cinematic on New Game** — now plays ApproachToAlbion before the new game.
+
+**Phase-4 crash-robustness — ESTABLISHED.** The engine cannot hard-crash on the back half:
+all 166 story maps + their map-init chains load clean (live shakeout); the event dispatch
+(EventChainManager → EventExchange.RaiseInvoker) NO-OPs unhandled opcodes and defaults unhandled
+bool-queries to false; the QueryType parse-throws are guarded (Phase 0); the NpcState map-transition
+autosave crash is fixed. So an unimplemented opcode in a player-triggered chain DEGRADES to a no-op
+(content gap), never a crash/soft-unload.
+
+REMAINING (genuinely human-QA, not automatable): the chapter-by-chapter narrative playthrough —
+verifying each quest gate / conversation / puzzle / transition produces the RIGHT content (engine
+robustness is proven; content correctness needs a human to play with choices). Minor fidelity
+(SP-shortfall LP, trapped chests, encumbrance penalty, separate SLP pool) are deviations/niche and
+mostly need their own RE; none blocks completion.
 
 ---
 
