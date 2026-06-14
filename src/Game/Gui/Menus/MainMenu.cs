@@ -82,10 +82,18 @@ public class MainMenu : Dialog
         var e = new YesNoPromptEvent(Base.SystemText.MainMenu_DoYouReallyWantToStartANewGame);
         var response = await RaiseQueryA(e);
         
-        Attach(exchange);
-
         if (response)
+        {
+            // Play the intro cinematic before the game starts (the original opens a new game with
+            // the approach-to-Albion FLIC). Menu stays detached through the video, then the new
+            // game loads. ApproachToAlbion is the same FLIC the ViewIntro button uses.
+            await RaiseA(new PlayAnimationEvent(Base.Video.ApproachToAlbion, 0, 0, 0, 0, 0, 0));
             await RaiseA(new NewGameEvent(Base.Map.TorontoBegin, 31, 76)); // TODO: Move this to config?
+        }
+        else
+        {
+            Attach(exchange); // Cancelled — restore the menu
+        }
     }
 
     void LoadGame()
