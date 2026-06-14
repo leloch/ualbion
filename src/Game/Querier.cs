@@ -166,6 +166,19 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
             Resolve<IParty>(),
             TryResolve<IMapManager>()?.Current?.MapData,
             Resolve<IAssetManager>()));
+
+        // Undecoded query subtypes (Phase-0 crash guard, QueryUndecodedEvents.cs): they now parse,
+        // so a map using one loads; until the semantics are RE'd they evaluate to the safe default
+        // (false = take the branch's false path). Deterministic so behaviour can't depend on
+        // handler-presence accidents.
+        OnQuery<QueryUnk8Event, bool>(_ => false);
+        OnQuery<QueryUnkBEvent, bool>(_ => false);
+        OnQuery<QueryUnkDEvent, bool>(_ => false);
+        OnQuery<QueryUnk13Event, bool>(_ => false);
+        OnQuery<QueryUnk24Event, bool>(_ => false);
+        OnQuery<QueryUnk25Event, bool>(_ => false);
+        OnQuery<QueryUnk26Event, bool>(_ => false);
+        OnQuery<QueryUnk27Event, bool>(_ => false);
     }
 
     /// <summary>Camera yaw → facing quadrant 0..3 (the original's 0x153b38 word).</summary>
