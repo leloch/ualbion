@@ -98,7 +98,10 @@ public sealed class GoddessWrathEffect : ISpellEffect
             if ((picked & (1UL << ord)) == 0)
                 continue;
             var victim = living[ord];
-            if (!SpellSuccessGate.Lands(context, victim))
+            // GoddessWrath passes exclMask 0x80 (MAIN.EXE fcn.000a1134 @0xa1332: ebx=0x80) —
+            // class-bit-0x80 (frost/death-immune) monsters resist, same as KamulosGaze. RE'd
+            // in _RE_COMBAT_FIDELITY.md; was using the default 0-mask so they were killable.
+            if (SpellSuccessGate.Margin(context, victim, exclMask: SpellSuccessGate.GazeImmuneMask) <= 0)
                 continue;
             context.InstantKill(victim);
             anyKilled = true;
