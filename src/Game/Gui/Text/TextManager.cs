@@ -5,6 +5,7 @@ using UAlbion.Api.Visual;
 using UAlbion.Core;
 using UAlbion.Core.Visual;
 using UAlbion.Formats;
+using UAlbion.Formats.Assets;
 using UAlbion.Game.Entities;
 using UAlbion.Game.Text;
 
@@ -12,15 +13,27 @@ namespace UAlbion.Game.Gui.Text;
 
 public class TextManager : GameServiceComponent<ITextManager>, ITextManager
 {
+    // Resolve the font for a block, falling back to the White ink when the requested ink has no
+    // font (only inks 1/2/6/7 ship; a string carrying an out-of-range colour token — e.g. ink 66 —
+    // must NOT crash the whole game during text layout, which it used to via AssetNotFoundException).
+    MetaFont ResolveFont(TextBlock block)
+    {
+        var family = block.Style == TextStyle.Big ? Base.Font.Bold : Base.Font.Regular;
+        var font = Assets.LoadFont(family, block.InkId);
+        if (font == null)
+        {
+            Warn($"No font for {family}.{block.InkId} — falling back to White ink");
+            font = Assets.LoadFont(family, Base.Ink.White);
+        }
+        return font;
+    }
+
     public Vector2 Measure(TextBlock block)
     {
         ArgumentNullException.ThrowIfNull(block);
         int offset = 0;
-        var font = Assets.LoadFont(block.Style == TextStyle.Big ? Base.Font.Bold : Base.Font.Regular, block.InkId);
-        if (font == null)
-            throw new AssetNotFoundException($"Could not load font {block.Style}.{block.InkId}");
-
-        if (block.Text == null)
+        var font = ResolveFont(block);
+        if (font == null || block.Text == null)
             return Vector2.Zero;
 
         for (var index = 0; index < block.Text.Length; index++)
@@ -42,7 +55,8 @@ public class TextManager : GameServiceComponent<ITextManager>, ITextManager
         var sm = Resolve<IBatchManager<SpriteKey, SpriteInfo>>();
         var window = Resolve<IGameWindow>();
 
-        var font = Assets.LoadFont(block.Style == TextStyle.Big ? Base.Font.Bold : Base.Font.Regular, block.InkId);
+        var font = ResolveFont(block)
+                   ?? throw new AssetNotFoundException("Could not load the base White font — broken game data");
         var text = block.Text ?? "";
         var isFat = block.Style is TextStyle.Fat or TextStyle.FatAndHigh;
 
