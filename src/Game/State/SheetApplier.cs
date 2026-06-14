@@ -410,9 +410,11 @@ public class SheetApplier : Component
             sheet.Combat.ActionPoints =
                 (byte)UAlbion.Game.Combat.CombatFormulas.ActionPointsForLevel(sheet.Level, sheet.LevelsPerActionPoint);
 
-        // Spell-learning points (RE +0xEA → SLP pool). The remake tracks no separate SLP
-        // pool yet, so this is accumulated into TrainingPoints as a documented approximation
-        // (the original spends SLP on spell-learning and TP on skill-training separately).
+        // Training-point grant per level (this IS 1:1, not an approximation — RE'd in
+        // _RE_FIDELITY2.md). The original has NO separate "spell-learning point" pool: the single
+        // pool at sheet+0x16 (= Combat.TrainingPoints here) is fed by w[+0xEA] per level
+        // (TrainingPointsPerLevel) and is spent ONLY on skill training; spell-learning costs GOLD
+        // only. The +0xE8 SpellLearningPointsPerLevel field is dead data the engine never reads.
         var tpGain = sheet.TrainingPointsPerLevel;
         if (tpGain > 0)
             sheet.Combat.TrainingPoints = (ushort)System.Math.Min(ushort.MaxValue, sheet.Combat.TrainingPoints + tpGain);
