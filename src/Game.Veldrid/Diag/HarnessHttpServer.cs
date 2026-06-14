@@ -215,6 +215,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /gpufloorpixels":  WriteGpuLayerPng(ctx, useWalls: false); break;
             case "POST /event/raw":      HandleEventRaw(ctx); break;
             case "POST /event":          HandleEventJson(ctx); break;
+            case "POST /firechains":     HandleFireChains(ctx); break;
             case "POST /click":          HandleClickById(ctx); break;
             case "POST /click/at":       HandleClickAt(ctx); break;
             case "POST /screenshot":     HandleScreenshot(ctx); break;
@@ -1052,6 +1053,73 @@ public sealed class HarnessHttpServer : Component, IDisposable
         Raise(evt);
         _commandsProcessed++;
         WriteJson(ctx, $"{{\"ok\":true,\"command\":{JsonString(body)},\"seq\":{_commandsProcessed}}}");
+    }
+
+    // Deep narrative shakeout: fire EVERY event chain of the current map (the player-triggered
+    // zone/NPC chains, not just the map-init ones that run on load) so a chapter walk surfaces any
+    // crash / unhandled-handler exception / weirdness without a human. Each chain is fired in a
+    // try/catch; chains that open a dialog/combat/teleport park asynchronously (their crashes, if
+    // any, surface via lastError). Reset state by reloading the map between calls.
+    void HandleFireChains(HttpListenerContext ctx)
+    {
+        var map = TryResolve<UAlbion.Game.IMapManager>()?.Current;
+        if (map?.MapData is not UAlbion.Formats.Assets.IEventSet eventSet)
+        {
+            WriteJson(ctx, "{\"map\":null,\"chains\":0,\"errors\":[]}");
+            return;
+        }
+
+        var source = new UAlbion.Formats.MapEvents.EventSource(eventSet.Id, UAlbion.Formats.Assets.Maps.TriggerType.Action);
+        string errBefore = _lastError;
+        var sb = new StringBuilder();
+        sb.Append("{\"map\":").Append(JsonString(eventSet.Id.ToString()));
+        sb.Append(",\"chains\":").Append(eventSet.Chains.Count);
+        sb.Append(",\"errors\":[");
+        bool first = true;
+        var sceneMgr = TryResolve<UAlbion.Game.State.ISceneManager>();
+        for (int i = 0; i < eventSet.Chains.Count; i++)
+        {
+            // If a chain left an inventory/chest query parked open, STOP — firing more chains now
+            // would pile up chests and cascade OpenChest's SetResult into a re-entrant StackOverflow
+            // (a tool artifact; real play opens one chest at a time, UI-gated). Skip the remainder.
+            if (sceneMgr?.ActiveSceneId == UAlbion.Game.Scenes.SceneId.Inventory)
+            {
+                sb.Append(first ? "" : ",").Append($"{{\"chain\":{i},\"note\":\"stopped: inventory/chest parked open\"}}");
+                first = false;
+                break;
+            }
+            ushort entry = eventSet.Chains[i];
+            if (entry >= eventSet.Events.Count) continue;
+            // Skip chains that open a modal inventory query (chest/door/merchant): they park awaiting
+            // UI and, dismissed in a tight loop, the synchronous SetResult→resume→next-query cascade
+            // recurses into a StackOverflow (a TOOL artifact, not a game bug — real play opens one at
+            // a time). They need real UI and are exercised by the dedicated buy/sell/trap tests.
+            var entryEvent = eventSet.Events[entry].Event;
+            if (entryEvent is UAlbion.Formats.MapEvents.ChestEvent
+                or UAlbion.Formats.MapEvents.DoorEvent
+                or UAlbion.Formats.MapEvents.MerchantEvent)
+                continue;
+            try
+            {
+                Raise(new UAlbion.Game.Events.TriggerChainEvent(eventSet, entry, source));
+                // Dismiss text popups so they don't stack across 60+ chains (which bogs the thread).
+                // DismissMessage closes ONLY TextDialogs — deliberately NOT CloseWindowEvent, which
+                // would resolve a parked chest/inventory query and cascade into a re-entrant
+                // StackOverflow when several chests are reached in one sweep.
+                Raise(new UAlbion.Game.Events.DismissMessageEvent());
+            }
+            catch (Exception ex)
+            {
+                if (!first) sb.Append(',');
+                first = false;
+                sb.Append($"{{\"chain\":{i},\"entry\":{entry},\"error\":{JsonString(ex.Message)}}}");
+            }
+        }
+        sb.Append("],\"lastErrorBefore\":").Append(JsonString(errBefore));
+        sb.Append(",\"lastErrorAfter\":").Append(JsonString(_lastError));
+        sb.Append('}');
+        _commandsProcessed++;
+        WriteJson(ctx, sb.ToString());
     }
 
     void HandleEventJson(HttpListenerContext ctx)

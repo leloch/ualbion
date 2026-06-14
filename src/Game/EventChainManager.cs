@@ -121,14 +121,27 @@ public sealed class EventChainManager : ServiceComponent<IEventManager>, IEventM
         {
             var node = context.Node;
             context.Status = EventContextStatus.Running;
-            AlbionTask task = node is IBranchNode branch && node.Event is IQueryEvent<bool> boolEvent
-                ? HandleBoolEvent(context, boolEvent, branch).AsUntyped
-                : HandleAsyncEvent(context, node.Event);
+            try
+            {
+                AlbionTask task = node is IBranchNode branch && node.Event is IQueryEvent<bool> boolEvent
+                    ? HandleBoolEvent(context, boolEvent, branch).AsUntyped
+                    : HandleAsyncEvent(context, node.Event);
 
 #if DEBUG
-            _ = task.Named($"ECM.Resume for C{context.Id} {context.EventSet.Id}:{node.Id}: {node.Event}");
+                _ = task.Named($"ECM.Resume for C{context.Id} {context.EventSet.Id}:{node.Id}: {node.Event}");
 #endif
-            await task;
+                await task;
+            }
+            catch (Exception ex)
+            {
+                // A single bad/edge event must not kill the whole game during a playthrough — log it
+                // and skip past the faulty node so the chain continues (and isn't stuck spinning on
+                // it). Surfaces the content/handler bug in the log without a hard crash. (Note:
+                // StackOverflow/other corrupted-state exceptions remain fatal — uncatchable by design.)
+                Error($"[ECM] Event threw in {context.EventSet.Id}:{node.Id} ({node.Event}) — skipping. {ex.Message}");
+                if (context.Node == node) // handler didn't advance the node before throwing
+                    context.Node = node.Next;
+            }
         }
 
         context.Status = EventContextStatus.Completing;
