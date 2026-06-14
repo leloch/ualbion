@@ -24,7 +24,10 @@ public class CameraMotion3D : Component
             if (map == null)
                 return;
 
-            _camera.Position = new Vector3(e.X * map.TileSize.X, map.BaseCameraHeight, e.Y * map.TileSize.Y);
+            // Z world coord scales by TileSize.Z (tile width), NOT TileSize.Y (which is wall
+            // HEIGHT) — otherwise the jump lands on a fractional tile vs GetPosition()=Pos/TileSize
+            // and the continuous-move scale (both use .Z), desyncing collision/tile-cross.
+            _camera.Position = new Vector3(e.X * map.TileSize.X, map.BaseCameraHeight, e.Y * map.TileSize.Z);
         });
 
         On<CameraMoveEvent>(e =>

@@ -30,6 +30,7 @@
     "Ctrl+V": "engine_flag toggle VSync",
     "Pause": "e:run_renderdoc",
     "F1": "toggle_diagnostics",
+    "Ctrl+Shift+C": "show_cockpit",
     "F2": "toggle_clock",
     "F3": "update 1",
     "F5": "debug_run",
@@ -101,13 +102,13 @@
     "Ctrl+Shift+M": "set_mouse_mode MouseLook",
     "Ctrl+Shift+N": "set_mouse_mode Normal3D",
 
-    // Party movement — MUST be party_move_3d (handled by Movement3D, collision-checked via
-    // FilterCollision). NOTE: plain party_move is a 2D-only event (PartyCaterpillar) with NO
-    // 3D handler, so it does nothing here. Positive Y = forward; A/D strafe.
-    "W": "+party_move_3d  0  1",
-    "A": "+party_move_3d -1  0",
-    "S": "+party_move_3d  0 -1",
-    "D": "+party_move_3d  1  0",
+    // Party movement — faithful grid-step model (Movement3D, RE'd from MAIN.EXE): the original
+    // 3D dungeon is forward/back + 90° turns, NO strafe. party_move_3d X = turn (X<0 left, X>0
+    // right), Y = step (Y>0 forward, Y<0 back). plain party_move is 2D-only (no 3D handler).
+    "W": "+party_move_3d  0  1", // forward
+    "A": "+party_move_3d -1  0", // turn left
+    "S": "+party_move_3d  0 -1", // back
+    "D": "+party_move_3d  1  0", // turn right
 
     "Shift+W": "+party_move_3d  0  2",
     "Shift+A": "+party_move_3d -2  0",
@@ -120,11 +121,11 @@
     "Ctrl+S": "+camera_move  0 -4",
     "Ctrl+D": "+camera_move  4  0",
 
-    // Arrows: Up/Down walk forward/back, Left/Right turn.
-    "Up": "+party_move_3d 0  1",
-    "Down": "+party_move_3d 0 -1",
-    "Left": "+cam_rotate 0.03 0",
-    "Right": "+cam_rotate -0.03 0",
+    // Arrows: Up/Down walk forward/back, Left/Right turn 90° (through the same grid-step model).
+    "Up": "+party_move_3d  0  1",
+    "Down": "+party_move_3d  0 -1",
+    "Left": "+party_move_3d -1  0",
+    "Right": "+party_move_3d  1  0",
 
     "F": "toggle_mlook",
     "Q": "+cursor_mode examine",
