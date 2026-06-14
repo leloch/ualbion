@@ -82,10 +82,18 @@ Final fidelity pass (RE'd in _RE_FIDELITY1.md):
   "requests surrender (1/2 conscious) - party wins" → EndCombatEvent{Surrender} → Endgame FLICs.
   The literal 100% checkpoint fires correctly with the real final boss.
 
-REMAINING (genuinely human-QA, not automatable): the chapter-by-chapter narrative playthrough —
-verifying each quest gate / conversation / puzzle / transition produces the RIGHT content (engine
-robustness is proven; the win condition is proven; content correctness needs a human playing with
-choices). The trapped-chest trap-trigger needs a chest-data byte dump (niche, non-blocking).
+- **Trapped chests/doors** — DONE (_RE_CHEST_TRAP.md): there's no trap byte — a lock is trapped iff
+  its event has a false branch; a failed skill-pick rolls Dexterity to evade and a failed evade fires
+  that false (trap) branch. Implemented (InventoryScreenManager/LockPane); untrapped → free retries,
+  item path bypasses. (Residual: one in-game confirm that event+8 == NextIfFalse.)
+
+ALL CODE COMMITTED: the finale hook / SP-shortfall / facing-save / word-sidecar were committed via
+hunk-level staging (92c959e3), leaving the user's cockpit WIP untouched.
+
+REMAINING — only genuinely human-QA, not automatable: the chapter-by-chapter narrative playthrough
+(verifying each quest/conversation/puzzle/transition produces the RIGHT content with player choices).
+The ENGINE is proven: every map loads crash-free, the economy gates content, and the win condition
+fires in the real boss fight. Everything implementable or reverse-engineerable on the list is done.
 
 ---
 
