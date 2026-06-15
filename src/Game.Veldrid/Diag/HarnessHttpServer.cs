@@ -47,7 +47,13 @@ namespace UAlbion.Game.Veldrid.Diag;
 ///   GET  /healthz                       → { ok, fps, frame }
 ///   GET  /state                         → JSON snapshot (map, mapType, tileset, useSmallSprites, party, ...)
 ///   GET  /ui                            → list of visible UI elements with bounds
-///   GET  /log    [?n=N&clear=1]         → recent on-screen text (combat/examine/hover messages)
+///   GET  /log [?n=N&clear=1&level=&since=] → on-screen text + captured engine warn/error/critical (filter by level substr / frame)
+///   GET  /collisionscan                 → classify every 3D tile (wall/water/object/open) + IsOccupied, report blockMismatch
+///   GET  /tile?x=&y=                     → inspect one 3D tile: floor/wall/ceiling/object records + per-direction occupancy
+///   GET  /findtiles?kind=water|wall|open|floor0|object[&max=N] → coords of tiles matching a kind
+///   GET  /switch?id=Switch.X            → current value of a story switch
+///   GET  /ticker?id=Ticker.X           → current value of a ticker counter
+///   POST /input  {velX,velY,yaw,pitch,frames?} → inject a PartyMove3DEvent (mouse-compass paths; frames>1 = held)
 ///   GET  /combat                        → combat state: combatants, team, tile, hp, conditions
 ///   GET  /inventory                     → party inventories: gold, rations, item counts (B5 trade testing)
 ///   GET  /sprites [?filter=...]         → rendered sprites: id, position, render size (sprite-sizing bugs)
@@ -92,6 +98,9 @@ public sealed class HarnessHttpServer : Component, IDisposable
     // the appropriate key-down/up so continuous ("+") keybindings fire for the held duration —
     // this exercises the full key→binding→event chain (not just the bound event).
     readonly Dictionary<global::Veldrid.Sdl2.Key, long> _heldKeyReleaseFrame = new();
+    // /input frame-hold: re-raise these PartyMove3DEvents each frame until the release frame, so the
+    // continuous mouse-compass paths (strafe / gradual turn / look — Velocity/Yaw/Pitch) are testable.
+    readonly List<(UAlbion.Game.Events.PartyMove3DEvent ev, long until)> _pendingInputs = new();
 
     public HarnessHttpServer(int port)
     {
@@ -105,11 +114,19 @@ public sealed class HarnessHttpServer : Component, IDisposable
         On<PreSwapBuffersEvent>(_ => FulfillScreenshots());
         On<DescriptionTextEvent>(e => AppendMessage("desc", e.Source));
         On<HoverTextEvent>(e => AppendMessage("hover", e.Source));
+        // Capture engine warnings/errors/critical (Component.Error/Warn → LogEvent) into the log so
+        // /log?level=error surfaces them (e.g. "[ECM] Event threw") without grepping stderr.
+        On<UAlbion.Api.Eventing.LogEvent>(e =>
+        {
+            if ((int)e.Severity >= (int)UAlbion.Api.Eventing.LogLevel.Warning)
+                AppendLine(e.Severity.ToString().ToLowerInvariant(), e.Message);
+        });
     }
 
-    void AppendMessage(string kind, UAlbion.Game.Text.IText text)
+    void AppendMessage(string kind, UAlbion.Game.Text.IText text) => AppendLine(kind, RenderText(text));
+
+    void AppendLine(string kind, string s)
     {
-        var s = RenderText(text);
         if (string.IsNullOrEmpty(s)) return;
         // Collapse consecutive duplicates (the same hover text re-fires every frame).
         if (_messageLog.Count > 0 && _messageLog[^1].kind == kind && _messageLog[^1].text == s)
@@ -155,6 +172,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
         }
 
         ReleaseExpiredHeldKeys();
+        RaisePendingInputs();
 
         // Drain at most 32 requests per frame so a burst can't starve the engine.
         int budget = 32;
@@ -199,6 +217,12 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /state":           WriteJson(ctx, BuildState()); break;
             case "GET /ui":              WriteJson(ctx, BuildUiTree()); break;
             case "GET /labyrinth":       WriteJson(ctx, BuildLabyrinthDump()); break;
+            case "GET /collisionscan":   WriteJson(ctx, BuildCollisionScan()); break;
+            case "GET /tile":            WriteJson(ctx, BuildTileInspect(ctx)); break;
+            case "GET /findtiles":       WriteJson(ctx, BuildFindTiles(ctx)); break;
+            case "GET /switch":          WriteJson(ctx, BuildSwitchQuery(ctx)); break;
+            case "GET /ticker":          WriteJson(ctx, BuildTickerQuery(ctx)); break;
+            case "POST /input":          HandleInput(ctx); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
             case "GET /npcs":            WriteJson(ctx, BuildNpcsDump()); break;
@@ -740,14 +764,26 @@ public sealed class HarnessHttpServer : Component, IDisposable
         if (ctx.Request.QueryString["clear"] == "1")
             _messageLog.Clear();
         int n = int.TryParse(ctx.Request.QueryString["n"], out var nv) && nv > 0 ? nv : 50;
-        int start = Math.Max(0, _messageLog.Count - n);
+        // Optional filters: level=<substr of kind, e.g. "error"> and since=<frame> — so a test can
+        // pull JUST the errors since a known frame instead of grepping a huge stderr dump.
+        string level = ctx.Request.QueryString["level"];
+        long since = long.TryParse(ctx.Request.QueryString["since"], out var sv) ? sv : -1;
+
+        var matches = new List<(long frame, string kind, string text)>();
+        foreach (var entry in _messageLog)
+        {
+            if (since >= 0 && entry.Item1 < since) continue;
+            if (!string.IsNullOrEmpty(level) && (entry.Item2 == null || entry.Item2.IndexOf(level, StringComparison.OrdinalIgnoreCase) < 0)) continue;
+            matches.Add(entry);
+        }
+        int start = Math.Max(0, matches.Count - n);
 
         var sb = new StringBuilder();
-        sb.Append("{\"count\":").Append(_messageLog.Count).Append(",\"messages\":[");
-        for (int i = start; i < _messageLog.Count; i++)
+        sb.Append("{\"total\":").Append(_messageLog.Count).Append(",\"matched\":").Append(matches.Count).Append(",\"frame\":").Append(_frameCount).Append(",\"messages\":[");
+        for (int i = start; i < matches.Count; i++)
         {
             if (i > start) sb.Append(',');
-            var (frame, kind, text) = _messageLog[i];
+            var (frame, kind, text) = matches[i];
             sb.Append('{');
             sb.Append($"\"frame\":{frame},");
             sb.Append($"\"kind\":{JsonString(kind)},");
@@ -866,6 +902,199 @@ public sealed class HarnessHttpServer : Component, IDisposable
         }
         sb.Append("]}");
         return sb.ToString();
+    }
+
+    // 3D collision verifier: classify every tile of the current dungeon (wall / water-hazard floor
+    // / blocking object / open) and confirm IsOccupied agrees, so the collision rules (water blocks,
+    // open arches pass, solid walls block, normal floors walkable) can be checked WITHOUT a human.
+    string BuildCollisionScan()
+    {
+        var map = TryResolve<UAlbion.Game.IMapManager>()?.Current;
+        if (map is not UAlbion.Game.Entities.Map3D.DungeonMap dungeon)
+            return "{\"is3d\":false}";
+
+        var lm = typeof(UAlbion.Game.Entities.Map3D.DungeonMap)
+            .GetField("_logicalMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?.GetValue(dungeon) as UAlbion.Game.Entities.Map2D.LogicalMap3D;
+        if (lm == null) return "{\"is3d\":true,\"logicalMap\":null}";
+        var collider = TryResolve<UAlbion.Game.ICollisionManager>();
+
+        int walls = 0, water = 0, objs = 0, open = 0, occupiedMismatch = 0;
+        string waterSample = null, archSample = null, wallSample = null;
+        for (int y = 0; y < lm.Height; y++)
+        for (int x = 0; x < lm.Width; x++)
+        {
+            var (_, wall) = lm.GetWall(x, y);
+            var (floorIdx, floor) = lm.GetFloor(x, y);
+            bool isWall  = wall != null && (wall.Collision & 0x78) != 0;
+            bool isWater = floor != null && (floor.Unk1 & 0x08) != 0;
+            bool occ = collider?.IsOccupied(x, y, x, y) ?? false;
+
+            if (isWall) { walls++; wallSample ??= $"{x},{y} occ={occ}"; }
+            else if (isWater) { water++; waterSample ??= $"{x},{y} floorIdx={floorIdx} unk1={floor.Unk1} occ={occ}"; }
+            else if (occ) objs++;
+            else { open++; if (floorIdx == 0) archSample ??= $"{x},{y} floor0 occ={occ}"; }
+
+            // Water/wall MUST read occupied; an open non-wall non-water tile must NOT.
+            if ((isWater || isWall) && !occ) occupiedMismatch++;
+        }
+
+        return "{" +
+            $"\"is3d\":true,\"map\":{JsonString(map.MapId.ToString())},\"w\":{lm.Width},\"h\":{lm.Height}," +
+            $"\"wallTiles\":{walls},\"waterTiles\":{water},\"objectBlocked\":{objs},\"openTiles\":{open}," +
+            $"\"blockMismatch\":{occupiedMismatch}," +
+            $"\"waterSample\":{JsonString(waterSample)},\"wallSample\":{JsonString(wallSample)},\"floor0Sample\":{JsonString(archSample)}" +
+            "}";
+    }
+
+    // The current 3D map's logical map (reflected — it's a private DungeonMap field), or null if not 3D.
+    UAlbion.Game.Entities.Map2D.LogicalMap3D GetLogicalMap3D()
+    {
+        if (TryResolve<UAlbion.Game.IMapManager>()?.Current is not UAlbion.Game.Entities.Map3D.DungeonMap dungeon)
+            return null;
+        return typeof(UAlbion.Game.Entities.Map3D.DungeonMap)
+            .GetField("_logicalMap", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?.GetValue(dungeon) as UAlbion.Game.Entities.Map2D.LogicalMap3D;
+    }
+
+    // GET /tile?x=&y= — full inspection of one 3D tile: floor/wall/ceiling/object records (index +
+    // sprite + the raw collision bytes) and the resolved passability (per approach direction). The
+    // tile-inspector that makes spatial/collision bugs diagnosable without dumping LABDATA by hand.
+    string BuildTileInspect(HttpListenerContext ctx)
+    {
+        var lm = GetLogicalMap3D();
+        if (lm == null) return "{\"is3d\":false}";
+        int x = int.TryParse(ctx.Request.QueryString["x"], out var xv) ? xv : -1;
+        int y = int.TryParse(ctx.Request.QueryString["y"], out var yv) ? yv : -1;
+        if (x < 0 || y < 0 || x >= lm.Width || y >= lm.Height) return "{\"error\":\"x/y out of range\"}";
+
+        var (fIdx, floor) = lm.GetFloor(x, y);
+        var (wIdx, wall) = lm.GetWall(x, y);
+        var (cIdx, ceil) = lm.GetCeiling(x, y);
+        var group = lm.GetObject(x, y);
+        var collider = TryResolve<UAlbion.Game.ICollisionManager>();
+        // Per-approach occupancy (Collider3D currently direction-agnostic, so these match; reported
+        // separately to stay correct if per-direction blocking is added later).
+        bool occN = collider?.IsOccupied(x, y + 1, x, y) ?? false;
+        bool occE = collider?.IsOccupied(x - 1, y, x, y) ?? false;
+        bool occS = collider?.IsOccupied(x, y - 1, x, y) ?? false;
+        bool occW = collider?.IsOccupied(x + 1, y, x, y) ?? false;
+
+        var sb = new StringBuilder();
+        sb.Append('{');
+        sb.Append($"\"x\":{x},\"y\":{y},");
+        sb.Append("\"floor\":").Append(floor == null
+            ? $"{{\"idx\":{fIdx}}}"
+            : $"{{\"idx\":{fIdx},\"sprite\":{JsonString(floor.SpriteId.ToString())},\"unk1\":{floor.Unk1},\"props\":{JsonString(floor.Properties.ToString())}}}").Append(',');
+        sb.Append("\"wall\":").Append(wall == null
+            ? $"{{\"idx\":{wIdx}}}"
+            : $"{{\"idx\":{wIdx},\"sprite\":{JsonString(wall.SpriteId.ToString())},\"collision\":\"0x{wall.Collision:x}\"}}").Append(',');
+        sb.Append("\"ceiling\":").Append(ceil == null ? $"{{\"idx\":{cIdx}}}" : $"{{\"idx\":{cIdx},\"unk1\":{ceil.Unk1}}}").Append(',');
+        sb.Append("\"objectGroup\":").Append(group == null ? "false" : "true").Append(',');
+        sb.Append($"\"occupied\":{(occN || occE || occS || occW).ToString().ToLowerInvariant()},");
+        sb.Append($"\"occ\":{{\"n\":{occN.ToString().ToLowerInvariant()},\"e\":{occE.ToString().ToLowerInvariant()},\"s\":{occS.ToString().ToLowerInvariant()},\"w\":{occW.ToString().ToLowerInvariant()}}}");
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    // GET /findtiles?kind=water|wall|open|floor0|object[&max=N] — coords of tiles matching a kind, so
+    // a test can locate a water/arch/wall tile to assert against instead of guessing.
+    string BuildFindTiles(HttpListenerContext ctx)
+    {
+        var lm = GetLogicalMap3D();
+        if (lm == null) return "{\"is3d\":false}";
+        string kind = (ctx.Request.QueryString["kind"] ?? "water").ToLowerInvariant();
+        int max = int.TryParse(ctx.Request.QueryString["max"], out var mv) && mv > 0 ? mv : 40;
+        var collider = TryResolve<UAlbion.Game.ICollisionManager>();
+
+        var sb = new StringBuilder();
+        sb.Append($"{{\"kind\":{JsonString(kind)},\"tiles\":[");
+        int found = 0;
+        for (int y = 0; y < lm.Height && found < max; y++)
+        for (int x = 0; x < lm.Width && found < max; x++)
+        {
+            var (fIdx, floor) = lm.GetFloor(x, y);
+            var (_, wall) = lm.GetWall(x, y);
+            bool match = kind switch
+            {
+                "water"  => floor != null && (floor.Unk1 & 0x08) != 0,
+                "wall"   => wall != null && (wall.Collision & 0x78) != 0,
+                "floor0" => fIdx == 0,
+                "object" => lm.GetObject(x, y) != null,
+                "open"   => !(collider?.IsOccupied(x, y, x, y) ?? false),
+                _ => false
+            };
+            if (!match) continue;
+            if (found > 0) sb.Append(',');
+            sb.Append($"[{x},{y}]");
+            found++;
+        }
+        sb.Append($"],\"count\":{found}}}");
+        return sb.ToString();
+    }
+
+    // GET /switch?id=Switch.X — current value of a story switch (for chain/quest assertions).
+    string BuildSwitchQuery(HttpListenerContext ctx)
+    {
+        var state = TryResolve<UAlbion.Game.State.IGameState>();
+        string idStr = ctx.Request.QueryString["id"];
+        if (state == null || string.IsNullOrEmpty(idStr)) return "{\"error\":\"need ?id=Switch.X and a loaded game\"}";
+        try
+        {
+            var id = UAlbion.Formats.Ids.SwitchId.Parse(idStr);
+            return $"{{\"id\":{JsonString(id.ToString())},\"value\":{state.GetSwitch(id).ToString().ToLowerInvariant()}}}";
+        }
+        catch (Exception ex) { return $"{{\"error\":{JsonString(ex.Message)}}}"; }
+    }
+
+    // GET /ticker?id=Ticker.X — current value of a ticker counter.
+    string BuildTickerQuery(HttpListenerContext ctx)
+    {
+        var state = TryResolve<UAlbion.Game.State.IGameState>();
+        string idStr = ctx.Request.QueryString["id"];
+        if (state == null || string.IsNullOrEmpty(idStr)) return "{\"error\":\"need ?id=Ticker.X and a loaded game\"}";
+        try
+        {
+            var id = UAlbion.Formats.Ids.TickerId.Parse(idStr);
+            return $"{{\"id\":{JsonString(id.ToString())},\"value\":{state.GetTicker(id)}}}";
+        }
+        catch (Exception ex) { return $"{{\"error\":{JsonString(ex.Message)}}}"; }
+    }
+
+    // POST /input {velX,velY,yaw,pitch,frames?} — inject a full PartyMove3DEvent (the mouse-compass
+    // continuous paths that the text `party_move_3d x y` can't reach: Yaw=gradual turn, Velocity.X=
+    // strafe, Pitch=look). frames>1 re-raises it each frame (held), like /key, for continuous motion.
+    void HandleInput(HttpListenerContext ctx)
+    {
+        string body = ReadBody(ctx);
+        float velX = 0, velY = 0, yaw = 0, pitch = 0; int frames = 1;
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+            var r = doc.RootElement;
+            if (r.TryGetProperty("velX", out var a)) velX = (float)a.GetDouble();
+            if (r.TryGetProperty("velY", out var b)) velY = (float)b.GetDouble();
+            if (r.TryGetProperty("yaw", out var c)) yaw = (float)c.GetDouble();
+            if (r.TryGetProperty("pitch", out var d)) pitch = (float)d.GetDouble();
+            if (r.TryGetProperty("frames", out var f)) frames = f.GetInt32();
+        }
+        catch (Exception ex) { TryWriteError(ctx, HttpStatusCode.BadRequest, "expected {velX,velY,yaw,pitch[,frames]}: " + ex.Message); return; }
+
+        if (frames < 1) frames = 1;
+        var ev = new UAlbion.Game.Events.PartyMove3DEvent { Velocity = new System.Numerics.Vector2(velX, velY), Yaw = yaw, Pitch = pitch };
+        if (frames == 1) Raise(ev);
+        else _pendingInputs.Add((ev, _frameCount + frames));
+        _commandsProcessed++;
+        WriteJson(ctx, $"{{\"ok\":true,\"velX\":{F(velX)},\"velY\":{F(velY)},\"yaw\":{F(yaw)},\"pitch\":{F(pitch)},\"frames\":{frames}}}");
+    }
+
+    void RaisePendingInputs()
+    {
+        for (int i = _pendingInputs.Count - 1; i >= 0; i--)
+        {
+            if (_frameCount >= _pendingInputs[i].until) { _pendingInputs.RemoveAt(i); continue; }
+            Raise(_pendingInputs[i].ev);
+        }
     }
 
     // Party inventories: per member, pooled gold/rations and non-empty backpack slots. Lets the
