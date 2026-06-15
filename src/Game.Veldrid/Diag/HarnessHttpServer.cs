@@ -222,6 +222,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /findtiles":       WriteJson(ctx, BuildFindTiles(ctx)); break;
             case "GET /switch":          WriteJson(ctx, BuildSwitchQuery(ctx)); break;
             case "GET /ticker":          WriteJson(ctx, BuildTickerQuery(ctx)); break;
+            case "GET /conversation":    WriteJson(ctx, BuildConversationDump()); break;
             case "POST /input":          HandleInput(ctx); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
@@ -1030,6 +1031,69 @@ public sealed class HarnessHttpServer : Component, IDisposable
             found++;
         }
         sb.Append($"],\"count\":{found}}}");
+        return sb.ToString();
+    }
+
+    // GET /conversation — live dialogue state: NPC, current text, the numbered options (with text +
+    // block), and discovered topic-words. Lets a driver pick real options ("respond N") and assert
+    // the resulting state instead of firing chains blind. {"active":false} when not in conversation.
+    string BuildConversationDump()
+    {
+        var conv = TryResolve<UAlbion.Game.Gui.Text.IConversationManager>()?.Conversation;
+        if (conv == null) return "{\"active\":false}";
+
+        const System.Reflection.BindingFlags BF =
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var ct = typeof(UAlbion.Game.Gui.Dialogs.Conversation);
+
+        var sb = new StringBuilder();
+        sb.Append("{\"active\":true,");
+
+        if (ct.GetField("_npc", BF)?.GetValue(conv) is UAlbion.Formats.Assets.Sheets.ICharacterSheet npc)
+        {
+            string name = null;
+            try { name = npc.GetName("English"); } catch { /* missing string table */ }
+            sb.Append("\"npc\":{")
+              .Append($"\"id\":{JsonString(npc.Id.ToString())},")
+              .Append($"\"name\":{JsonString(name)},")
+              .Append($"\"eventSet\":{JsonString(npc.EventSetId.ToString())}").Append("},");
+        }
+
+        // The text window's TextSourceWrapper is itself an IText → render directly.
+        if (ct.GetField("_textWindow", BF)?.GetValue(conv) is { } tw
+            && tw.GetType().GetField("_text", BF)?.GetValue(tw) is UAlbion.Game.Text.IText text)
+            sb.Append($"\"text\":{JsonString(RenderText(text))},");
+
+        sb.Append("\"options\":[");
+        if (ct.GetField("_optionsWindow", BF)?.GetValue(conv) is { } ow
+            && ow.GetType().GetField("_optionElements", BF)?.GetValue(ow) is System.Collections.IEnumerable elems)
+        {
+            int n = 1; bool first = true;
+            foreach (var el in elems)
+            {
+                if (el is not UAlbion.Game.Gui.Dialogs.ConversationOption opt) continue;
+                if (!first) sb.Append(',');
+                first = false;
+                sb.Append($"{{\"n\":{n},\"text\":{JsonString(RenderText(opt.Text))},\"block\":{JsonString(opt.BlockId?.ToString())}}}");
+                n++;
+            }
+        }
+        sb.Append("],");
+
+        sb.Append("\"words\":[");
+        if (ct.GetField("_topics", BF)?.GetValue(conv) is System.Collections.IDictionary topics)
+        {
+            bool first = true;
+            foreach (System.Collections.DictionaryEntry kv in topics)
+            {
+                if (!first) sb.Append(',');
+                first = false;
+                sb.Append($"{{\"word\":{JsonString(kv.Key?.ToString())},\"status\":{JsonString(kv.Value?.ToString())}}}");
+            }
+        }
+        sb.Append("],");
+        sb.Append($"\"frame\":{_frameCount}");
+        sb.Append('}');
         return sb.ToString();
     }
 
