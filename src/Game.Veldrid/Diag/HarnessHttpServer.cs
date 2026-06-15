@@ -223,6 +223,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /switch":          WriteJson(ctx, BuildSwitchQuery(ctx)); break;
             case "GET /ticker":          WriteJson(ctx, BuildTickerQuery(ctx)); break;
             case "GET /conversation":    WriteJson(ctx, BuildConversationDump()); break;
+            case "GET /clock":           WriteJson(ctx, BuildClockDump()); break;
             case "POST /input":          HandleInput(ctx); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
@@ -921,7 +922,16 @@ public sealed class HarnessHttpServer : Component, IDisposable
         var collider = TryResolve<UAlbion.Game.ICollisionManager>();
 
         int walls = 0, water = 0, objs = 0, open = 0, occupiedMismatch = 0;
+        int wallSprites = 0, openArches = 0, seeThru = 0;
         string waterSample = null, archSample = null, wallSample = null;
+        var seeThruSamples = new List<string>();
+        var wallCollisionHisto = new SortedDictionary<int, int>();
+        // Object (prop) collision analysis: outdoor "walls" are often blocking object-groups, so an
+        // object with collision bits OUTSIDE the 0x78 block mask is a walk-through building.
+        var objCollisionHisto = new SortedDictionary<int, int>();
+        var seeThruObjSamples = new List<string>();
+        int seeThruObjs = 0;
+        var labObjects = lm.Labyrinth?.Objects;
         for (int y = 0; y < lm.Height; y++)
         for (int x = 0; x < lm.Width; x++)
         {
@@ -930,6 +940,46 @@ public sealed class HarnessHttpServer : Component, IDisposable
             bool isWall  = wall != null && (wall.Collision & 0x78) != 0;
             bool isWater = floor != null && (floor.Unk1 & 0x08) != 0;
             bool occ = collider?.IsOccupied(x, y, x, y) ?? false;
+
+            // Wall-sprite accounting: every tile that DRAWS a wall. A wall sprite that doesn't block
+            // (and isn't IsOccupied via another layer) is something the player sees but walks through.
+            //   openArches = Collision==0 (intentional doorway/gate — correct to pass)
+            //   seeThru    = Collision!=0 but the directional-block mask 0x78 is clear AND nothing
+            //                else occupies the tile → a SOLID-looking wall you can walk through (bug
+            //                signature: collision bits set outside 0x78 that should block).
+            if (wall != null)
+            {
+                wallSprites++;
+                int col = (int)wall.Collision;
+                wallCollisionHisto.TryGetValue(col, out var n); wallCollisionHisto[col] = n + 1;
+                if (col == 0) openArches++;
+                else if ((col & 0x78) == 0 && !occ)
+                {
+                    seeThru++;
+                    if (seeThruSamples.Count < 12) seeThruSamples.Add($"{x},{y} col=0x{col:x}");
+                }
+            }
+
+            // Object-group collision: histogram every non-floor sub-object's Collision byte and flag
+            // any that aren't blocked by the 0x78 mask while nothing else occupies the tile.
+            var group = lm.GetObject(x, y);
+            if (group != null && labObjects != null)
+            {
+                foreach (var sub in group.SubObjects)
+                {
+                    if (sub == null || sub.ObjectInfoNumber >= labObjects.Count) continue;
+                    var info = labObjects[sub.ObjectInfoNumber];
+                    if (info == null) continue;
+                    if ((info.Properties & UAlbion.Formats.Assets.Labyrinth.LabyrinthObjectFlags.FloorObject) != 0) continue;
+                    int oc = (int)info.Collision;
+                    objCollisionHisto.TryGetValue(oc, out var on); objCollisionHisto[oc] = on + 1;
+                    if (oc != 0 && (oc & 0x78) == 0 && !occ)
+                    {
+                        seeThruObjs++;
+                        if (seeThruObjSamples.Count < 12) seeThruObjSamples.Add($"{x},{y} obj#{sub.ObjectInfoNumber} col=0x{oc:x}");
+                    }
+                }
+            }
 
             if (isWall) { walls++; wallSample ??= $"{x},{y} occ={occ}"; }
             else if (isWater) { water++; waterSample ??= $"{x},{y} floorIdx={floorIdx} unk1={floor.Unk1} occ={occ}"; }
@@ -940,10 +990,29 @@ public sealed class HarnessHttpServer : Component, IDisposable
             if ((isWater || isWall) && !occ) occupiedMismatch++;
         }
 
+        var histo = new StringBuilder("{");
+        bool fh = true;
+        foreach (var kv in wallCollisionHisto) { if (!fh) histo.Append(','); fh = false; histo.Append($"\"0x{kv.Key:x}\":{kv.Value}"); }
+        histo.Append('}');
+        var stSamples = new StringBuilder("[");
+        for (int i = 0; i < seeThruSamples.Count; i++) { if (i > 0) stSamples.Append(','); stSamples.Append(JsonString(seeThruSamples[i])); }
+        stSamples.Append(']');
+        var objHisto = new StringBuilder("{");
+        bool foh = true;
+        foreach (var kv in objCollisionHisto) { if (!foh) objHisto.Append(','); foh = false; objHisto.Append($"\"0x{kv.Key:x}\":{kv.Value}"); }
+        objHisto.Append('}');
+        var stObjSamples = new StringBuilder("[");
+        for (int i = 0; i < seeThruObjSamples.Count; i++) { if (i > 0) stObjSamples.Append(','); stObjSamples.Append(JsonString(seeThruObjSamples[i])); }
+        stObjSamples.Append(']');
+
         return "{" +
             $"\"is3d\":true,\"map\":{JsonString(map.MapId.ToString())},\"w\":{lm.Width},\"h\":{lm.Height}," +
             $"\"wallTiles\":{walls},\"waterTiles\":{water},\"objectBlocked\":{objs},\"openTiles\":{open}," +
             $"\"blockMismatch\":{occupiedMismatch}," +
+            $"\"wallSprites\":{wallSprites},\"openArches\":{openArches},\"seeThruWalls\":{seeThru}," +
+            $"\"seeThruSamples\":{stSamples}," +
+            $"\"wallCollisionHisto\":{histo}," +
+            $"\"seeThruObjects\":{seeThruObjs},\"seeThruObjSamples\":{stObjSamples},\"objCollisionHisto\":{objHisto}," +
             $"\"waterSample\":{JsonString(waterSample)},\"wallSample\":{JsonString(wallSample)},\"floor0Sample\":{JsonString(archSample)}" +
             "}";
     }
@@ -1032,6 +1101,24 @@ public sealed class HarnessHttpServer : Component, IDisposable
         }
         sb.Append($"],\"count\":{found}}}");
         return sb.ToString();
+    }
+
+    // GET /clock — clock running state + active scene + active event-chain count. Diagnoses a frozen
+    // overworld (clock stopped while the player has free control = NPCs stuck) vs a legit cutscene
+    // (clock stopped because an event chain is running).
+    string BuildClockDump()
+    {
+        var clock = TryResolve<UAlbion.Core.IClock>();
+        var scene = TryResolve<UAlbion.Game.State.ISceneManager>();
+        var events = TryResolve<UAlbion.Game.IEventManager>();
+        var state = TryResolve<UAlbion.Game.State.IGameState>();
+        return "{" +
+            $"\"clockRunning\":{((clock?.IsRunning ?? false).ToString().ToLowerInvariant())}," +
+            $"\"activeScene\":{JsonString(scene?.ActiveSceneId.ToString())}," +
+            $"\"activeChains\":{(events?.Contexts?.Count ?? -1)}," +
+            $"\"loaded\":{((state?.Loaded ?? false).ToString().ToLowerInvariant())}," +
+            $"\"time\":{JsonString(state?.Time.ToString())}" +
+            "}";
     }
 
     // GET /conversation — live dialogue state: NPC, current text, the numbered options (with text +
