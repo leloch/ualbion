@@ -133,7 +133,15 @@ public class InventoryScreenManager : Component
         scene.Add(_screen);
     }
 
-    void LockOpened() => InventoryClosed(false, true);
+    void LockOpened()
+    {
+        // RE'd (chest dispatcher 0x58c59): the UnlockedText byte (+5) is shown on the unlock path
+        // after a successful unlock — distinct from OpenedText (+4), shown when the lock UI first
+        // opened (SetMode). This convergence point covers every unlock method (key/lockpick/skill).
+        if (_modeEvent is ILockedInventoryEvent locked && locked.UnlockedText != 255)
+            Raise(new TextEvent(locked.UnlockedText, TextLocation.NoPortrait, SheetId.None));
+        InventoryClosed(false, true);
+    }
 
     void InventoryClosed(bool triggeredTrap, bool unlocked)
     {
