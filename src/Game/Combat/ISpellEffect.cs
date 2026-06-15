@@ -98,6 +98,13 @@ public sealed class SpellCastContext
     public System.Action<ICombatParticipant, UAlbion.Formats.Assets.Sheets.PlayerCondition> ApplyCondition { get; init; }
 
     /// <summary>
+    /// Current conditions on a combatant INCLUDING the battle's transient monster-condition shadow
+    /// (a monster's persistent sheet doesn't capture a debuff applied this fight). Lets a status
+    /// spell early-out when the condition is already present on a monster. Null outside combat.
+    /// </summary>
+    public System.Func<ICombatParticipant, UAlbion.Formats.Assets.Sheets.PlayerConditions> GetConditions { get; init; }
+
+    /// <summary>
     /// All combatants on the CASTER's side (in combat) or the whole party (outside) —
     /// used by party-wide spells (Recuperation). Null when unavailable.
     /// </summary>

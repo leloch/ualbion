@@ -16,6 +16,7 @@ namespace UAlbion.Game;
 /// Script-driven full-screen colour blends — the scene-transition primitives that the
 /// original wraps cutscenes and the finale in:
 ///   fade_to_black / fade_from_black — ramp a black overlay in/out (blocks the chain).
+///   fade_to_white / fade_from_white — same, but a white overlay (e.g. flashbacks / the finale).
 ///   fill_screen &lt;color&gt; / fill_screen_0 — instant flood-fill before/after a video.
 /// Without these the engine hard-cuts and flashes the wrong frame around every cutscene.
 ///
@@ -39,6 +40,8 @@ public class ScreenFadeManager : Component
     {
         OnAsync<FadeToBlackEvent>(_ => StartFade(CommonColor.Black1, 1.0f));
         OnAsync<FadeFromBlackEvent>(_ => StartFade(CommonColor.Black1, 0.0f));
+        OnAsync<FadeToWhiteEvent>(_ => StartFade(CommonColor.White, 1.0f));
+        OnAsync<FadeFromWhiteEvent>(_ => StartFade(CommonColor.White, 0.0f));
         On<FillScreenEvent>(e => Fill(MapColor(e.Color)));
         On<FillScreen0Event>(_ => Fill(CommonColor.Black1));
         On<EngineUpdateEvent>(e => Update(e.DeltaSeconds));

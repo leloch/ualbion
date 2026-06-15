@@ -31,8 +31,11 @@ public sealed class InflictStatusEffect : ISpellEffect
 
         var flag = Condition.ToFlag();
         // Don't waste the cast if the condition is already present — matches the AP-loop's
-        // "no-op = retry" semantics that we already use for HealStatusEffect.
-        if ((combat.Conditions & flag) != 0)
+        // "no-op = retry" semantics that we already use for HealStatusEffect. Consult the
+        // battle-aware view so a monster already affected THIS fight (condition shadow) is seen,
+        // not just the persistent sheet (which never holds a monster's in-battle debuffs).
+        var current = context.GetConditions?.Invoke(context.Target) ?? combat.Conditions;
+        if ((current & flag) != 0)
             return SpellCastOutcome.Failed;
 
         // Universal success gate (fcn.000601a6, CONFIRMED for the zombie breezes and used
