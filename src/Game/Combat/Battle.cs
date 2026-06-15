@@ -1312,7 +1312,8 @@ public class Battle : GameComponent, IReadOnlyBattle
             // XP-pool handling resolve identically (the original's fcn.0004e247).
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p))),
             SoulRise = p => Raise(new CombatSoulRiseEvent(TileOf(p))), // banish dissolve VFX
-            ApplyCondition = (p, c) => ApplyCondition(p, c) // status debuffs land on monsters too
+            ApplyCondition = (p, c) => ApplyCondition(p, c), // status debuffs land on monsters too
+            GetConditions = Conditions // includes the transient monster-condition shadow
         };
 
         var outcome = SpellCastOutcome.Resisted;
