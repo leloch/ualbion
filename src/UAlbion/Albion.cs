@@ -33,6 +33,7 @@ using UAlbion.Game.Text;
 using UAlbion.Game.Veldrid;
 using UAlbion.Game.Veldrid.Audio;
 using UAlbion.Game.Veldrid.Diag;
+using UAlbion.Game.Veldrid.Diag.Cockpit;
 using UAlbion.Game.Veldrid.Input;
 
 namespace UAlbion;
@@ -258,6 +259,7 @@ static class Albion
             new ShowWindowMenuItem("Script",         "Windows/Debug", name => new ScriptWindow(name)),
             new ShowWindowMenuItem("Settings",       "Windows/Debug", name => new SettingsWindow(name)),
             new ShowWindowMenuItem("Stats",          "Windows/Debug", name => new StatsWindow(name)),
+            new ShowWindowMenuItem("Cockpit",        "Windows/Debug", name => new PlaythroughCockpitWindow(name)),
             new ShowWindowMenuItem("Threads",        "Windows/Debug", name => new ThreadsWindow(name)),
             new ShowWindowMenuItem("UI Layout",      "Windows/Debug", name => new LayoutWindow(name)),
             new ShowWindowMenuItem("Watch",          "Windows/Debug", name => new WatchWindow(name, globals)),

@@ -80,8 +80,13 @@ class NpcManager2D : Component
 
         var game = Resolve<IGameState>();
         bool active = !game.IsNpcDisabled(MapId.None, npcNum);
-        _npcs[npcNum].IsActive = active;
-        game.Npcs[npcNum].WasActive = (ushort)(active ? 1 : 0);
+        // The Npc2D entity is only built for in-use NPC slots (see Subscribed), and a map's
+        // MapInit chain can fire modify_npc_off for an unused/not-yet-built slot — so both the
+        // entity and the saved state may be null here. Guard rather than NRE during map load.
+        if (_npcs[npcNum] != null)
+            _npcs[npcNum].IsActive = active;
+        if (npcNum < game.Npcs.Count && game.Npcs[npcNum] != null)
+            game.Npcs[npcNum].WasActive = (ushort)(active ? 1 : 0);
     }
 
     protected override void Subscribed()

@@ -16,6 +16,10 @@ public class UserVars
     public class DebugVars
     {
         public CustomVar<DebugFlags, int> DebugFlags { get; } = new(Library, "User.Debug.Flags", 0, x => (int)x, x => (DebugFlags)x, j => j.GetInt32());
+
+        // Playthrough Test Cockpit combat toggles (in-memory only — not persisted to disk).
+        public BoolVar GodMode { get; } = new(Library, "User.Debug.GodMode", false);
+        public BoolVar OneShotKill { get; } = new(Library, "User.Debug.OneShotKill", false);
     }
 
     public AudioVars Audio { get; } = new();

@@ -1096,9 +1096,26 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// Apply non-melee damage (spells, traps) through the same HP-shadow + DataChangeEvent
     /// plumbing as melee hits, so deaths/unconsciousness resolve identically.
     /// </summary>
+    // Playthrough Test Cockpit toggles: GodMode = party members take no damage; OneShotKill =
+    // monsters die in one hit. Applied at both damage chokepoints (direct + melee). No-op unless
+    // the debug var is set, so the combat hot path cost is a single bool read.
+    int ApplyDebugDamageOverride(ICombatParticipant target, int amount)
+    {
+        if (target == null)
+            return amount;
+
+        if (target.SheetId.Type == AssetType.PartySheet)
+            return ReadVar(V.User.Debug.GodMode) ? 0 : amount;
+
+        return ReadVar(V.User.Debug.OneShotKill) ? Math.Max(amount, LifePoints(target)) : amount;
+    }
+
     void ApplyDirectDamage(ICombatParticipant target, int amount)
     {
-        if (target == null || amount <= 0)
+        if (target == null)
+            return;
+        amount = ApplyDebugDamageOverride(target, amount);
+        if (amount <= 0)
             return;
 
         var clamped = (ushort)Math.Min(ushort.MaxValue, amount);
@@ -1657,6 +1674,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             }
         }
 
+        adjusted = ApplyDebugDamageOverride(defender, adjusted);
         int baseDamage = adjusted;
 
         var amount = (ushort)Math.Min(ushort.MaxValue, adjusted);
