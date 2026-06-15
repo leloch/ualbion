@@ -279,9 +279,20 @@ public class ModApplier : GameComponent, IModApplier
             return null;
         }
 
-        using var s = AlbionSerdes.CreateReader(disk.OpenRead(path));
-        var spellManager = Resolve<ISpellManager>();
-        return SavedGame.Serdes(null, AssetMapping.Global, s, spellManager);
+        // Deserialisation can throw on a corrupt / truncated / older-version save (e.g. a stale
+        // quicksave left over from an earlier build). Fail soft — log and return null — instead of
+        // letting the exception kill the process; LoadGame's null-guard then leaves state untouched.
+        try
+        {
+            using var s = AlbionSerdes.CreateReader(disk.OpenRead(path));
+            var spellManager = Resolve<ISpellManager>();
+            return SavedGame.Serdes(null, AssetMapping.Global, s, spellManager);
+        }
+        catch (Exception ex)
+        {
+            Error($"Failed to load save game \"{path}\": {ex.Message}");
+            return null;
+        }
     }
 
     public void SaveAssets(AssetConversionOptions options)
