@@ -801,6 +801,14 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
 
     async AlbionTask InitialiseGame()
     {
+        // Defensive: never dereference a null _game (a failed/abandoned load). LoadGame already
+        // guards the null return, but other entry points (synthetic scenarios) call us too.
+        if (_game == null)
+        {
+            Error("InitialiseGame called with no loaded game state - aborting");
+            return;
+        }
+
         _party?.Remove();
         _party = AttachChild(new Party(_game.Sheets, GetWriteableInventory, _game.CombatPositions));
 
