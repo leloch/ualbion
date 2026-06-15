@@ -107,6 +107,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public GameState()
     {
         OnAsync<NewGameEvent>(e => NewGame(e.MapId, e.X, e.Y));
+        OnAsync<SyntheticScenarioEvent>(e => BuildSyntheticScenario(e.Name));
         OnAsync<LoadGameEvent>(e => LoadGame(e.Id));
         On<SaveGameEvent>(e => SaveGame(e.Id, e.Name));
         On<FastClockEvent>(e => TickCount += e.Frames);
@@ -502,20 +503,109 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             CombatPositions = { [0] = 1 } // Tom starts off in the second position
         };
 
+        LoadAllSheetsAndInventories(_game);
+        return InitialiseGame();
+    }
+
+    // Load every party/NPC sheet and chest/merchant inventory into the save (shared by NewGame
+    // and synthetic-scenario construction). The full sheet set is always present; ActiveMembers
+    // just selects which become the live party.
+    void LoadAllSheetsAndInventories(SavedGame game)
+    {
         var assets = Assets;
         foreach (var id in AssetMapping.Global.EnumerateAssetsOfType(AssetType.PartySheet))
-            _game.Sheets.Add(id, assets.LoadSheet(id));
+            game.Sheets.Add(id, assets.LoadSheet(id));
 
         foreach (var id in AssetMapping.Global.EnumerateAssetsOfType(AssetType.NpcSheet))
-            _game.Sheets.Add(id, assets.LoadSheet(id));
+            game.Sheets.Add(id, assets.LoadSheet(id));
 
         foreach (var id in AssetMapping.Global.EnumerateAssetsOfType(AssetType.Chest))
-            _game.Inventories.Add(id, assets.LoadInventory(id));
+            game.Inventories.Add(id, assets.LoadInventory(id));
 
         foreach (var id in AssetMapping.Global.EnumerateAssetsOfType(AssetType.Merchant))
-            _game.Inventories.Add(id, assets.LoadInventory(id));
+            game.Inventories.Add(id, assets.LoadInventory(id));
+    }
 
-        return InitialiseGame();
+    // Build an arbitrary game state from a SyntheticScenario (a parameterised NewGame) — the
+    // save-independent "warp anywhere" path. Reuses InitialiseGame (the same path load_game uses),
+    // so any map (2D/3D) loads cleanly; the only crash vector is the spawn tile, handled by the
+    // post-init re-validation against the live collider.
+    AlbionTask BuildSyntheticScenario(string name)
+    {
+        if (!SyntheticScenarioLibrary.TryGet(name, out var spec))
+        {
+            Error($"[synth] unknown scenario '{name}'");
+            return AlbionTask.CompletedTask;
+        }
+        return BuildSyntheticScenarioCore(spec);
+    }
+
+    async AlbionTask BuildSyntheticScenarioCore(SyntheticScenario spec)
+    {
+        Raise(new ReloadAssetsEvent());
+        _game = new SavedGame
+        {
+            MapId = spec.Map,
+            ElapsedTime = TimeSpan.FromHours(spec.TimeHours),
+            PartyDirection = spec.Direction,
+            PartyX = spec.X ?? 1,
+            PartyY = spec.Y ?? 1,
+        };
+
+        if (spec.Party == null || spec.Party.Count == 0)
+        {
+            _game.ActiveMembers[0] = Base.PartyMember.Tom;
+            _game.CombatPositions[0] = 1;
+        }
+        else
+        {
+            for (int i = 0; i < spec.Party.Count && i < SavedGame.MaxPartySize; i++)
+                _game.ActiveMembers[i] = spec.Party[i];
+        }
+
+        LoadAllSheetsAndInventories(_game);
+
+        // Seed persisted flags before InitialiseGame.
+        foreach (var s in spec.SwitchesToSet) _game.SetSwitch(s, true);
+        foreach (var c in spec.ChestsOpen) _game.SetChestOpen(c, true);
+        foreach (var d in spec.DoorsOpen) _game.SetDoorOpen(d, true);
+        foreach (var n in spec.NpcsDisabled) _game.SetNpcDisabled(n.Map, n.Npc, true);
+
+        // Spells + gold on the loaded sheets.
+        var leader = PartyMemberId.None;
+        foreach (var member in _game.ActiveMembers)
+        {
+            if (member.IsNone) continue;
+            if (leader.IsNone) leader = member;
+            if (_game.Sheets.TryGetValue(member.ToSheet(), out var sheet) && sheet.Magic?.KnownSpells != null)
+                foreach (var spell in spec.KnownSpells)
+                    if (!sheet.Magic.KnownSpells.Contains(spell))
+                        sheet.Magic.KnownSpells.Add(spell);
+        }
+        if (spec.Gold > 0 && !leader.IsNone
+            && _game.Sheets.TryGetValue(leader.ToSheet(), out var ls) && ls.Inventory?.Gold != null)
+            ls.Inventory.Gold.Amount = spec.Gold;
+
+        await InitialiseGame();
+
+        // Re-validate the spawn against the LIVE collider and re-jump before the next frame, so an
+        // unknown/stale coord can't strand the party in a wall (the crash we saw with raw teleport).
+        var collision = TryResolve<ICollisionManager>();
+        if (SpawnValidator.TryResolve(collision, _game.PartyX, _game.PartyY, out var vx, out var vy)
+            && (vx != _game.PartyX || vy != _game.PartyY))
+        {
+            _game.PartyX = (ushort)vx;
+            _game.PartyY = (ushort)vy;
+            Raise(new PartyJumpEvent((ushort)vx, (ushort)vy));
+            Raise(new CameraJumpEvent((ushort)vx, (ushort)vy));
+            Raise(new PlayerEnteredTileEvent((ushort)vx, (ushort)vy));
+        }
+
+        // Words are runtime-only state (not in SavedGame) — seed them after init.
+        foreach (var w in spec.WordsKnown)
+            Raise(new WordKnownEvent(SwitchOperation.Set, w));
+
+        Info($"[synth] '{spec.Name}' -> map {_game.MapId} ({_game.PartyX},{_game.PartyY})");
     }
 
     string IdToPath(ushort id)
