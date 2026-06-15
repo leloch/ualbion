@@ -263,3 +263,31 @@ shipping the union fix, any of those specific floors wrongly block, switch the F
 per-direction form `(Unk1 & (0x08u << dir))` — water (0x08, dir-0) still blocks, while a
 plate that only sets bit 4 won't block a dir-0 approach. This is the only residual risk and it
 does not affect the two reported bugs (water 0x08 and arches 0x00 are unambiguous).
+
+---
+
+## 2026-06-15 — Collision mask CONFIRMED COMPLETE (full 24-bit field RE'd)
+
+Re-RE'd `fcn.0001eeb8` (passability) + `fcn.0001f07e` (object) + `fcn.0001e832` (mover) to
+resolve whether the empirical `0x78` low-byte mask is complete for the full 24-bit `Collision`
+field (`Wall`/`LabyrinthObject` store Collision as 3 bytes in a uint).
+
+- The wall/floor/ceiling test reads the record's offset-0 DWORD and does `test bit (dir+11)`
+  (dir 0..3 = N/E/S/W). Bits 11..14 of that dword == **Collision bits 3..6 == mask 0x78**
+  (record layout: Properties@b0, Collision@b1..3). Floors/ceilings test the same on `Unk1`
+  (water `Unk1=0x08` = bit 3 → blocks). Objects (`fcn.0001f07e`) test the identical bit on the
+  object record's offset-0 dword + an AABB footprint via MapWidth/2.
+- **The high byte (Collision bits 16..23) is NEVER tested by any movement code** (searched the
+  whole binary; the only consumers of the wall table are `fcn.0001eeb8` and the auto-gfx renderer
+  `fcn.0005e12c` which reads offset 7). So `& 0x78` is COMPLETE, not an approximation.
+- Reconciles the TestMapArgim2 anomaly: objects with Collision `0x380000` (Krondir2/EvilKangaroo —
+  NPC/monster metadata in the high byte) are correctly **passable** (`0x380000 & 0x78 == 0`);
+  `0xf80008` blocks solely via bit 3 (`& 0x78 == 0x08`). All real maps use only 0x0/0x8.
+- Verified by `_allmaps_collision_sweep.ps1`: **59 3D maps scanned, ZERO see-through walls/objects,
+  blockMismatch=0 on every map** (only TestMapArgim2 shows the high-byte monster metadata, correctly
+  ignored). So Collider3D's `(Collision & 0x78) != 0` is correct and complete; no change needed.
+- Per-direction faithfulness exists in the original (`field & (0x08u << dir)` for one-way barriers)
+  but the dumped data has essentially none, so the omnidirectional union `0x78` matches observed
+  behaviour. The original's diagonal corner-cutting is governed by a separate 8-neighbour arbiter
+  (`fcn.0001e832`, neighbour table @0x1d640, 9-case slide switch @0x1ea38) — the remake approximates
+  this with axis-separated FilterCollision + a diagonal-corner block; faithful port is future work.
