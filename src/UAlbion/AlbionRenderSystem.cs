@@ -13,6 +13,7 @@ using UAlbion.Api.Visual;
 using UAlbion.Core.Visual;
 using UAlbion.Game;
 using UAlbion.Game.Veldrid.Diag;
+using UAlbion.Game.Veldrid.Diag.Cockpit;
 using UAlbion.Game.Veldrid.Visual;
 using Veldrid;
 using VeldridGen.Interfaces;
@@ -29,6 +30,7 @@ public sealed class AlbionRenderSystem : Component, IDisposable
     (float Red, float Green, float Blue, float Alpha) _clearColour;
     bool _debugMode;
     bool _modeDirty;
+    bool _openCockpitPending;
 
     public AlbionRenderSystem(ICameraProvider mainCamera, IImGuiMenuManager menus)
     {
@@ -192,10 +194,27 @@ public sealed class AlbionRenderSystem : Component, IDisposable
             _modeDirty = true;
         });
 
+        // show_cockpit: force the debug overlay on (so ImGui renders) and queue the cockpit
+        // window to be opened once the debug render system is active (next BeginFrame).
+        On<ShowCockpitEvent>(_ =>
+        {
+            if (!_debugMode)
+            {
+                _debugMode = true;
+                _modeDirty = true;
+            }
+            _openCockpitPending = true;
+        });
+
         On<BeginFrameEvent>(_ =>
         {
             if (_modeDirty)
                 SetRenderSystem();
+
+            // Retry until the debug system's IImGuiManager is actually resolvable (it registers
+            // when Sys_Debug becomes active, which may lag a frame behind the mode switch).
+            if (_openCockpitPending && _debugMode && OpenCockpit())
+                _openCockpitPending = false;
         });
         On<SetClearColourEvent>(e => _clearColour = (e.Red, e.Green, e.Blue, e.Alpha));
     }
@@ -217,6 +236,21 @@ public sealed class AlbionRenderSystem : Component, IDisposable
             engine.RenderSystem = _debugMode ? _debug : _default;
 
         _modeDirty = false;
+    }
+
+    // Open the Playthrough Test Cockpit (idempotent — no-op if already open). Returns false if
+    // the debug system's IImGuiManager isn't resolvable yet, so the caller can retry next frame.
+    bool OpenCockpit()
+    {
+        var manager = TryResolve<IImGuiManager>();
+        if (manager == null)
+            return false;
+
+        foreach (var _ in manager.FindWindows("Cockpit"))
+            return true; // already open
+
+        manager.AddWindow(new PlaythroughCockpitWindow($"Cockpit##{manager.GetNextWindowId()}"));
+        return true;
     }
 
     void MainRenderFunc(RenderPass pass, GraphicsDevice device, CommandList cl, IResourceSetHolder set1)
