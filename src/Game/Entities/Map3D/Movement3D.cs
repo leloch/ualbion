@@ -10,40 +10,48 @@ using UAlbion.Game.State;
 namespace UAlbion.Game.Entities.Map3D;
 
 /// <summary>
-/// Faithful first-person dungeon movement, RE'd from MAIN.EXE (_RE_3D_MOVEMENT.md). The original
-/// 3D model is DISCRETE: one tile per forward/back command, 90° quadrant turns, and NO strafe —
-/// the side inputs TURN. We keep a single source of truth (the quantised target yaw) and derive
-/// the forward tile-step from the camera's OWN look transform, so forward/back/turn/camera can
-/// never disagree. (The previous continuous free-camera derived the step from a drifting yaw,
-/// which is what made backtracking "reverse" and made the mouse turn the wrong way.)
+/// First-person dungeon movement. The original Albion 3D is SMOOTH/continuous — you glide
+/// forward/back, strafe, and rotate gradually — EXCEPT the four mouse screen-CORNER buttons which
+/// snap-turn 90° (top corners) / 180° (bottom corners). So:
+///   - Velocity.Y (W/S, Up/Down, mouse fwd/back zones) = continuous forward/back glide.
+///   - Velocity.X (mouse strafe edge-zones)            = continuous strafe.
+///   - Yaw       (mouse gradual-turn zones; A/D + L/R arrows via cam_rotate) = continuous rotation.
+///   - Pitch     (mouse look zones)                    = look up/down.
+///   - PartyTurn3DEvent(±90/±180) (mouse corners)      = animated discrete snap-turn.
+/// Translation flows through CameraMove3DWorldEvent → CameraMotion3D (integrated × dt = smooth,
+/// frame-rate independent + collision-filtered here). Rotation is applied to the injected camera.
 /// </summary>
 public class Movement3D : Component
 {
-    // 60 fast-ticks/second. ~8 ticks per action = a snappy ~0.13s slide/turn (the original
-    // animated turns at a fixed angular rate along the shorter arc; a smooth lerp matches the feel).
-    const float TurnRadiansPerTick = (float)(Math.PI / 2.0) / 8f;
-    const float StepFractionPerTick = 1f / 8f;
+    // Feel constants — ratios RE'd from MAIN.EXE (_RE_SMOOTH_MOVE.md): per-key scalars
+    // forward 166 : back 100 : strafe 67 (so forward is fastest, strafe slowest), and turn
+    // keyboard 40 vs mouse 60 (mouse 1.5×). Absolute tile/sec speed picked to feel right; the
+    // ratios are what's faithful. Translation is integrated × dt by CameraMotion3D (frame-rate
+    // independent); these are tiles/second.
+    const float ForwardSpeed = 4.0f;
+    const float BackSpeed = ForwardSpeed * 100f / 166f;   // ~2.41
+    const float StrafeSpeed = ForwardSpeed * 67f / 166f;  // ~1.61
+    const float MouseTurnRate = 0.06f;         // radians per unit mouse turn-intensity (≈1.5× the 0.04 keyboard cam_rotate)
     const float MousePitchRate = 0.02f;
-    const float Eps = 0.001f;
+    const float SnapDegreesPerTick = 22.5f;    // corner snap animation: 0x400/frame = 22.5°/frame (90°=4, 180°=8 frames)
+    const float Eps = 0.0005f;
+
+    // RE'd 5D corrected: wall margin = MAX(tileSize/4, 50) world units → a quarter tile on 512-tiles.
+    const float CollisionRadiusTiles = 0.25f;
 
     readonly ICamera _camera;
     bool _noclip;
-    bool _turning;
-    bool _stepping;
-    float _targetYaw;
-    float _stepProgress;
-    Vector3 _stepFrom;
-    Vector3 _stepTo;
+    float _pendingSnapDegrees; // remaining degrees of an in-progress corner snap-turn (signed)
     int _lastTileX = int.MinValue;
     int _lastTileY = int.MinValue;
 
     // The camera is injected (the rendered DungeonScene camera the leader's position is bound to)
-    // rather than resolved — Movement3D must drive the SAME camera, not whatever TryResolve finds.
+    // so rotation and collision read/write the SAME camera, not whatever TryResolve finds.
     public Movement3D(ICamera camera)
     {
         _camera = camera ?? throw new ArgumentNullException(nameof(camera));
         On<PartyMove3DEvent>(OnMove3D);
-        On<PartyTurn3DEvent>(e => RequestTurn(-e.YawDegrees * (float)Math.PI / 180f)); // +deg = turn right
+        On<PartyTurn3DEvent>(OnSnapTurn);
         On<PartyTurnEvent>(OnTurn);
         On<FastClockEvent>(OnTick);
         On<NoClipEvent>(_ =>
@@ -53,131 +61,58 @@ public class Movement3D : Component
         });
     }
 
-    bool Busy => _turning || _stepping;
-
-    // The party's forward tile-delta for a given yaw, taken from the engine's own look transform
-    // (camera looks along -Z at yaw 0 = north = tile -Y) and snapped to the dominant cardinal. By
-    // sourcing this from the same transform the renderer uses, "forward" always goes where the
-    // camera looks and "back" is its exact negation — no handedness guess, no world mirroring.
-    static (int dx, int dz) StepDeltaForYaw(float yaw)
-    {
-        var look = Vector3.Transform(-Vector3.UnitZ, Quaternion.CreateFromYawPitchRoll(yaw, 0f, 0f));
-        if (MathF.Abs(look.X) >= MathF.Abs(look.Z))
-            return (look.X >= 0f ? 1 : -1, 0);
-        return (0, look.Z >= 0f ? 1 : -1);
-    }
-
-    static float SnapYaw(float yaw)
-    {
-        const float q = (float)(Math.PI / 2.0);
-        return MathF.Round(yaw / q) * q;
-    }
-
-    static float NormalizeAngle(float a)
-    {
-        while (a <= -MathF.PI) a += MathF.Tau;
-        while (a > MathF.PI) a -= MathF.Tau;
-        return a;
-    }
-
     void OnMove3D(PartyMove3DEvent e)
     {
-        // Mouse look-up/down (compass top/bottom edges) — a small pitch nudge; the camera clamps.
+        // Gradual look up/down (mouse top/bottom-centre zones); the camera clamps pitch.
         if (MathF.Abs(e.Pitch) > Eps)
             _camera.Pitch += e.Pitch * MousePitchRate;
 
-        if (Busy)
-            return; // one discrete action at a time; held keys re-fire and step again once idle
+        // Gradual continuous turn (mouse turn-edge zones). +Yaw = turn RIGHT (Normal3DMouseMode:
+        // TurnRight = +intensity). Turning right rotates the view clockwise = camera yaw DECREASES
+        // (the camera looks along -Z at yaw 0; +yaw rotates the look toward the player's left).
+        if (MathF.Abs(e.Yaw) > Eps)
+            _camera.Yaw -= e.Yaw * MouseTurnRate;
 
-        // Side input = TURN (keyboard A/D = Velocity.X, mouse turn edges = Yaw). NO strafe.
-        int turn = 0;
-        if (MathF.Abs(e.Velocity.X) > Eps) turn = e.Velocity.X > 0 ? 1 : -1;
-        else if (MathF.Abs(e.Yaw) > Eps) turn = e.Yaw > 0 ? 1 : -1;
-        if (turn != 0)
-        {
-            RequestTurn(turn > 0 ? -(float)(Math.PI / 2.0) : (float)(Math.PI / 2.0)); // right = yaw down
-            return;
-        }
-
-        // Vertical input = forward/back one tile.
-        if (MathF.Abs(e.Velocity.Y) > Eps)
-            RequestStep(e.Velocity.Y > 0 ? 1 : -1);
-    }
-
-    void RequestTurn(float deltaYaw)
-    {
-        if (Busy)
-            return;
-        _targetYaw = SnapYaw(_camera.Yaw) + deltaYaw;
-        _turning = true;
-    }
-
-    void RequestStep(int forward)
-    {
-        if (Busy)
-            return;
-        var map = TryResolve<IMapManager>()?.Current;
-        if (map == null)
+        // Continuous forward/back (Velocity.Y, +=forward) + strafe (Velocity.X, +=right), camera-
+        // relative. The camera looks along -Z at yaw 0, so forward maps to -Z and strafe (right) to
+        // +X before the yaw rotation. CameraMotion3D integrates the world velocity over dt (smooth).
+        float strafe = MathF.Abs(e.Velocity.X) > Eps ? e.Velocity.X : 0f;
+        float forward = MathF.Abs(e.Velocity.Y) > Eps ? e.Velocity.Y : 0f;
+        if (strafe == 0f && forward == 0f)
             return;
 
-        float tsx = map.TileSize.X, tsz = map.TileSize.Z;
-        int curX = (int)MathF.Round(_camera.Position.X / tsx);
-        int curY = (int)MathF.Round(_camera.Position.Z / tsz);
-
-        var (dx, dz) = StepDeltaForYaw(SnapYaw(_camera.Yaw));
-        if (forward < 0) { dx = -dx; dz = -dz; }
-        int tx = curX + dx, ty = curY + dz;
-
+        // Per-axis speed (forward fastest, back slower, strafe slowest) applied BEFORE the yaw
+        // rotation. Camera looks along -Z at yaw 0, so forward → -Z and strafe-right → +X.
+        float fSpeed = forward >= 0f ? ForwardSpeed : BackSpeed;
+        var local = new Vector3(strafe * StrafeSpeed, 0f, -forward * fSpeed);
+        var world = Vector3.Transform(local, Quaternion.CreateFromYawPitchRoll(_camera.Yaw, 0f, 0f));
         if (!_noclip)
         {
-            var detector = TryResolve<ICollisionManager>();
-            if (detector != null && detector.IsOccupied(curX, curY, tx, ty))
-            {
-                TraceLog.Emit("move3d_blocked", ("from_x", curX), ("from_y", curY), ("to_x", tx), ("to_y", ty));
+            world = FilterCollision(world);
+            if (world.X == 0f && world.Z == 0f)
                 return;
-            }
         }
 
-        _stepFrom = _camera.Position;
-        _stepTo = new Vector3(tx * tsx, _camera.Position.Y, ty * tsz);
-        _stepProgress = 0f;
-        _stepping = true;
-        TraceLog.Emit("move3d", ("from_x", curX), ("from_y", curY), ("to_x", tx), ("to_y", ty));
+        Raise(new CameraMove3DWorldEvent(world.X, world.Z)); // already tiles/sec; CameraMotion3D integrates × dt
     }
+
+    // Corner snap-turn (mouse top corners = ±90°, bottom corners = ±180°). +deg = turn RIGHT, which
+    // (as above) is a NEGATIVE camera-yaw delta. Accumulated + animated in OnTick along the shorter
+    // path so successive corner clicks queue smoothly rather than teleporting the view.
+    void OnSnapTurn(PartyTurn3DEvent e) => _pendingSnapDegrees -= e.YawDegrees;
 
     void OnTick(FastClockEvent e)
     {
-        if (_turning)
+        if (MathF.Abs(_pendingSnapDegrees) > 0.5f)
         {
-            float diff = NormalizeAngle(_targetYaw - _camera.Yaw);
-            float maxStep = TurnRadiansPerTick * Math.Max(1, e.Frames);
-            if (MathF.Abs(diff) <= maxStep)
-            {
-                _camera.Yaw = NormalizeAngle(_targetYaw);
-                _turning = false;
-            }
-            else
-            {
-                _camera.Yaw += MathF.Sign(diff) * maxStep;
-            }
+            float step = Math.Min(SnapDegreesPerTick * Math.Max(1, e.Frames), MathF.Abs(_pendingSnapDegrees));
+            float signed = MathF.Sign(_pendingSnapDegrees) * step;
+            _camera.Yaw += signed * MathF.PI / 180f;
+            _pendingSnapDegrees -= signed;
         }
 
-        if (_stepping)
-        {
-            _stepProgress += StepFractionPerTick * Math.Max(1, e.Frames);
-            if (_stepProgress >= 1f)
-            {
-                _camera.Position = _stepTo;
-                _stepping = false;
-            }
-            else
-            {
-                _camera.Position = Vector3.Lerp(_stepFrom, _stepTo, _stepProgress);
-            }
-        }
-
-        // Tile-cross detection: 2D fires PlayerEnteredTileEvent from PartyCaterpillar; 3D needs
-        // its own emitter so DungeonMap (and anything watching tile entry) hears about steps.
+        // Tile-cross detection (2D fires PlayerEnteredTileEvent from PartyCaterpillar; 3D needs its
+        // own emitter so DungeonMap and anything watching tile entry hears about movement).
         var leader = TryResolve<IParty>()?.Leader;
         if (leader == null)
             return;
@@ -185,28 +120,67 @@ public class Movement3D : Component
         var pos = leader.GetPosition();
         int tileX = (int)MathF.Round(pos.X);
         int tileY = (int)MathF.Round(pos.Z);
-
         if (tileX == _lastTileX && tileY == _lastTileY)
             return;
 
-        // Skip the very first sample to avoid synthesising a tile-cross at load.
         if (_lastTileX != int.MinValue)
             Raise(new PlayerEnteredTileEvent(tileX, tileY));
-
         _lastTileX = tileX;
         _lastTileY = tileY;
     }
 
+    /// <summary>
+    /// Axis-separated sub-tile collision: each world axis of the velocity is tested independently
+    /// against the tile the party's collision margin would enter, so motion into a wall is cancelled
+    /// on that axis only and the remainder slides along the wall (the original's wall-hugging).
+    /// </summary>
+    Vector3 FilterCollision(Vector3 worldVel)
+    {
+        var detector = TryResolve<ICollisionManager>();
+        if (detector == null)
+            return worldVel;
+
+        var pos = _camera.Position;
+        var map = TryResolve<IMapManager>()?.Current;
+        float tsx = map?.TileSize.X ?? 512f, tsz = map?.TileSize.Z ?? 512f;
+        float px = pos.X / tsx, pz = pos.Z / tsz; // tile units
+        int curX = (int)MathF.Floor(px);
+        int curY = (int)MathF.Floor(pz);
+
+        bool xBlocked = false, yBlocked = false;
+        int targetX = curX, targetY = curY;
+
+        if (worldVel.X != 0f)
+        {
+            targetX = (int)MathF.Floor(px + MathF.Sign(worldVel.X) * CollisionRadiusTiles + worldVel.X * 0.05f);
+            if (targetX != curX && detector.IsOccupied(curX, curY, targetX, curY))
+                xBlocked = true;
+        }
+        if (worldVel.Z != 0f)
+        {
+            targetY = (int)MathF.Floor(pz + MathF.Sign(worldVel.Z) * CollisionRadiusTiles + worldVel.Z * 0.05f);
+            if (targetY != curY && detector.IsOccupied(curX, curY, curX, targetY))
+                yBlocked = true;
+        }
+
+        // Diagonal corner: both axes individually clear but the corner tile is solid → keep the Z
+        // component so we slide rather than stop dead.
+        if (!xBlocked && !yBlocked && targetX != curX && targetY != curY
+            && detector.IsOccupied(curX, curY, targetX, targetY))
+            xBlocked = true;
+
+        return new Vector3(xBlocked ? 0f : worldVel.X, 0f, yBlocked ? 0f : worldVel.Z);
+    }
+
     void OnTurn(PartyTurnEvent e)
     {
-        // Absolute facing request (save-restore / map-entry raise one to establish PartyDirection).
-        // Snap instantly so loading a dungeon doesn't visibly spin the camera. Keeps the existing
-        // North=0 / East=90 / South=180 / West=270 yaw convention, so saved facings (and the world
-        // orientation the renderer already produces) are preserved exactly.
+        // Absolute facing request (save-restore / map-entry establishes PartyDirection). Snap the
+        // camera instantly so loading a dungeon doesn't spin the view. Keeps the N=0/E=90/S=180/
+        // W=270 yaw convention so saved facings and the renderer's world orientation are preserved.
         if (e.Direction == Direction.Unchanged)
             return;
 
-        float yaw = e.Direction switch
+        _camera.Yaw = e.Direction switch
         {
             Direction.North => 0f,
             Direction.East => (float)(Math.PI / 2.0),
@@ -214,10 +188,6 @@ public class Movement3D : Component
             Direction.West => (float)(3.0 * Math.PI / 2.0),
             _ => 0f
         };
-
-        _targetYaw = NormalizeAngle(yaw);
-        _camera.Yaw = _targetYaw;
-        _turning = false;
-        _stepping = false;
+        _pendingSnapDegrees = 0f;
     }
 }

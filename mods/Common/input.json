@@ -102,18 +102,19 @@
     "Ctrl+Shift+M": "set_mouse_mode MouseLook",
     "Ctrl+Shift+N": "set_mouse_mode Normal3D",
 
-    // Party movement — faithful grid-step model (Movement3D, RE'd from MAIN.EXE): the original
-    // 3D dungeon is forward/back + 90° turns, NO strafe. party_move_3d X = turn (X<0 left, X>0
-    // right), Y = step (Y>0 forward, Y<0 back). plain party_move is 2D-only (no 3D handler).
-    "W": "+party_move_3d  0  1", // forward
-    "A": "+party_move_3d -1  0", // turn left
-    "S": "+party_move_3d  0 -1", // back
-    "D": "+party_move_3d  1  0", // turn right
+    // Party movement — faithful SMOOTH/continuous model (Movement3D): keys glide & rotate
+    // gradually (no grid-step, no keyboard strafe). W/S + Up/Down = forward/back; A/D + Left/Right
+    // = gradual TURN (cam_rotate +x = turn left, -x = turn right). Strafe + 90/180 snap-turns are
+    // mouse-only (the screen-edge / corner compass zones). Shift = faster.
+    "W": "+party_move_3d  0  1",  // forward
+    "S": "+party_move_3d  0 -1",  // back
+    "A": "+cam_rotate  0.04 0",   // turn left
+    "D": "+cam_rotate -0.04 0",   // turn right
 
     "Shift+W": "+party_move_3d  0  2",
-    "Shift+A": "+party_move_3d -2  0",
     "Shift+S": "+party_move_3d  0 -2",
-    "Shift+D": "+party_move_3d  2  0",
+    "Shift+A": "+cam_rotate  0.08 0",
+    "Shift+D": "+cam_rotate -0.08 0",
 
     // Free debug camera (no collision) — moved off plain WASD onto Ctrl.
     "Ctrl+W": "+camera_move  0  4",
@@ -121,11 +122,11 @@
     "Ctrl+S": "+camera_move  0 -4",
     "Ctrl+D": "+camera_move  4  0",
 
-    // Arrows: Up/Down walk forward/back, Left/Right turn 90° (through the same grid-step model).
+    // Arrows: Up/Down walk forward/back, Left/Right gradual turn (same as A/D).
     "Up": "+party_move_3d  0  1",
     "Down": "+party_move_3d  0 -1",
-    "Left": "+party_move_3d -1  0",
-    "Right": "+party_move_3d  1  0",
+    "Left": "+cam_rotate  0.04 0",
+    "Right": "+cam_rotate -0.04 0",
 
     "F": "toggle_mlook",
     "Q": "+cursor_mode examine",

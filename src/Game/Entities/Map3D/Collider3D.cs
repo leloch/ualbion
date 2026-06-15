@@ -18,18 +18,16 @@ public class Collider3D(LogicalMap3D logicalMap) : Component, IMovementCollider
 
     protected override void Unsubscribed() => Resolve<ICollisionManager>()?.Unregister(this);
 
-    // Directional collision bits live at bits 11..14 of the 24-bit Collision field (one per
-    // approach direction N/E/S/W) — RE'd from MAIN.EXE fcn.0001eeb8 (_RE_3D_COLLISION.md). The
-    // original tests bit (dir+11); we use the direction-agnostic union 0x7800 (any of the four)
-    // which fixes both reported bugs (walk-over-water, stuck-on-passable) and is a strict
-    // improvement over the old "any wall blocks / floorIndex==0" rule. One-way/partial barriers
-    // (per-direction) are a later refinement.
-    const uint CollisionMask = 0x7800; // bits 11,12,13,14
-
-    // The original reads the floor/ceiling collision as the first dword of the 10-byte
-    // FloorAndCeiling record (Properties|Unk1|Unk2|Unk3); bits 11..14 fall in Unk1 (bits 3..6).
-    static uint FcCollisionDword(FloorAndCeiling fc) =>
-        (uint)fc.Properties | ((uint)fc.Unk1 << 8) | ((uint)fc.Unk2 << 16) | ((uint)fc.Unk3 << 24);
+    // Passability rule RE'd against REAL labyrinth data (_RE_COLLISION_DATA.md). The original
+    // (fcn.0001eeb8) tests bit (dir+11) of the dword read from record offset 0 — i.e. bits 3..6 of
+    // the raw Collision low-byte (wall/object) or Unk1 (floor/ceiling). So the directional block
+    // bits are RAW mask 0x78 (NOT 0x7800 — the prior RE mis-mapped the shift, making the test inert).
+    //   WALLS/OBJECTS: solid sides set 0x08/0x10/0x18 (block); open doorways/gates/arches = 0 (pass).
+    //   FLOORS: ONLY bit 3 (0x08) marks a hazard floor (Water/deep-water = block); bit 4 (0x10) and
+    //   0xF0 are NORMAL walkable floors (mossy stone, jewels, wood) — so the floor mask is 0x08, not
+    //   0x78 (using 0x78 would wrongly block ~160 ordinary floors).
+    const uint WallObjMask = 0x78;  // wall/object solid-side bits 3..6
+    const byte FloorHazardBit = 0x08; // floor/ceiling hazard bit (water)
 
     public bool IsOccupied(int fromX, int fromY, int toX, int toY)
     {
@@ -38,35 +36,24 @@ public class Collider3D(LogicalMap3D logicalMap) : Component, IMovementCollider
         if (toX < 0 || toY < 0 || toX >= _logicalMap.Width || toY >= _logicalMap.Height)
             return true;
 
-        // WALL: blocks only when its directional collision bits are set — NOT "any wall blocks".
-        // Decorative walls / open archways whose Collision bits are clear are walkable (this was
-        // the "stuck on passable tiles" half of the bug). fcn.0001eeb8 wall test.
+        // WALL: blocks only when a solid-side bit is set — open archways/gates (Collision==0) pass.
         var (_, wall) = _logicalMap.GetWall(toX, toY);
-        if (wall != null && (wall.Collision & CollisionMask) != 0)
+        if (wall != null && (wall.Collision & WallObjMask) != 0)
             return true;
 
-        // FLOOR: blocks via the SAME collision-bit mechanism — this is how WATER blocks (it is a
-        // floor type with the collision bits set, not a pit). The old code only checked
-        // floorIndex==0 and so let the party walk over water. fcn.0001eeb8 floor test.
-        var (floorIndex, floor) = _logicalMap.GetFloor(toX, toY);
-        if (floor != null && (FcCollisionDword(floor) & CollisionMask) != 0)
+        // FLOOR: a hazard floor (Water, Unk1 bit 3) blocks. Normal floors (Unk1 0/0x10/0xF0) pass.
+        // NO floorIndex==0 "pit" block: the original treats a missing floor as passable (skip the
+        // floor test) — that phantom guard was what blocked open archway/threshold tiles (floor 0).
+        var (_, floor) = _logicalMap.GetFloor(toX, toY);
+        if (floor != null && (floor.Unk1 & FloorHazardBit) != 0)
             return true;
 
-        // No floor at all → void / pit, unless levitating. The original predicate doesn't block
-        // on a missing floor, but keep this conservative pit-guard (deliberate deviation,
-        // ledger §8) so the party can't walk into genuinely empty tiles. Water is unaffected
-        // (it has a non-zero floor index and blocks via the floor test above).
-        if (floorIndex == 0 && !Magic.ActivePartySpells.Levitating)
-            return true;
-
-        // CEILING: same collision-bit mechanism (low/solid ceilings can block). fcn.0001eeb8.
+        // CEILING: same hazard mechanism (rare for movement).
         var (_, ceiling) = _logicalMap.GetCeiling(toX, toY);
-        if (ceiling != null && (FcCollisionDword(ceiling) & CollisionMask) != 0)
+        if (ceiling != null && (ceiling.Unk1 & FloorHazardBit) != 0)
             return true;
 
-        // OBJECT-GROUP props: block when a sub-object's directional collision bits are set and it
-        // isn't a floor-prop. (fcn.0001f07e also tests AABB footprint overlap; the per-tile
-        // approximation here is kept but gated on the directional bits for consistency.)
+        // OBJECT-GROUP props: block when a non-floor sub-object has a solid-side bit set.
         var group = _logicalMap.GetObject(toX, toY);
         if (group != null)
         {
@@ -78,7 +65,7 @@ public class Collider3D(LogicalMap3D logicalMap) : Component, IMovementCollider
                 var info = objects[sub.ObjectInfoNumber];
                 if (info == null) continue;
                 if ((info.Properties & LabyrinthObjectFlags.FloorObject) != 0) continue;
-                if ((info.Collision & CollisionMask) != 0)
+                if ((info.Collision & WallObjMask) != 0)
                     return true;
             }
         }
