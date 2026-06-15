@@ -64,7 +64,14 @@ public class InventoryLockPane : UiElement
         if (hand.Item == _lockEvent.Key)
         {
             Raise(new HoverTextEvent(tf.Format(Base.SystemText.Lock_LeaderOpenedTheLock)));
-            Raise(new InventoryReturnItemInHandEvent());
+            // RE _RE_5C.md §2.2 (0x5a92a): a matching key is consumed ONLY if it carries the
+            // "vanish when used up" flag (ITEMLIST +0x1B & 0x10 = ItemFlags.Unk4) — one-use quest
+            // keys; ordinary reusable keys return to the hand as before.
+            var keyItem = Assets.LoadItem(hand.Item);
+            if (keyItem != null && (keyItem.Flags & ItemFlags.Unk4) != 0)
+                Raise(new InventoryDestroyItemInHandEvent());
+            else
+                Raise(new InventoryReturnItemInHandEvent());
             Raise(new LockOpenedEvent());
         }
         else if (hand.Item == Base.Item.Lockpick)

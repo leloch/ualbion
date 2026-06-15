@@ -33,6 +33,16 @@ public class CombatManager : GameComponent
 
     void BeginCombat(MonsterGroupId groupId, SpriteId backgroundId)
     {
+        // Guard against empty/missing monster groups — e.g. a saved NPC slot typed MonsterGroup but
+        // set to MonsterGroup.Empty (seen on Jirinaar save loads), or an encounter referencing a
+        // group that doesn't load. Without this we'd push the combat scene, flash it, then instantly
+        // "win" against nobody (Battle logs an error and ends). There is nothing to fight — bail.
+        if (groupId.IsNone || Assets.LoadMonsterGroup(groupId) == null)
+        {
+            Warn($"Ignoring encounter with empty/missing monster group {groupId}");
+            return;
+        }
+
         if (backgroundId.IsNone)
             backgroundId = Resolve<IMapManager>().Current.MapData.CombatBackgroundId;
 
