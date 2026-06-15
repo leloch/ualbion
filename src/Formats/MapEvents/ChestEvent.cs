@@ -25,8 +25,12 @@ public class ChestEvent : MapEvent, ILockedInventoryEvent
         e ??= new ChestEvent();
         e.PickDifficulty = s.UInt8(nameof(PickDifficulty), e.PickDifficulty);
         e.Key = ItemId.SerdesU16(nameof(Key), e.Key, AssetType.Item, mapping, s);
-        e.UnlockedText = s.UInt8(nameof(UnlockedText), e.UnlockedText);
+        // Byte order RE'd from MAIN.EXE (chest handler fcn.0003a396 → dispatcher fcn.000584e8):
+        // the +4 byte is OpenedText (shown at chest-open, 0x58659), +5 is UnlockedText (shown on the
+        // unlock/contents path, 0x58c59) — same order as DoorEvent. The previous reversed order made
+        // chests show the wrong text on open.
         e.OpenedText = s.UInt8(nameof(OpenedText), e.OpenedText);
+        e.UnlockedText = s.UInt8(nameof(UnlockedText), e.UnlockedText);
         e.ChestId = ChestId.SerdesU16(nameof(ChestId), e.ChestId, mapping, s);
         return e;
     }
