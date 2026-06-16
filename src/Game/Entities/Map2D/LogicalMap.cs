@@ -79,7 +79,7 @@ public abstract class LogicalMap : Component
     {
         ApplyChange(x, y, changeType, layers, value);
         var collection = isTemporary ? TempChanges : PermChanges;
-        collection.Update(Id, x, y, changeType, value);
+        collection.Update(Id, x, y, changeType, layers, value);
     }
 
     public void GetZonesOfType(List<MapEventZone> result, TriggerTypes triggerType) => _mapData.GetZonesOfType(result, triggerType);
@@ -90,9 +90,13 @@ public abstract class LogicalMap : Component
         {
             case IconChangeType.Underlay: ChangeUnderlay(x, y, value); break;
             case IconChangeType.Overlay: ChangeOverlay(x, y, value); break;
-            case IconChangeType.Wall: break; // N/A for 2D map
-            case IconChangeType.Floor: break; // N/A for 2D map
-            case IconChangeType.Ceiling: break; // N/A for 2D map
+            // Wall/Floor/Ceiling are 3D-only and were previously `break` no-ops — so LogicalMap3D's
+            // ChangeWall/Floor/Ceiling overrides were NEVER invoked (3D ChangeIcon levers/doors did
+            // nothing live, and re-entry replay dropped them: #95 corruption). Dispatch to the
+            // virtuals (base impls are no-ops, so 2D is unaffected).
+            case IconChangeType.Wall: ChangeWall(x, y, value); break;
+            case IconChangeType.Floor: ChangeFloor(x, y, value); break;
+            case IconChangeType.Ceiling: ChangeCeiling(x, y, value); break;
             case IconChangeType.NpcMovement:
             case IconChangeType.NpcSprite:
                 // NPC changes use X as the NPC INDEX (Y unused). They can't be applied

@@ -138,7 +138,11 @@ public class DungeonMap : GameComponent, IMap
         if (_labyrinthData == null)
             return;
 
-        _logicalMap = new LogicalMap3D(_mapData, _labyrinthData, state.TemporaryMapChanges, state.PermanentMapChanges);
+        // AttachChild (not bare new) so the map is part of the component tree and its Subscribed()
+        // runs — that's where LogicalMap replays persisted Perm/Temp changes (#95). FlatMap (2D)
+        // already does this; DungeonMap didn't, so 3D wall/floor/ceiling changes (opened doors,
+        // dissolved walls) were never re-applied on map re-entry.
+        _logicalMap = AttachChild(new LogicalMap3D(_mapData, _labyrinthData, state.TemporaryMapChanges, state.PermanentMapChanges));
 
         var properties = new TilemapRequest
         {
