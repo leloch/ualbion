@@ -64,6 +64,7 @@ public class GameVars
         // Optional 3D rendering enhancements. ALL default to the vanilla look so the base
         // experience is unchanged; players opt in. (#34 etc.)
         public BoolVar SmoothDungeonTextures { get; } = new(Library, "Game.Graphics.SmoothDungeonTextures", false); // #34: trilinear vs point
+        public BoolVar HighlightInteractableTiles { get; } = new(Library, "Game.Graphics.HighlightInteractableTiles", false); // #65: brighten 3D tiles with action zones
     }
 
     public UiVars Ui { get; } = new();

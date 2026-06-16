@@ -171,6 +171,19 @@ public class MapRenderable3D : GameComponent
                 flags |= EtmTileFlags.SelfIlluminating;
         }
 
+        // #65 (opt-in, default off): brighten tiles the party can interact with (zones carrying an
+        // action trigger), using the existing Highlight shader path.
+        if (ReadVar(V.Game.Graphics.HighlightInteractableTiles))
+        {
+            const UAlbion.Formats.Assets.Maps.TriggerTypes actionMask =
+                UAlbion.Formats.Assets.Maps.TriggerTypes.Examine | UAlbion.Formats.Assets.Maps.TriggerTypes.Manipulate |
+                UAlbion.Formats.Assets.Maps.TriggerTypes.Take | UAlbion.Formats.Assets.Maps.TriggerTypes.TalkTo |
+                UAlbion.Formats.Assets.Maps.TriggerTypes.UseItem;
+            var zone = _logicalMap.GetZone(index);
+            if (zone?.Node != null && (zone.Trigger & actionMask) != 0)
+                flags |= EtmTileFlags.Highlight;
+        }
+
         _tilemap.SetTile(order, floorIndex, ceilingIndex, wallIndex, frameCount, flags);
     }
 

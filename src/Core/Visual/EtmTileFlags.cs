@@ -12,6 +12,7 @@ public enum EtmTileFlags : uint
     WallBackAndForth = 1 << 2,
     Translucent = 1 << 3,
     SelfIlluminating = 1 << 4,
+    Highlight = 1 << 5, // #65: brighten interactable tiles (maps to DungeonTileFlags.Highlight)
 
     TranslucentColorMask = 0xff000000
 }
