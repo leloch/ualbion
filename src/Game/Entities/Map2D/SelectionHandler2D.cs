@@ -268,9 +268,23 @@ public sealed class SelectionHandler2D : GameComponent
 
         var zone = _map.GetOffsetZone(x, y);
 
+        // #36: reach limits (RE'd from MAIN.EXE fcn.0001f70a). The original gates each verb by the
+        // rounded Euclidean distance from the party to the clicked tile: touch (Manipulate/Take/
+        // UseItem) 2 tiles, TalkTo 3, Examine 4. Beyond that the verb wasn't actionable. Configurable
+        // via Game.UI.ContextMenuReachLimit (off = interact with any visible tile, the old behaviour).
+        bool reachLimit = ReadVar(V.Game.Ui.ContextMenuReachLimit);
+        double reachDist = 0;
+        if (reachLimit)
+        {
+            var leaderPos = Resolve<IParty>().Leader?.GetPosition() ?? new Vector3(x, y, 0);
+            double rdx = x - leaderPos.X, rdy = y - leaderPos.Y;
+            reachDist = Math.Round(Math.Sqrt(rdx * rdx + rdy * rdy));
+        }
+        bool InReach(int maxTiles) => !reachLimit || reachDist <= maxTiles;
+
         if (zone?.Chain != null && zone.Node != null)
         {
-            if ((zone.Trigger & TriggerTypes.Examine) != 0)
+            if ((zone.Trigger & TriggerTypes.Examine) != 0 && InReach(4))
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.MapPopup_Examine),
@@ -278,7 +292,7 @@ public sealed class SelectionHandler2D : GameComponent
                     ContextMenuGroup.Actions));
             }
 
-            if ((zone.Trigger & TriggerTypes.Manipulate) != 0)
+            if ((zone.Trigger & TriggerTypes.Manipulate) != 0 && InReach(2))
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.MapPopup_Manipulate),
@@ -286,7 +300,7 @@ public sealed class SelectionHandler2D : GameComponent
                     ContextMenuGroup.Actions));
             }
 
-            if ((zone.Trigger & TriggerTypes.Take) != 0)
+            if ((zone.Trigger & TriggerTypes.Take) != 0 && InReach(2))
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.MapPopup_Take),
@@ -294,7 +308,7 @@ public sealed class SelectionHandler2D : GameComponent
                     ContextMenuGroup.Actions));
             }
 
-            if ((zone.Trigger & TriggerTypes.TalkTo) != 0)
+            if ((zone.Trigger & TriggerTypes.TalkTo) != 0 && InReach(3))
             {
                 options.Add(new ContextMenuOption(
                     S(Base.SystemText.MapPopup_TalkTo),
@@ -306,7 +320,7 @@ public sealed class SelectionHandler2D : GameComponent
             // (tool-on-obstacle puzzles — pick-axe/screwdriver/staff). The held item is
             // carried into the UseItem trigger's EventSource by FlatMap so the zone chain's
             // query used_item matches. (B4: was never offered, so these puzzles were dead.)
-            if ((zone.Trigger & TriggerTypes.UseItem) != 0
+            if ((zone.Trigger & TriggerTypes.UseItem) != 0 && InReach(2)
                 && !(TryResolve<IInventoryManager>()?.ItemInHand.Item.IsNone ?? true))
             {
                 options.Add(new ContextMenuOption(

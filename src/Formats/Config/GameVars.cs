@@ -63,6 +63,10 @@ public class GameVars
     {
         public FloatVar ButtonDoubleClickIntervalSeconds { get; } = new(Library, "Game.UI.ButtonDoubleClickIntervalSeconds", 0.35f);
         public FloatVar MouseLookSensitivity             { get; } = new(Library, "Game.UI.MouseLookSensitivity", 2.0f);
+        // #36: enforce the original's right-click reach limits (touch 2 / talk 3 / examine 4 tiles,
+        // Euclidean). Disable to allow interacting with any visible tile (the old behaviour + the
+        // unintentional extended-reach "steal").
+        public BoolVar ContextMenuReachLimit            { get; } = new(Library, "Game.UI.ContextMenuReachLimit", true);
 
         public TransitionsVars Transitions { get; } = new();
         public class TransitionsVars
