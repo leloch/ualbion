@@ -31,6 +31,7 @@ public class Npc2D : Component
     readonly byte _npcNumber;
     readonly bool _isLarge;
     bool _isLocked;
+    bool _scriptedMovePending; // #90: a scripted NpcMove is in flight; suppress movement-type AI until done
 
     MovementSettings _moveSettings;
     // int _frameCount;
@@ -99,7 +100,15 @@ public class Npc2D : Component
         if (Exchange == null) 
             return;
 
-        if (!_isLocked)
+        // #90: a scripted NpcMove (OnMove) sets a relative target the NPC should walk to (e.g.
+        // Christine approaching the party in the Toronto intro). The per-tick movement-type AI -
+        // especially MovementStationary, which re-targets the NPC to its OWN tile every tick - would
+        // clobber that target before Movement2D acts on it, so the NPC never moved unless the script
+        // happened to NpcLock first. Suppress the AI while a scripted move is outstanding.
+        if (_scriptedMovePending && _state.X == _targetX && _state.Y == _targetY)
+            _scriptedMovePending = false;
+
+        if (!_isLocked && !_scriptedMovePending)
         {
             switch (_state.MovementType)
             {
@@ -151,7 +160,11 @@ public class Npc2D : Component
         SyncSprite();
     }
 
-    void OnMove(NpcMoveEvent e) => SetTarget(_state.X + e.X, _state.Y + e.Y);
+    void OnMove(NpcMoveEvent e)
+    {
+        SetTarget(_state.X + e.X, _state.Y + e.Y);
+        _scriptedMovePending = true; // #90: hold off the movement-type AI until this move completes
+    }
 
     void OnJump(NpcJumpEvent e)
     {
