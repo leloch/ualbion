@@ -24,7 +24,21 @@ public class BoolVar : IVar<bool>
         if (varSet.TryGetValue(Key, out var objValue))
         {
             if (objValue is bool value) return value;
-            if (objValue is JsonElement { ValueKind: JsonValueKind.Number } jsonString) return jsonString.GetBoolean();
+            if (objValue is JsonElement je)
+            {
+                // A bool persisted to settings.json comes back as a JsonElement with ValueKind
+                // True/False (the old code only handled Number - and even then called GetBoolean,
+                // which throws on a number - so any saved bool var threw on read, silently
+                // disabling every opt-in toggle once it had been saved). Accept numeric 0/1 and
+                // "true"/"false" strings too, for leniency.
+                switch (je.ValueKind)
+                {
+                    case JsonValueKind.True: return true;
+                    case JsonValueKind.False: return false;
+                    case JsonValueKind.Number: return je.GetInt32() != 0;
+                    case JsonValueKind.String when bool.TryParse(je.GetString(), out var b): return b;
+                }
+            }
             throw new FormatException($"Var {Key} was of unexpected type {objValue.GetType()}, expected bool");
         }
 

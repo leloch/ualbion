@@ -68,6 +68,8 @@ public class AutomapDialog : GameComponent
             _discovered.AsBytes = bytes;
             Info($"[Automap] restored {bytes.Length} bytes for {_mapData.Id} (map {_map.Width}x{_map.Height} = {_map.Width * _map.Height} tiles, bits {_discovered.Length})");
         }
+
+        RefreshMinimap(); // #43: show the corner minimap on map entry if Game.Graphics.Minimap is on
     }
 
     protected override void Unsubscribed()
@@ -145,6 +147,8 @@ public class AutomapDialog : GameComponent
                 }
             }
         }
+
+        RefreshMinimap(); // #43: keep the corner minimap current as the party explores/moves
     }
 
     void Discover(int x, int y)
@@ -210,15 +214,21 @@ public class AutomapDialog : GameComponent
             _sprite = null;
         }
         _visible = false;
+        RefreshMinimap(); // bring the corner minimap back if it's enabled
     }
 
-    void Show()
+    // #43: builds (or rebuilds) the composited automap texture into _texture and reports the party
+    // tile. Shared by the full-screen automap (Show) and the always-on corner minimap (RefreshMinimap)
+    // so both stay pixel-identical. Returns false if the automap tile graphics couldn't be loaded.
+    bool BuildTexture(out int partyX, out int partyY)
     {
+        partyX = 0;
+        partyY = 0;
         var tiles = Assets.LoadTexture(new SpriteId(AssetType.AutomapGfx, (int)Base.AutomapTiles.Set1)) as IReadOnlyTexture<byte>;
         if (tiles == null)
         {
             Warn("[Automap] Could not load AutomapTiles.Set1");
-            return;
+            return false;
         }
 
         int w = _map.Width * TilePx;
@@ -231,8 +241,8 @@ public class AutomapDialog : GameComponent
         var buffer = _texture.GetMutableLayerBuffer(0);
         var party = TryResolve<IParty>();
         var leaderPos = party?.Leader?.GetPosition() ?? Vector3.Zero;
-        int partyX = (int)MathF.Floor(leaderPos.X);
-        int partyY = (int)MathF.Floor(leaderPos.Z);
+        partyX = (int)MathF.Floor(leaderPos.X);
+        partyY = (int)MathF.Floor(leaderPos.Z);
 
         _floorMinis.Clear();
         for (int y = 0; y < _map.Height; y++)
@@ -274,6 +284,17 @@ public class AutomapDialog : GameComponent
             }
         }
 
+        return true;
+    }
+
+    void Show()
+    {
+        if (_minimapSprite != null) { RemoveChild(_minimapSprite); _minimapSprite = null; } // don't double-draw with the full map
+        if (!BuildTexture(out int partyX, out int partyY))
+            return;
+
+        int w = _map.Width * TilePx;
+        int h = _map.Height * TilePx;
         _sprite = AttachChild(new Sprite(SpriteId.None,
             DrawLayer.Interface,
             SpriteKeyFlags.NoTransform,
@@ -289,6 +310,52 @@ public class AutomapDialog : GameComponent
         _sprite.Size = size;
         _visible = true;
         Info($"[Automap] shown for {_mapData.Id} ({_map.Width}x{_map.Height}, party at {partyX},{partyY})");
+    }
+
+    // #43: opt-in always-on corner minimap (Game.Graphics.Minimap). Reuses the exact automap
+    // compositing via BuildTexture(); the minimap is the same image scaled into a small box pinned
+    // to the top-right NDC corner and refreshed whenever the party discovers/enters a tile.
+    Sprite _minimapSprite;
+    const float MinimapBox = 0.75f;   // NDC extent of the longer side
+    const float MinimapMargin = 0.02f;
+
+    public void RefreshMinimap()
+    {
+        bool enabled = ReadVar(V.Game.Graphics.Minimap);
+        if (!enabled)
+        {
+            if (_minimapSprite != null) { RemoveChild(_minimapSprite); _minimapSprite = null; }
+            return;
+        }
+
+        if (_visible) // the full automap overlay is open; don't double-draw
+        {
+            if (_minimapSprite != null) { RemoveChild(_minimapSprite); _minimapSprite = null; }
+            return;
+        }
+
+        if (!BuildTexture(out _, out _))
+            return;
+
+        int w = _map.Width * TilePx;
+        int h = _map.Height * TilePx;
+        float aspect = w / (float)h;
+        var size = aspect >= 1
+            ? new Vector2(MinimapBox, MinimapBox / aspect)
+            : new Vector2(MinimapBox * aspect, MinimapBox);
+
+        if (_minimapSprite == null)
+        {
+            _minimapSprite = AttachChild(new Sprite(SpriteId.None,
+                DrawLayer.Interface,
+                SpriteKeyFlags.NoTransform,
+                SpriteFlags.LeftAligned | SpriteFlags.FlipVertical,
+                _ => _texture));
+        }
+
+        // Pin to the top-right corner (NDC: +x right, +y up).
+        _minimapSprite.Position = new Vector3(1f - size.X - MinimapMargin, 1f - size.Y - MinimapMargin, 0);
+        _minimapSprite.Size = size;
     }
 
     readonly Dictionary<byte, byte[]> _floorMinis = [];
