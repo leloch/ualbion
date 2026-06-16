@@ -150,15 +150,24 @@ public class Movement3D : Component
         bool xBlocked = false, yBlocked = false;
         int targetX = curX, targetY = curY;
 
+        // Look-ahead = the resting wall margin OR the per-frame step, whichever is larger — NOT their
+        // sum. The old `radius + vel*0.05` ADDED the step to the margin, so the party stopped
+        // ~0.25 + speed*0.05 tiles from a wall (≈0.4-0.45 while walking) — the "invisible barrier,
+        // can't get close" the original doesn't have. MAX keeps the faithful 0.25-tile rest margin
+        // (RE 5D: MAX(tile/4,50)) at normal speed while still looking far enough ahead at sprint
+        // speed to not overshoot INTO a wall (the "clip one square in" symptom). The per-frame step
+        // is bounded by CameraMotion3D's MaxMoveStepSeconds (0.05s) so |vel|*0.05 is the true step.
         if (worldVel.X != 0f)
         {
-            targetX = (int)MathF.Floor(px + MathF.Sign(worldVel.X) * CollisionRadiusTiles + worldVel.X * 0.05f);
+            float aheadX = MathF.Sign(worldVel.X) * MathF.Max(CollisionRadiusTiles, MathF.Abs(worldVel.X) * 0.05f);
+            targetX = (int)MathF.Floor(px + aheadX);
             if (targetX != curX && detector.IsOccupied(curX, curY, targetX, curY))
                 xBlocked = true;
         }
         if (worldVel.Z != 0f)
         {
-            targetY = (int)MathF.Floor(pz + MathF.Sign(worldVel.Z) * CollisionRadiusTiles + worldVel.Z * 0.05f);
+            float aheadZ = MathF.Sign(worldVel.Z) * MathF.Max(CollisionRadiusTiles, MathF.Abs(worldVel.Z) * 0.05f);
+            targetY = (int)MathF.Floor(pz + aheadZ);
             if (targetY != curY && detector.IsOccupied(curX, curY, curX, targetY))
                 yBlocked = true;
         }
