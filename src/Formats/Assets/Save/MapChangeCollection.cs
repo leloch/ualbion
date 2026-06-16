@@ -28,17 +28,21 @@ public class MapChangeCollection : List<MapChange>
         return c;
     }
 
-    public void Update(MapId mapId, byte x, byte y, IconChangeType type, ushort value)
+    public void Update(MapId mapId, byte x, byte y, IconChangeType type, ChangeIconLayers layers, ushort value)
     {
         foreach (var c in this)
         {
-            if (c.MapId != mapId || c.X != x || c.Y != y || c.ChangeType != type) 
+            if (c.MapId != mapId || c.X != x || c.Y != y || c.ChangeType != type)
                 continue;
 
             c.Value = value;
+            c.Layers = layers;
             return;
         }
 
-        Add(new MapChange { MapId = mapId, X = x, Y = y, ChangeType = type });
+        // BUGFIX (#95): the first-time add previously omitted Value AND Layers, so a tile's first
+        // persisted change recorded Value=0 / Layers=None. On reload/re-entry that replayed as a
+        // garbage tile (corruption + crash on the Hunter Clan cellar door). Record the real values.
+        Add(new MapChange { MapId = mapId, X = x, Y = y, ChangeType = type, Layers = layers, Value = value });
     }
 }
