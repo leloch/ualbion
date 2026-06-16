@@ -165,6 +165,12 @@ public class ConversationManager : GameServiceComponent<IConversationManager>, I
 
     async AlbionTask StartPartyDialogue(StartPartyDialogueEvent e)
     {
+        // #67: talking to a party member is only allowed from the world scenes - not the inventory,
+        // main menu, combat or 3D map view (where the status-bar portraits are still clickable).
+        var sceneId = TryResolve<UAlbion.Game.State.ISceneManager>()?.ActiveSceneId;
+        if (sceneId is not (UAlbion.Game.Scenes.SceneId.World2D or UAlbion.Game.Scenes.SceneId.World3D))
+            return;
+
         var sheet = Assets.LoadSheet(e.MemberId.ToSheet());
         if (sheet == null)
         {
