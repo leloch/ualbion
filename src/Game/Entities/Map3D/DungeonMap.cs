@@ -155,7 +155,8 @@ public class DungeonMap : GameComponent, IMap
             AmbientLightLevel = _labyrinthData.Lighting,
             FogColor = _labyrinthData.FogColor,
             ObjectYScaling = _labyrinthData.ObjectYScaling,
-            Pipeline = DungeonTilemapPipeline.Normal
+            Pipeline = DungeonTilemapPipeline.Normal,
+            SmoothTextures = ReadVar(V.Game.Graphics.SmoothDungeonTextures) // #34: opt-in, default off = vanilla
         };
 
         // These belong to the scene so we don't render when in menus etc

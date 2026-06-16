@@ -26,7 +26,8 @@ public class EtmManager : ServiceComponent<IEtmManager>, IEtmManager, IRenderabl
             request.TileCount,
             properties,
             request.DayPalette,
-            request.NightPalette)
+            request.NightPalette,
+            request.SmoothTextures)
         {
             RendererId = request.Pipeline
         };

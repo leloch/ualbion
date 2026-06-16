@@ -22,12 +22,14 @@ public sealed class ExtrudedTilemap : Component, IExtrudedTilemap
     readonly CompositedTexture _dayWalls;
     readonly CompositedTexture _nightFloors;
     readonly CompositedTexture _nightWalls;
+    readonly bool _smoothTextures;
     internal int Version { get; private set; }
 
-    public ExtrudedTilemap(EtmManager manager, IAssetId id, string name, int tileCount, DungeonTileMapProperties properties, IPalette dayPalette, IPalette nightPalette)
+    public ExtrudedTilemap(EtmManager manager, IAssetId id, string name, int tileCount, DungeonTileMapProperties properties, IPalette dayPalette, IPalette nightPalette, bool smoothTextures = false)
     {
         ArgumentNullException.ThrowIfNull(dayPalette);
         _manager = manager ?? throw new ArgumentNullException(nameof(manager));
+        _smoothTextures = smoothTextures;
 
         _tiles = new MultiBuffer<DungeonTile>(tileCount, BufferUsage.VertexBuffer) { Name = $"B_Inst{name}"};
         _properties = new SingleBuffer<DungeonTileMapProperties>(properties, BufferUsage.UniformBuffer) { Name = $"B_TileProps:{name}" };
@@ -77,7 +79,8 @@ public sealed class ExtrudedTilemap : Component, IExtrudedTilemap
             DayWalls = textureSource.GetArrayTexture(_dayWalls),
             NightFloors = textureSource.GetArrayTexture(_nightFloors ?? _dayFloors),
             NightWalls = textureSource.GetArrayTexture(_nightWalls ?? _dayWalls),
-            TextureSampler = samplerSource.GetSampler(SpriteSampler.Point)
+            // #34: opt-in trilinear filtering; default Point keeps the vanilla pixelated look.
+            TextureSampler = samplerSource.GetSampler(_smoothTextures ? SpriteSampler.TriLinear : SpriteSampler.Point)
         };
         AttachChild(ResourceSet);
     }

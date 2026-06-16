@@ -20,4 +20,5 @@ public class TilemapRequest
     public uint AmbientLightLevel { get; set; }
     public uint FogColor { get; set; }
     public float ObjectYScaling { get; set; } = 1.0f;
+    public bool SmoothTextures { get; set; } // #34: opt-in trilinear filtering (default false = vanilla point sampling)
 }
