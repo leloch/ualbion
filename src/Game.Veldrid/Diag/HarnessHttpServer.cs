@@ -224,6 +224,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /ticker":          WriteJson(ctx, BuildTickerQuery(ctx)); break;
             case "GET /conversation":    WriteJson(ctx, BuildConversationDump()); break;
             case "GET /clock":           WriteJson(ctx, BuildClockDump()); break;
+            case "GET /zones":           WriteJson(ctx, BuildZonesDump(ctx)); break;
             case "POST /input":          HandleInput(ctx); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
@@ -1100,6 +1101,46 @@ public sealed class HarnessHttpServer : Component, IDisposable
             found++;
         }
         sb.Append($"],\"count\":{found}}}");
+        return sb.ToString();
+    }
+
+    // GET /zones[?trigger=Normal&near=1] — the current 3D map's event zones (x,y,trigger,first-event
+    // type). Locates building-entry / teleport zones to test why stepping on a door does nothing.
+    // near=1 limits to zones within 6 tiles of the party.
+    string BuildZonesDump(HttpListenerContext ctx)
+    {
+        var lm = GetLogicalMap3D();
+        if (lm == null) return "{\"is3d\":false}";
+        string triggerFilter = ctx.Request.QueryString["trigger"];
+        bool near = ctx.Request.QueryString["near"] == "1";
+        int pcx = -100, pcy = -100;
+        if (near)
+        {
+            var cam = TryResolve<UAlbion.Game.IMapManager>()?.Current;
+            var p = TryResolve<IParty>()?.Leader?.GetPosition();
+            if (p != null) { pcx = (int)MathF.Round(p.Value.X); pcy = (int)MathF.Round(p.Value.Z); }
+        }
+
+        var seen = new HashSet<int>();
+        var sb = new StringBuilder();
+        sb.Append("{\"is3d\":true,\"party\":[").Append(pcx).Append(',').Append(pcy).Append("],\"zones\":[");
+        bool first = true;
+        for (int y = 0; y < lm.Height; y++)
+        for (int x = 0; x < lm.Width; x++)
+        {
+            if (near && (System.Math.Abs(x - pcx) > 6 || System.Math.Abs(y - pcy) > 6)) continue;
+            var zone = lm.GetZone(x, y);
+            if (zone?.Node == null) continue;
+            int key = y * 1000 + x;
+            if (!seen.Add(key)) continue;
+            string trig = zone.Trigger.ToString();
+            if (!string.IsNullOrEmpty(triggerFilter) && trig.IndexOf(triggerFilter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+            string evt = zone.Node.Event?.GetType().Name ?? "?";
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append($"{{\"x\":{x},\"y\":{y},\"trigger\":{JsonString(trig)},\"event\":{JsonString(evt)},\"chain\":{zone.EventIndex}}}");
+        }
+        sb.Append("]}");
         return sb.ToString();
     }
 
