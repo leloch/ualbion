@@ -18,7 +18,7 @@ public class MovementSettings : IMovementSettings
     public int MaxTrailDistance { get; set; }
     public int TileWidth => 16;
     public int TileHeight => 16;
-    public float GetDepth(float y) => DepthUtil.GetAbsDepth(y);
+    public float GetDepth(float y) => DepthUtil.GetSpriteDepth(y); // #51: continuous-Y sprite sort (was Ceiling-based)
     public int GetSpriteFrame(IMovementState state, Func<int, int, SitMode> getSitMode)
     {
         ArgumentNullException.ThrowIfNull(state);
