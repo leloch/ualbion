@@ -58,6 +58,14 @@ public class GameVars
         public FloatVar IdleTicksPerSecond        { get; } = new(Library, "Game.Time.IdleTicksPerSecond", 8.0f);
     }
 
+    public GraphicsVars Graphics { get; } = new();
+    public class GraphicsVars
+    {
+        // Optional 3D rendering enhancements. ALL default to the vanilla look so the base
+        // experience is unchanged; players opt in. (#34 etc.)
+        public BoolVar SmoothDungeonTextures { get; } = new(Library, "Game.Graphics.SmoothDungeonTextures", false); // #34: trilinear vs point
+    }
+
     public UiVars Ui { get; } = new();
     public class UiVars
     {
