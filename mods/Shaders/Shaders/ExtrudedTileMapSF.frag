@@ -70,6 +70,20 @@ void main()
 	float ambient = uAmbient == 0u ? 1.0f : clamp(float(uAmbient) / 100.0f, 0.15f, 1.0f);
 	color = vec4(color.rgb * ambient, color.a);
 
+	// #33 (opt-in, default off): synthetic bump/relief. Treat the texture's luminance as a height
+	// field; its screen-space gradient (dFdx/dFdy) gives a fake surface normal which we light from a
+	// fixed direction. This adds relief to otherwise-flat walls/floors with no normal-map data.
+	// uShade.x is the enable/strength (0 = off). The branch is on a uniform, so the derivatives are
+	// taken in uniform control flow (well-defined).
+	if (uShade.x > 0.0f && color.a > 0.0f)
+	{
+		float lum = dot(color.rgb, vec3(0.299f, 0.587f, 0.114f));
+		vec3 nrm = normalize(vec3(-dFdx(lum) * 30.0f, -dFdy(lum) * 30.0f, 1.0f));
+		vec3 lightDir = normalize(vec3(-0.5f, -0.5f, 0.7f));
+		float diff = clamp(dot(nrm, lightDir) * 0.5f + 0.5f, 0.0f, 1.0f);
+		color = vec4(color.rgb * mix(1.0f, diff * 1.5f, 0.6f * uShade.x), color.a);
+	}
+
 	// #39 (opt-in, default off): distance fog. uFog = (startDist, endDist, enable, _). Distant
 	// geometry fades toward the map's background/fog colour, giving real depth cueing instead of
 	// the flat full-bright look. Skipped for fully-transparent texels so it never tints holes.

@@ -67,6 +67,7 @@ public class GameVars
         public BoolVar HighlightInteractableTiles { get; } = new(Library, "Game.Graphics.HighlightInteractableTiles", false); // #65: brighten 3D tiles with action zones
         public BoolVar Minimap { get; } = new(Library, "Game.Graphics.Minimap", false); // #43: small always-on automap in the corner of 3D levels
         public BoolVar DungeonFog { get; } = new(Library, "Game.Graphics.DungeonFog", false); // #39: opt-in distance fog/lighting in 3D levels
+        public BoolVar BumpMapping { get; } = new(Library, "Game.Graphics.BumpMapping", false); // #33: opt-in synthetic relief on 3D textures
     }
 
     public UiVars Ui { get; } = new();
