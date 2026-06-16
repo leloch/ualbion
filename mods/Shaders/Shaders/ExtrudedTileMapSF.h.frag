@@ -58,6 +58,7 @@ layout(set = 2, binding = 0) uniform Properties {
     uint uAmbient;
     uint uFogColor;
     float uYScale;
+    vec4 uFog;
 };
 layout(set = 2, binding = 1) uniform texture2DArray DayFloors; //!
 layout(set = 2, binding = 2) uniform texture2DArray DayWalls; //!
@@ -69,6 +70,7 @@ layout(set = 2, binding = 5) uniform sampler TextureSampler; //!
 layout(location = 0) in vec2 iTexCoords;
 layout(location = 1) in flat uint iTextures;
 layout(location = 2) in flat uint iFlags;
+layout(location = 3) in float iViewDepth;
 
 // UAlbion.Core.Veldrid.SimpleFramebuffer
 layout(location = 0) out vec4 oColor;

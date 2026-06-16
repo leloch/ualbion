@@ -208,9 +208,14 @@ public sealed class ExtrudedTilemap : Component, IExtrudedTilemap
         get => _properties.Data.AmbientLightLevel;
         set { _properties.Modify(static (uint v, ref DungeonTileMapProperties x) => x.AmbientLightLevel = v, value); }
     }
-    public uint FogColor 
-    { 
+    public uint FogColor
+    {
         get => _properties.Data.FogColor;
         set { _properties.Modify(static (uint v, ref DungeonTileMapProperties x) => x.FogColor = v, value); }
+    }
+    public Vector4 Fog // #39
+    {
+        get => _properties.Data.Fog;
+        set { _properties.Modify(static (Vector4 v, ref DungeonTileMapProperties x) => x.Fog = v, value); }
     }
 }

@@ -70,6 +70,22 @@ void main()
 	float ambient = uAmbient == 0u ? 1.0f : clamp(float(uAmbient) / 100.0f, 0.15f, 1.0f);
 	color = vec4(color.rgb * ambient, color.a);
 
+	// #39 (opt-in, default off): distance fog. uFog = (startDist, endDist, enable, _). Distant
+	// geometry fades toward the map's background/fog colour, giving real depth cueing instead of
+	// the flat full-bright look. Skipped for fully-transparent texels so it never tints holes.
+	if (uFog.z > 0.5f && color.a > 0.0f)
+	{
+		float fog = clamp((iViewDepth - uFog.x) / max(uFog.y - uFog.x, 0.0001f), 0.0f, 1.0f);
+		// Fade distant geometry toward the map's fog/background colour. When the map has no fog colour
+		// (uFogColor == 0) this darkens with distance, i.e. a torch-light falloff - the faithful reading
+		// of "real lighting" for a dungeon crawler. uFog.w scales the maximum strength (0..1).
+		vec3 fogColor = vec3(
+			float(uFogColor & 0xFFu) / 255.0f,
+			float((uFogColor >> 8) & 0xFFu) / 255.0f,
+			float((uFogColor >> 16) & 0xFFu) / 255.0f);
+		color = vec4(mix(color.rgb, fogColor, fog * uFog.w), color.a);
+	}
+
 	float depth = (color.w == 0.0f) ?  1.0f : gl_FragCoord.z;
 
 	if ((iFlags & TF_HIGHLIGHT)  != 0) color = color * 1.2; // Highlight
