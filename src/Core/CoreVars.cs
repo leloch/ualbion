@@ -28,6 +28,9 @@ public class CoreVars
         {
             public FloatVar VisibleProportion { get; } = new(Library, "Core.Visual.Skybox.VisibleProportion", 0.8f);
         }
+
+        // #71: gamma correction applied at the final composite. 1.0 = no change (default, vanilla).
+        public FloatVar Gamma { get; } = new(Library, "Core.Visual.Gamma", 1.0f);
     }
 
     public UserVars User { get; } = new();

@@ -27,6 +27,10 @@ public sealed class FullscreenQuad : Component, IRenderable, IDisposable
     }
     internal FullscreenQuadResourceSet ResourceSet;
 
+    // #71: when true this quad reads Core.Visual.Gamma each frame and applies gamma correction.
+    // Only the final composite quad sets this; all other blits keep gamma 1.0 (no change).
+    public bool ApplyGamma { get; init; }
+
     public FullscreenQuad(string name,
         DrawLayer renderOrder,
         ITextureHolder source,
@@ -39,10 +43,23 @@ public sealed class FullscreenQuad : Component, IRenderable, IDisposable
         OutputFormat = outputFormat;
         _uniform = new SingleBuffer<FullscreenQuadUniformInfo>(new FullscreenQuadUniformInfo
         {
-            uRect = normalisedDestWindowXywh
+            uRect = normalisedDestWindowXywh,
+            uGamma = 1.0f
         }, BufferUsage.UniformBuffer);
 
         AttachChild(_uniform);
+        On<UAlbion.Core.Events.PrepareFrameEvent>(_ =>
+        {
+            if (!ApplyGamma) return;
+            float gamma = ReadVar(V.Core.Gfx.Gamma);
+            if (gamma <= 0) gamma = 1.0f;
+            if (Math.Abs(_uniform.Data.uGamma - gamma) > 1e-4f)
+            {
+                var d = _uniform.Data;
+                d.uGamma = gamma;
+                _uniform.Data = d;
+            }
+        });
     }
 
     protected override void Subscribed()
@@ -108,13 +125,17 @@ sealed partial class FullscreenQuadResourceSet : ResourceSetHolder
 {
     [Sampler("uSampler", ShaderStages.Fragment)] ISamplerHolder _sampler;
     [Texture("uTexture", ShaderStages.Fragment)] ITextureHolder _texture;
-    [UniformBuffer("_Uniform", ShaderStages.Vertex)] IBufferHolder<FullscreenQuadUniformInfo> _uniform;
+    [UniformBuffer("_Uniform", ShaderStages.Vertex | ShaderStages.Fragment)] IBufferHolder<FullscreenQuadUniformInfo> _uniform; // #71: gamma read in fragment
 }
 
 [StructLayout(LayoutKind.Sequential)]
 struct FullscreenQuadUniformInfo // Length must be multiple of 16
 {
     [Uniform("uRect")] public Vector4 uRect;
+    [Uniform("uGamma")] public float uGamma; // #71: 1.0 = no correction
+    [Uniform("_pad0")] public float _pad0;
+    [Uniform("_pad1")] public float _pad1;
+    [Uniform("_pad2")] public float _pad2;
 }
 #pragma warning restore 649
 public sealed class FullscreenQuadRenderer : Component, IRenderer, IDisposable

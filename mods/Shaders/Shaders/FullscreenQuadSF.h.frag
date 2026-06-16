@@ -6,6 +6,13 @@
 
 layout(set = 0, binding = 0) uniform sampler uSampler; //!
 layout(set = 0, binding = 1) uniform texture2D uTexture; //!
+layout(set = 0, binding = 2) uniform _Uniform {
+    vec4 uRect;
+    float uGamma;
+    float _pad0;
+    float _pad1;
+    float _pad2;
+};
 
 // UAlbion.Core.Veldrid.FullscreenQuadIntermediate
 layout(location = 0) in vec2 iNormCoords;

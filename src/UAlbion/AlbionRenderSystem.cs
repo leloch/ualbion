@@ -76,7 +76,8 @@ public sealed class AlbionRenderSystem : Component, IDisposable
                     DrawLayer.Compositing,
                     fbRender.Color,
                     new System.Numerics.Vector4(0, 0, 1, 1),
-                    screenFormat)))
+                    screenFormat)
+                { ApplyGamma = true })) // #71: the final composite applies Core.Visual.Gamma
 
             .System(Sys_Default, sys =>
                 sys

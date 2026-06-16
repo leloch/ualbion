@@ -6,6 +6,10 @@
 
 layout(set = 0, binding = 2) uniform _Uniform {
     vec4 uRect;
+    float uGamma;
+    float _pad0;
+    float _pad1;
+    float _pad2;
 };
 
 // UAlbion.Core.Veldrid.Vertex2DTextured
