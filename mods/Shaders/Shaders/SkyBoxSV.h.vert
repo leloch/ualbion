@@ -8,7 +8,7 @@ layout(set = 2, binding = 2) uniform _Uniform {
     float uYaw;
     float uPitch;
     float uVisibleProportion;
-    uint _pad1;
+    float uYawScale;
 };
 
 // UAlbion.Core.Veldrid.Vertex2DTextured
