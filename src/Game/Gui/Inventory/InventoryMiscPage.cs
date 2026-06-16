@@ -9,11 +9,11 @@ public class InventoryMiscPage : UiElement
     {
         var stack = new VerticalStacker(
             new Spacing(0, 1),
-            new Header(Base.SystemText.Inv3_Conditions, 4),
+            new Header(Base.SystemText.Inv3_Conditions, 4) { Underline = true },
             new Spacing(0, 63),
-            new Header(Base.SystemText.Inv3_Languages, 3),
+            new Header(Base.SystemText.Inv3_Languages, 3) { Underline = true },
             new Spacing(0, 23),
-            new Header(Base.SystemText.Inv3_TemporarySpells, 3),
+            new Header(Base.SystemText.Inv3_TemporarySpells, 3) { Underline = true },
             new Spacing(0, 45),
             new Button(Base.SystemText.Inv3_CombatPositions)
             {

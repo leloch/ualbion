@@ -12,6 +12,11 @@ public class Header : UiElement // Header with midlines on either side
     readonly StringId _id;
     readonly int _padding;
 
+    // #46: the original underlines some section headers (e.g. the inventory Attributes/Skills/
+    // Conditions/Languages headers) instead of flanking them with mid-lines. Set via an object
+    // initializer on the deferred (TextId/StringId) constructors; applied in Subscribed()->Build().
+    public bool Underline { get; init; }
+
     public Header(TextId id, int padding = 0) : this(new StringId(id), padding, Base.Ink.White) { }
     public Header(StringId id, int padding = 0) : this(id, padding, Base.Ink.White) { }
     public Header(StringId id, int padding, InkId color)
@@ -33,6 +38,15 @@ public class Header : UiElement // Header with midlines on either side
     void Build(IText source)
     {
         var text = new MinimumSize(new UiText(source));
+
+        if (Underline)
+        {
+            // Centered text above a full-width line. MidLine is (1,1); the greedy VerticalStacker
+            // stretches it to the width of the text above, giving an underline the width of the title.
+            AttachChild(new VerticalStacker(text, new MidLine(_inkId)));
+            return;
+        }
+
         var elements = new List<IUiElement>();
         if (_padding > 0)
             elements.Add(new Spacing(_padding, 0));

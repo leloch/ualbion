@@ -50,7 +50,7 @@ public class InventoryStatsPage : UiElement // Stats
 
         var stack = new VerticalStacker(
             new Spacing(0, 1),
-            new Header(Base.SystemText.Inv2_Attributes),
+            new Header(Base.SystemText.Inv2_Attributes) { Underline = true },
             new HorizontalStacker(
                 new VerticalStacker(
                     new UiTextBuilder(Base.SystemText.Attrib_STR).Right(),
@@ -89,7 +89,7 @@ public class InventoryStatsPage : UiElement // Stats
                     Progress(Base.SystemText.Attrib_MagicTalent, x => x.Attributes.MagicTalent.Current, x => x.Attributes.MagicTalent.Max)
                 )
             ),
-            new Header(Base.SystemText.Inv2_Skills),
+            new Header(Base.SystemText.Inv2_Skills) { Underline = true },
             new HorizontalStacker(
                 new VerticalStacker(
                     new UiTextBuilder(Base.SystemText.Skill_CLO).Right(),
