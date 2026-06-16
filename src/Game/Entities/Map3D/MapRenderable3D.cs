@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Numerics;
 using UAlbion.Api;
 using UAlbion.Api.Visual;
 using UAlbion.Config;
@@ -46,6 +47,38 @@ public class MapRenderable3D : GameComponent
         {
             _tilemap.AmbientLightLevel = level;
             Info($"[Light] dungeon ambient recomputed: light {light}% → level {level}");
+        }
+    }
+
+    Vector4 _lastFog = new(-1, -1, -1, -1);
+    /// <summary>
+    /// #39 (opt-in, default off): set the distance-fog parameters for the dungeon shader. When
+    /// Game.Graphics.DungeonFog is on, distant geometry fades toward the map's fog/background colour
+    /// across [far*0.35, far*0.9] (camera-relative, so it scales to any map). Off = vanilla full-bright.
+    /// </summary>
+    void RecomputeFog()
+    {
+        if (_tilemap == null)
+            return;
+
+        Vector4 fog;
+        if (!ReadVar(V.Game.Graphics.DungeonFog))
+        {
+            fog = System.Numerics.Vector4.Zero; // z = enable = 0
+        }
+        else
+        {
+            // Distances are in the extruded-tilemap's view-space units, which are normalised to ~1 per
+            // tile (NOT the 512-unit map space, and unrelated to the ~256k camera far plane - both were
+            // empirically ruled out via a depth-visualisation pass). Ramp from ~2.5 to ~8 tiles ahead;
+            // strength capped at 0.8 so the farthest visible geometry keeps some of its own colour.
+            fog = new Vector4(2.5f, 8f, 1f, 0.8f);
+        }
+
+        if (fog != _lastFog)
+        {
+            _tilemap.Fog = fog;
+            _lastFog = fog;
         }
     }
 
@@ -189,6 +222,8 @@ public class MapRenderable3D : GameComponent
 
     void Update()
     {
+        RecomputeFog(); // #39: cheap; only writes the uniform when the fog params actually change
+
         var frameCount =  (Resolve<IGameState>()?.TickCount ?? 0) / ReadVar(V.Game.Time.FastTicksPerMapTileFrame);
 
         if (_frameCount != frameCount)

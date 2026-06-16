@@ -127,6 +127,9 @@ public struct DungeonTileMapProperties : IUniformFormat
     [Uniform("uAmbient")]          	public uint AmbientLightLevel { get; set; }
     [Uniform("uFogColor")]         	public uint FogColor { get; set; }
     [Uniform("uYScale")]            public float ObjectYScaling { get; set; }
+    // #39: distance fog. x = start distance, y = end (full-fog) distance, z = enable (0/1), w = pad.
+    // Lands at std140 offset 96 (16-aligned) so it doesn't disturb the existing field offsets.
+    [Uniform("uFog")]               public Vector4 Fog { get; set; }
 
     public DungeonTileMapProperties(
         Vector3 scale,
@@ -203,5 +206,6 @@ partial struct EtmIntermediate : IVertexFormat
     [Vertex("TexCoords")] public Vector2 TextureCordinates;
     [Vertex("Textures", Flat = true)] public uint Textures;
     [Vertex("Flags", EnumPrefix = "TF", Flat = true)] public DungeonTileFlags Flags;
+    [Vertex("ViewDepth")] public float ViewDepth; // #39: view-space distance for distance fog
 #pragma warning restore 649
 }

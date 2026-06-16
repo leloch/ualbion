@@ -55,6 +55,7 @@ layout(set = 2, binding = 0) uniform Properties {
     uint uAmbient;
     uint uFogColor;
     float uYScale;
+    vec4 uFog;
 };
 
 // UAlbion.Core.Veldrid.Vertex3DTextured
@@ -70,4 +71,5 @@ layout(location = 4) in uint iFlags;
 layout(location = 0) out vec2 oTexCoords;
 layout(location = 1) out flat uint oTextures;
 layout(location = 2) out flat uint oFlags;
+layout(location = 3) out float oViewDepth;
 

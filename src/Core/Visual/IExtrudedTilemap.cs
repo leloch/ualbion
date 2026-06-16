@@ -17,6 +17,7 @@ public interface IExtrudedTilemap : IDisposable
     public uint Width { get; set; }
     public uint AmbientLightLevel { get; set; }
     public uint FogColor { get; set; }
+    public Vector4 Fog { get; set; } // #39: x=start dist, y=end dist, z=enable, w=pad
     public float ObjectYScaling { get; set; }
     int TileCount { get; set; }
     CompositedTexture DayWalls { get; }

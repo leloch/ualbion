@@ -19,6 +19,7 @@ void main()
 	)
 	{
 		gl_Position = vec4(0, 1e12, 0, 1); // Inactive faces/vertices get relegated to waaaay above the origin
+		oViewDepth = 0;
 	}
 	else
 	{
@@ -45,6 +46,8 @@ void main()
 		
 		vec3 instPos = uOrigin.xyz + i * uHorizontalSpacing.xyz + j * uVerticalSpacing.xyz;
 		vec3 worldSpace = mWorld * iPosition + instPos;
-		gl_Position = uProjection * uView * vec4(worldSpace, 1);
+		vec4 viewSpace = uView * vec4(worldSpace, 1);
+		oViewDepth = length(viewSpace.xyz); // #39: radial distance from camera (sign-agnostic)
+		gl_Position = uProjection * viewSpace;
 	}
 }
