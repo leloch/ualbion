@@ -183,7 +183,7 @@ public class Button : UiElement
     public bool DoubleFrame
     {
         get => 0 != (_flags & ButtonFlags.DoubleFrame);
-        set => SetFlag(ButtonFlags.DoubleFrame, value);
+        set { SetFlag(ButtonFlags.DoubleFrame, value); _frame.DoubleFrame = value; } // #27: render a 2px border
     }
 
     public bool Typematic

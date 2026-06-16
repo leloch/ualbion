@@ -25,6 +25,19 @@ public class ButtonFrame : UiElement
     ButtonState _state = ButtonState.Normal;
     ThemeFunction _theme = ButtonTheme.Default;
     int _padding = 2;
+    bool _doubleFrame;
+
+    // #27: the original draws some buttons (e.g. the inventory page 1/2/3 tabs) with a two-pixel
+    // thick border. When set, every border edge/corner is drawn at thickness 2 and the content is
+    // inset by an extra pixel to keep the same internal spacing.
+    public bool DoubleFrame
+    {
+        get => _doubleFrame;
+        set { if (value != _doubleFrame) { _doubleFrame = value; _lastExtents = new Rectangle(); } }
+    }
+
+    int BorderThickness => _doubleFrame ? 2 : 1;
+    int ExtraInset => _doubleFrame ? 1 : 0; // extra content inset for the thicker border
 
     public ThemeFunction Theme
     {
@@ -107,33 +120,34 @@ public class ButtonFrame : UiElement
         {
             var (x, y, w, h) = (extents.X, extents.Y, extents.Width, extents.Height);
             int curInstance = 0;
+            int t = BorderThickness; // 1 normally, 2 for a double-thick frame (#27). t==1 reduces to the original layout.
             var flags = SpriteFlags.TopLeft | SpriteFlags.None.SetOpacity(theme.Alpha);
 
             if (theme.TopLeft.HasValue)
             {
                 // Top
-                instances[curInstance++] = Build(flags, x, y, w - 1, 1, theme.TopLeft.Value);
+                instances[curInstance++] = Build(flags, x, y, w - t, t, theme.TopLeft.Value);
 
                 // Left
-                instances[curInstance++] = Build(flags, x, y + 1, 1, h - 2, theme.TopLeft.Value);
+                instances[curInstance++] = Build(flags, x, y + t, t, h - 2 * t, theme.TopLeft.Value);
             }
 
             if (theme.BottomRight.HasValue)
             {
                 // Bottom
-                instances[curInstance++] = Build(flags, x + 1, y + h - 1, w - 1, 1, theme.BottomRight.Value);
+                instances[curInstance++] = Build(flags, x + t, y + h - t, w - t, t, theme.BottomRight.Value);
 
                 // Right
-                instances[curInstance++] = Build(flags, x + w - 1, y + 1, 1, h - 2, theme.BottomRight.Value);
+                instances[curInstance++] = Build(flags, x + w - t, y + t, t, h - 2 * t, theme.BottomRight.Value);
             }
 
             if (theme.Corners.HasValue)
             {
                 // Bottom Left Corner
-                instances[curInstance++] = Build(flags, x, y + h - 1, 1, 1, theme.Corners.Value);
+                instances[curInstance++] = Build(flags, x, y + h - t, t, t, theme.Corners.Value);
 
                 // Top Right Corner
-                instances[curInstance++] = Build(flags, x + w - 1, y, 1, 1, theme.Corners.Value);
+                instances[curInstance++] = Build(flags, x + w - t, y, t, t, theme.Corners.Value);
             }
 
             if (theme.Background.HasValue)
@@ -141,22 +155,23 @@ public class ButtonFrame : UiElement
                 // Background
                 instances[curInstance] = Build(
                     flags.SetOpacity(theme.Alpha < 1.0f ? theme.Alpha / 2 : theme.Alpha),
-                    x + 1, y + 1, w - 2, h - 2,
+                    x + t, y + t, w - 2 * t, h - 2 * t,
                     theme.Background.Value);
             }
         }
         finally { _sprite.Unlock(lockWasTaken); }
     }
 
-    public override Vector2 GetSize() => GetMaxChildSize() + _padding * 2 * Vector2.One;
+    public override Vector2 GetSize() => GetMaxChildSize() + (_padding + ExtraInset) * 2 * Vector2.One;
 
     protected override int DoLayout<T>(Rectangle extents, int order, T context, LayoutFunc<T> func)
     {
+        int pad = _padding + ExtraInset;
         var innerExtents = new Rectangle(
-            extents.X + _padding,
-            extents.Y + _padding,
-            extents.Width - _padding * 2,
-            extents.Height - _padding * 2);
+            extents.X + pad,
+            extents.Y + pad,
+            extents.Width - pad * 2,
+            extents.Height - pad * 2);
 
         return base.DoLayout(innerExtents, order + 1, context, func);
     }
