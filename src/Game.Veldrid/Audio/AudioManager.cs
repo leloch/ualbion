@@ -338,11 +338,29 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
             // which jerked the positional-audio balance. Freeze the listener otherwise so ambient
             // sources keep their relative position.
             var sceneId = TryResolve<UAlbion.Game.State.ISceneManager>()?.ActiveSceneId;
-            if (sceneId is UAlbion.Game.Scenes.SceneId.World2D or UAlbion.Game.Scenes.SceneId.World3D)
+            if (sceneId is UAlbion.Game.Scenes.SceneId.World3D)
             {
+                // In 3D the camera IS the player's head, so it's the correct listener.
                 var camera = TryResolve<ICameraProvider>()?.Camera;
                 if (camera != null)
                     _device.Listener.Position = camera.Position;
+            }
+            else if (sceneId is UAlbion.Game.Scenes.SceneId.World2D)
+            {
+                // #60: in 2D the camera looks straight down from a fixed height, so using it as the
+                // listener adds that constant height to every source distance - sounds never get
+                // genuinely close and the proximity falloff is wrong. Put the listener on the party in
+                // the same tile*tileSize space the sources use (see Play()), so approaching a source
+                // actually raises its volume, matching the original.
+                var party = TryResolve<UAlbion.Game.State.IParty>();
+                var map = TryResolve<IMapManager>()?.Current;
+                var leader = party?.Leader;
+                if (leader != null && map != null)
+                {
+                    var p = leader.GetPosition();
+                    var ts = map.TileSize;
+                    _device.Listener.Position = new Vector3(p.X * ts.X, p.Y * ts.Y, 0);
+                }
             }
         }
 
