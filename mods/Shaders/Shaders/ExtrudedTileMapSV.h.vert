@@ -56,6 +56,7 @@ layout(set = 2, binding = 0) uniform Properties {
     uint uFogColor;
     float uYScale;
     vec4 uFog;
+    vec4 uShade;
 };
 
 // UAlbion.Core.Veldrid.Vertex3DTextured

@@ -59,6 +59,7 @@ layout(set = 2, binding = 0) uniform Properties {
     uint uFogColor;
     float uYScale;
     vec4 uFog;
+    vec4 uShade;
 };
 layout(set = 2, binding = 1) uniform texture2DArray DayFloors; //!
 layout(set = 2, binding = 2) uniform texture2DArray DayWalls; //!

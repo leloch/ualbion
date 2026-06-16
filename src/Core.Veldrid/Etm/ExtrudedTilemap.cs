@@ -218,4 +218,9 @@ public sealed class ExtrudedTilemap : Component, IExtrudedTilemap
         get => _properties.Data.Fog;
         set { _properties.Modify(static (Vector4 v, ref DungeonTileMapProperties x) => x.Fog = v, value); }
     }
+    public Vector4 Shade // #33
+    {
+        get => _properties.Data.Shade;
+        set { _properties.Modify(static (Vector4 v, ref DungeonTileMapProperties x) => x.Shade = v, value); }
+    }
 }

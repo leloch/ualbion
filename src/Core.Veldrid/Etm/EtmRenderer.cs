@@ -130,6 +130,8 @@ public struct DungeonTileMapProperties : IUniformFormat
     // #39: distance fog. x = start distance, y = end (full-fog) distance, z = enable (0/1), w = pad.
     // Lands at std140 offset 96 (16-aligned) so it doesn't disturb the existing field offsets.
     [Uniform("uFog")]               public Vector4 Fog { get; set; }
+    // #33: synthetic bump/relief. x = strength (0 = off); yzw unused. Offset 112 (16-aligned).
+    [Uniform("uShade")]             public Vector4 Shade { get; set; }
 
     public DungeonTileMapProperties(
         Vector3 scale,

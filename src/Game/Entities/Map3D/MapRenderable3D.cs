@@ -80,7 +80,16 @@ public class MapRenderable3D : GameComponent
             _tilemap.Fog = fog;
             _lastFog = fog;
         }
+
+        // #33: synthetic bump/relief strength (0 = off). Opt-in, default vanilla.
+        float bump = ReadVar(V.Game.Graphics.BumpMapping) ? 1.0f : 0.0f;
+        if (System.Math.Abs(_lastBump - bump) > 1e-4f)
+        {
+            _tilemap.Shade = new Vector4(bump, 0, 0, 0);
+            _lastBump = bump;
+        }
     }
+    float _lastBump = -1f;
 
     public MapRenderable3D(LogicalMap3D logicalMap, LabyrinthData labyrinthData, TilemapRequest properties)
     {
