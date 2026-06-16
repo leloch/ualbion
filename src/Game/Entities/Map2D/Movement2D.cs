@@ -114,6 +114,15 @@ public static class Movement2D
 
         if (dx != 0 && dy != 0) // First try and reduce diagonal movement to an axis-aligned movement
         {
+            // #57/#58: prefer a DIRECTLY-walkable cardinal component over a probe-chosen slide. The
+            // old code recursed into the single-probe slider for dx first, so a diagonal held into a
+            // wall/staircase slid along a perpendicular the player wasn't pressing - and that probe
+            // could flip side tick-to-tick, producing the back-and-forth shuffle. Taking the open
+            // axis the player IS pressing glides cleanly along the obstruction instead.
+            if (!detector.IsOccupied(curX, curY, curX + dx, curY)) return (dx, 0);
+            if (!detector.IsOccupied(curX, curY, curX, curY + dy)) return (0, dy);
+
+            // Both cardinal components blocked too — fall back to the perpendicular slide probes.
             var result = CheckForCollisions(detector, curX, curY, dx, 0);
             if (result.x != 0 || result.y != 0)
                 return result;
