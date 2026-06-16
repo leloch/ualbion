@@ -130,13 +130,22 @@ public sealed class ExtrudedTilemap : Component, IExtrudedTilemap
         var tiles = _tiles.Borrow();
         var wall = (byte)_dayWalls.GetSubImageAtTime(wallSubImage, frame, (flags & EtmTileFlags.WallBackAndForth) != 0);
         var subImage = _dayWalls.Regions[wall];
+
+        // #52: propagate the per-tile Translucent flag to DungeonTileFlags.Transparent. Without this
+        // (it was hardcoded to 0) translucent/colour-keyed tiles (windows, grates) stayed in the
+        // OPAQUE draw window and rendered as solid walls; the bit routes them into the alpha window
+        // (EtmWindow) so their colour-keyed/transparent pixels show what's behind.
+        DungeonTileFlags dungeonFlags = 0;
+        if ((flags & EtmTileFlags.Translucent) != 0)
+            dungeonFlags |= DungeonTileFlags.Transparent;
+
         tiles[index] =
             new DungeonTile
             {
                 Floor = (byte)_dayFloors.GetSubImageAtTime(floorSubImage, frame, (flags & EtmTileFlags.FloorBackAndForth) != 0),
                 Ceiling = (byte)_dayFloors.GetSubImageAtTime(ceilingSubImage, frame, (flags & EtmTileFlags.CeilingBackAndForth) != 0),
                 Wall = wall,
-                Flags = 0, // DungeonTileFlags.UsePalette;
+                Flags = dungeonFlags,
                 WallSize = subImage.TexSize
             };
         Version++;

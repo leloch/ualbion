@@ -146,10 +146,14 @@ public class MapObject : GameComponent
 
     static Vector4 GetRelativeObjectPosition(LabyrinthData labyrinth, SubObject subObject, float objectYScaling)
     {
+        // #53: divide by the map's ACTUAL tile size (EffectiveWallWidth = 1<<WallWidth, i.e. 128..
+        // 1024) not a hardcoded 512. Maps whose wall width != 512 (WallWidth != 9) had every object
+        // offset by a fraction of a tile because the sub-object coords are in wall-width units.
+        float wallWidth = labyrinth.EffectiveWallWidth;
         var offset = new Vector4(
-            subObject.X / 512.0f /*labyrinth.EffectiveWallWidth */,
+            subObject.X / wallWidth,
             subObject.Y * objectYScaling / labyrinth.WallHeight,
-            subObject.Z / 512.0f /*labyrinth.EffectiveWallWidth*/,
+            subObject.Z / wallWidth,
             0);
 
         return offset - new Vector4(0.5f, 0, 0.5f, 0);
