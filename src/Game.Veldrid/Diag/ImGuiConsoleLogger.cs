@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Text;
 using ImGuiNET;
@@ -17,12 +19,27 @@ public class ImGuiConsoleLogger : Component, IImGuiWindow
     bool _scrollToBottom = true;
     bool _focus;
 
+    // #44/#45: command history (Up/Down) and Tab autocomplete of event command names.
+    readonly List<string> _history = [];
+    int _historyPos = -1; // -1 = editing a fresh line; otherwise an index into _history
+    string[] _commandNames;
+    readonly ImGuiInputTextCallback _callback;
+
     public string Name { get; }
     public ImGuiConsoleLogger(string name)
     {
         Name = name;
         On<FocusConsoleEvent>(_ => _focus = true);
+        unsafe { _callback = TextEditCallback; } // cached so the delegate isn't re-marshalled every frame
     }
+
+    string[] CommandNames =>
+        _commandNames ??= EventSerializer.Instance
+            .GetEventMetadata()
+            .Select(m => m.Name)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     public ImGuiWindowDrawResult Draw()
     {
@@ -95,9 +112,9 @@ public class ImGuiConsoleLogger : Component, IImGuiWindow
         // Command-line
         bool reclaimFocus = false;
         ImGuiInputTextFlags inputTextFlags =
-            ImGuiInputTextFlags.EnterReturnsTrue;
-        //  | ImGuiInputTextFlags.CallbackCompletion
-        //  | ImGuiInputTextFlags.CallbackHistory;
+            ImGuiInputTextFlags.EnterReturnsTrue
+          | ImGuiInputTextFlags.CallbackCompletion // #45: Tab to autocomplete command names
+          | ImGuiInputTextFlags.CallbackHistory;    // #44: Up/Down to browse submitted commands
 
         if (_focus)
         {
@@ -105,13 +122,20 @@ public class ImGuiConsoleLogger : Component, IImGuiWindow
             _focus = false;
         }
 
-        if (ImGui.InputText("##input", _inputBuffer, (uint)_inputBuffer.Length, inputTextFlags))
+        if (ImGui.InputText("##input", _inputBuffer, (uint)_inputBuffer.Length, inputTextFlags, _callback))
         {
             var logExchange = Resolve<ILogExchange>();
             var command = Encoding.ASCII.GetString(_inputBuffer);
             command = command[..command.IndexOf((char)0, StringComparison.Ordinal)];
             for (int i = 0; i < command.Length; i++)
                 _inputBuffer[i] = 0;
+
+            // #44: record non-blank commands in history (most-recent last, de-duplicating a repeat
+            // of the immediately-previous entry) and reset the browse cursor.
+            var trimmed = command.Trim();
+            if (trimmed.Length > 0 && (_history.Count == 0 || _history[^1] != trimmed))
+                _history.Add(trimmed);
+            _historyPos = -1;
 
             IEvent parsedEvent = Event.Parse(command, out var error);
             if (parsedEvent != null)
@@ -134,110 +158,109 @@ public class ImGuiConsoleLogger : Component, IImGuiWindow
         return open ? ImGuiWindowDrawResult.None : ImGuiWindowDrawResult.Closed;
     }
 
-    void PrintMessage(ILogExchange logExchange, string message, LogLevel level) 
+    void PrintMessage(ILogExchange logExchange, string message, LogLevel level)
         => logExchange.Receive(new LogEvent(level, message), this);
 
-    /*
-            unsafe int TextEditCallbackStub(ImGuiInputTextCallbackData* data)
+    // #44/#45: InputText callback for Tab-completion of command names and Up/Down history browsing.
+    // Ported from the Dear ImGui demo console to ImGui.NET (the original C++ stub was left commented).
+    unsafe int TextEditCallback(ImGuiInputTextCallbackData* dataPtr)
+    {
+        ImGuiInputTextCallbackDataPtr data = dataPtr;
+        switch (data.EventFlag)
+        {
+            case ImGuiInputTextFlags.CallbackCompletion:
             {
-                switch (data->EventFlag)
+                var buf = (byte*)data.Buf;
+                int wordEnd = data.CursorPos;
+                int wordStart = wordEnd;
+                while (wordStart > 0)
                 {
-                    case ImGuiInputTextFlags.CallbackCompletion:
-                    {
-                        // Example of TEXT COMPLETION
-
-                        // Locate beginning of current word
-                        byte* wordEnd = data->Buf + data->CursorPos;
-                        byte* wordStart = wordEnd;
-                        while (wordStart > data->Buf)
-                        {
-                            byte c = wordStart[-1];
-                            if (c == ' ' || c == '\t' || c == ',' || c == ';')
-                                break;
-                            wordStart--;
-                        }
-
-                        // Build a list of candidates
-                        List<string> candidates;
-                        for (int i = 0; i < Commands.Size; i++)
-                            if (Strnicmp(Commands[i], wordStart, (int)(wordEnd - wordStart)) == 0)
-                                candidates.pushBack(Commands[i]);
-
-                        if (candidates.Size == 0)
-                        {
-                            // No match
-                            AddLog("No match for \"%.*s\"!\n", (int)(wordEnd - wordStart), wordStart);
-                        }
-                        else if (candidates.Size == 1)
-                        {
-                            // Single match. Delete the beginning of the word and replace it entirely so we've got nice casing.
-                            data->DeleteChars((int)(wordStart - data->Buf), (int)(wordEnd - wordStart));
-                            data->InsertChars(data->CursorPos, candidates[0]);
-                            data->InsertChars(data->CursorPos, " ");
-                        }
-                        else
-                        {
-                            // Multiple matches. Complete as much as we can..
-                            // So inputing "C"+Tab will complete to "CL" then display "CLEAR" and "CLASSIFY" as matches.
-                            int matchLen = (int)(wordEnd - wordStart);
-                            for (; ; )
-                            {
-                                int c = 0;
-                                bool allCandidatesMatches = true;
-                                for (int i = 0; i < candidates.Size && allCandidatesMatches; i++)
-                                    if (i == 0)
-                                        c = toupper(candidates[i][matchLen]);
-                                    else if (c == 0 || c != toupper(candidates[i][matchLen]))
-                                        allCandidatesMatches = false;
-                                if (!allCandidatesMatches)
-                                    break;
-                                matchLen++;
-                            }
-
-                            if (matchLen > 0)
-                            {
-                                data->DeleteChars((int)(wordStart - data->Buf), (int)(wordEnd - wordStart));
-                                data->InsertChars(data->CursorPos, candidates[0], candidates[0] + matchLen);
-                            }
-
-                            // List matches
-                            AddLog("Possible matches:\n");
-                            for (int i = 0; i < candidates.Size; i++)
-                                AddLog("- %s\n", candidates[i]);
-                        }
-
+                    byte c = buf[wordStart - 1];
+                    if (c == (byte)' ' || c == (byte)'\t' || c == (byte)',' || c == (byte)';')
                         break;
-                    }
-                case ImGuiInputTextFlags.CallbackHistory:
-                    {
-                        // Example of HISTORY
-                        const int prevHistoryPos = HistoryPos;
-                        if (data->EventKey == ImGuiKey.UpArrow)
-                        {
-                            if (HistoryPos == -1)
-                                HistoryPos = History.Size - 1;
-                            else if (HistoryPos > 0)
-                                HistoryPos--;
-                        }
-                        else if (data->EventKey == ImGuiKey.DownArrow)
-                        {
-                            if (HistoryPos != -1)
-                                if (++HistoryPos >= History.Size)
-                                    HistoryPos = -1;
-                        }
+                    wordStart--;
+                }
 
-                        // A better implementation would preserve the data on the current input line along with cursor position.
-                        if (prevHistoryPos != HistoryPos)
+                string prefix = wordEnd > wordStart
+                    ? Encoding.ASCII.GetString(buf + wordStart, wordEnd - wordStart)
+                    : string.Empty;
+
+                var candidates = CommandNames
+                    .Where(c => c.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                var logExchange = TryResolve<ILogExchange>();
+                if (candidates.Count == 0)
+                {
+                    if (logExchange != null && prefix.Length > 0)
+                        PrintMessage(logExchange, $"No command matches \"{prefix}\"", LogLevel.Warning);
+                }
+                else if (candidates.Count == 1)
+                {
+                    data.DeleteChars(wordStart, wordEnd - wordStart);
+                    data.InsertChars(data.CursorPos, candidates[0] + " ");
+                }
+                else
+                {
+                    // Complete the longest common (case-insensitive) prefix shared by all candidates.
+                    int matchLen = prefix.Length;
+                    bool grow = true;
+                    while (grow)
+                    {
+                        char? c = null;
+                        for (int i = 0; i < candidates.Count && grow; i++)
                         {
-                            const char* historyStr = (HistoryPos >= 0) ? History[HistoryPos] : "";
-                            data->DeleteChars(0, data->BufTextLen);
-                            data->InsertChars(0, historyStr);
+                            if (matchLen >= candidates[i].Length) { grow = false; break; }
+                            char cc = char.ToUpperInvariant(candidates[i][matchLen]);
+                            if (c == null) c = cc;
+                            else if (c != cc) grow = false;
                         }
+                        if (grow) matchLen++;
+                    }
+
+                    if (matchLen > prefix.Length)
+                    {
+                        data.DeleteChars(wordStart, wordEnd - wordStart);
+                        data.InsertChars(data.CursorPos, candidates[0].Substring(0, matchLen));
+                    }
+
+                    if (logExchange != null)
+                    {
+                        PrintMessage(logExchange, "Matches:", LogLevel.Info);
+                        foreach (var c in candidates)
+                            PrintMessage(logExchange, "  " + c, LogLevel.Info);
                     }
                 }
-                return 0;
+                break;
             }
-            */
+
+            case ImGuiInputTextFlags.CallbackHistory:
+            {
+                int prevPos = _historyPos;
+                if (data.EventKey == ImGuiKey.UpArrow)
+                {
+                    if (_historyPos == -1) _historyPos = _history.Count - 1;
+                    else if (_historyPos > 0) _historyPos--;
+                }
+                else if (data.EventKey == ImGuiKey.DownArrow)
+                {
+                    if (_historyPos != -1 && ++_historyPos >= _history.Count)
+                        _historyPos = -1;
+                }
+
+                if (prevPos != _historyPos)
+                {
+                    string historyStr = _historyPos >= 0 && _historyPos < _history.Count ? _history[_historyPos] : string.Empty;
+                    data.DeleteChars(0, data.BufTextLen);
+                    if (historyStr.Length > 0)
+                        data.InsertChars(0, historyStr);
+                }
+                break;
+            }
+        }
+
+        return 0;
+    }
 
     static Vector4 ConsoleColorToRgba(ConsoleColor color) => color switch
     {
