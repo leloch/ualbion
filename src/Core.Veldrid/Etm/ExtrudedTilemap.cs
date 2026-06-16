@@ -141,6 +141,8 @@ public sealed class ExtrudedTilemap : Component, IExtrudedTilemap
         DungeonTileFlags dungeonFlags = 0;
         if ((flags & EtmTileFlags.Translucent) != 0)
             dungeonFlags |= DungeonTileFlags.Transparent;
+        if ((flags & EtmTileFlags.Highlight) != 0) // #65
+            dungeonFlags |= DungeonTileFlags.Highlight;
 
         tiles[index] =
             new DungeonTile
