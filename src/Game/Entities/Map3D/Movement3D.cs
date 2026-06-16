@@ -41,6 +41,7 @@ public class Movement3D : Component
 
     readonly ICamera _camera;
     bool _noclip;
+    bool _overloadNotified;
     float _pendingSnapDegrees; // remaining degrees of an in-progress corner snap-turn (signed)
     int _lastTileX = int.MinValue;
     int _lastTileY = int.MinValue;
@@ -80,6 +81,16 @@ public class Movement3D : Component
         float forward = MathF.Abs(e.Velocity.Y) > Eps ? e.Velocity.Y : 0f;
         if (strafe == 0f && forward == 0f)
             return;
+
+        // #47: an over-encumbered party can't move (turning/looking above is still allowed). Drop
+        // items via the inventory to recover.
+        var overloaded = State.Player.PartyEncumbrance.FirstOverloaded(TryResolve<IParty>());
+        if (overloaded != null)
+        {
+            if (!_overloadNotified) { ShowOverloadWarning(overloaded); _overloadNotified = true; }
+            return;
+        }
+        _overloadNotified = false;
 
         // Per-axis speed (forward fastest, back slower, strafe slowest) applied BEFORE the yaw
         // rotation. Camera looks along -Z at yaw 0, so forward → -Z and strafe-right → +X.
@@ -198,5 +209,13 @@ public class Movement3D : Component
             _ => 0f
         };
         _pendingSnapDegrees = 0f;
+    }
+
+    void ShowOverloadWarning(IPlayer member)
+    {
+        Raise(new SetContextEvent(UAlbion.Game.Text.ContextType.Subject, member.Id));
+        var tf = TryResolve<UAlbion.Game.Text.ITextFormatter>();
+        if (tf != null)
+            Raise(new DescriptionTextEvent(tf.Format(UAlbion.Base.SystemText.Misc_XIsCarryingTooMuch)));
     }
 }

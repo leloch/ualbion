@@ -20,6 +20,7 @@ public class PartyCaterpillar : ServiceComponent<IMovement>, IMovement
     readonly (int, bool)[] _playerOffsets = new (int, bool)[SavedGame.MaxPartySize]; // int = trail offset, bool = isMoving
     readonly LogicalMap2D _logicalMap;
     Vector2 _direction;
+    bool _overloadNotified;
     int _trailOffset;
     int TrailLength => SavedGame.MaxPartySize * _settings.MaxTrailDistance; // Number of past positions to store
 
@@ -114,6 +115,21 @@ public class PartyCaterpillar : ServiceComponent<IMovement>, IMovement
 
     void Update()
     {
+        // #47: an over-encumbered party can't move (the original halts movement + warns). Allow
+        // turning/standing; only block an actual step. Drop items via the inventory to recover.
+        if (_direction != Vector2.Zero)
+        {
+            var overloaded = State.Player.PartyEncumbrance.FirstOverloaded(TryResolve<IParty>());
+            if (overloaded != null)
+            {
+                if (!_overloadNotified) { ShowOverloadWarning(overloaded); _overloadNotified = true; }
+                _direction = Vector2.Zero;
+                MoveFollowers();
+                return;
+            }
+        }
+        _overloadNotified = false;
+
         var detector = Resolve<ICollisionManager>();
         if (Movement2D.Update(_state,
                 _settings,
@@ -132,6 +148,14 @@ public class PartyCaterpillar : ServiceComponent<IMovement>, IMovement
     }
 
     void OnEnteredTile(int x, int y) => Raise(new PlayerEnteredTileEvent(x, y));
+
+    void ShowOverloadWarning(IPlayer member)
+    {
+        Raise(new SetContextEvent(UAlbion.Game.Text.ContextType.Subject, member.Id));
+        var tf = TryResolve<UAlbion.Game.Text.ITextFormatter>();
+        if (tf != null)
+            Raise(new DescriptionTextEvent(tf.Format(UAlbion.Base.SystemText.Misc_XIsCarryingTooMuch)));
+    }
 
     SitMode GetSitMode(int x, int y)
     {

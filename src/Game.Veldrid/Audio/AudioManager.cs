@@ -333,9 +333,17 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
                 _music?.CycleBuffers();
             }
 
-            var camera = TryResolve<ICameraProvider>()?.Camera;
-            if (camera != null)
-                _device.Listener.Position = camera.Position;
+            // #59: only track the listener to the camera while a WORLD scene is active. Opening the
+            // inventory/menu/combat flips the active scene (and ICameraProvider.Camera with it),
+            // which jerked the positional-audio balance. Freeze the listener otherwise so ambient
+            // sources keep their relative position.
+            var sceneId = TryResolve<UAlbion.Game.State.ISceneManager>()?.ActiveSceneId;
+            if (sceneId is UAlbion.Game.Scenes.SceneId.World2D or UAlbion.Game.Scenes.SceneId.World3D)
+            {
+                var camera = TryResolve<ICameraProvider>()?.Camera;
+                if (camera != null)
+                    _device.Listener.Position = camera.Position;
+            }
         }
 
         StopAll();

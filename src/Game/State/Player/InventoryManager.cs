@@ -478,9 +478,16 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
 
             case InventoryAction.PutDown:
             {
+                // #61: the off-hand (LeftHand) holds at most ONE ammunition item (the original caps
+                // it for ranged weapons); the rest stays in the backpack. Non-ammo transfers in full.
+                var heldData = _hand.Item.Type == AssetType.Item ? _getItem(_hand.Item) : null;
+                ushort? putQuantity = (slotId.Slot == ItemSlotId.LeftHand && heldData?.TypeId == ItemType.Ammo)
+                    ? (ushort)1
+                    : null;
+
                 if (!redirected)
                 {
-                    slot.TransferFrom(_hand, null, _getItem);
+                    slot.TransferFrom(_hand, putQuantity, _getItem);
                 }
                 else
                 {
@@ -493,7 +500,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
                         ReadVar(V.Game.Ui.Transitions.ItemMovementTransitionTimeSeconds));
 
                     ItemSlot temp = new(new InventorySlotId(InventoryType.Temporary, 0, 0));
-                    temp.TransferFrom(_hand, null, _getItem);
+                    temp.TransferFrom(_hand, putQuantity, _getItem);
                     SetCursor();
                     await RaiseA(transitionEvent);
 
