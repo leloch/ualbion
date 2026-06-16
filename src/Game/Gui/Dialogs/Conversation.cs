@@ -312,7 +312,11 @@ public class Conversation : GameComponent
                 {
                     var text = _tf.Ink(Base.Ink.Yellow).Format(mapTextEvent.ToId(_npc.EventSetId.ToEventText()));
                     DiscoverTopics(text.GetBlocks().SelectMany(x => x.Words));
-                    _textWindow.Show(text, null);
+                    // Show ONLY the NPC's spoken line (BlockId.MainText) in the text window. A null
+                    // filter rendered EVERY block — including the numbered response blocks (>0) that
+                    // belong in the options window — so the player's choices were duplicated into the
+                    // NPC popup (the reported "answers appear in the dialogue text" repetition).
+                    _textWindow.Show(text, BlockId.MainText);
                     // Note: Not waiting for the user to click, as this should be the same text as the last event, but with options
 
                     var options = text.GetBlocks()
@@ -337,7 +341,9 @@ public class Conversation : GameComponent
 
                     DiscoverTopics(text.GetBlocks().SelectMany(x => x.Words));
 
-                    _textWindow.Show(text, null);
+                    // MainText only — keep the numbered response blocks out of the NPC text popup
+                    // (they're shown as selectable options below).
+                    _textWindow.Show(text, BlockId.MainText);
                     await _textWindow.Closed();
 
                     var options = text.GetBlocks()
