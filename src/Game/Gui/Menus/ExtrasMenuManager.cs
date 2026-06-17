@@ -11,7 +11,7 @@ namespace UAlbion.Game.Gui.Menus;
 /// </summary>
 public class ExtrasMenuManager : Component
 {
-    ExtrasMenu _menu;
+    ModernExtrasMenu _menu;
 
     public ExtrasMenuManager() => On<ShowExtrasMenuEvent>(_ => Toggle());
 
@@ -24,7 +24,7 @@ public class ExtrasMenuManager : Component
             return;
         }
 
-        _menu = new ExtrasMenu();
+        _menu = new ModernExtrasMenu();
         _menu.Closed += (_, _) => _menu = null;
         Exchange.Attach(_menu);
     }
