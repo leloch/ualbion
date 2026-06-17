@@ -62,6 +62,7 @@ public class ExtrasMenu : ModalDialog
             new SimpleText("Interface").Center(),
             ToggleRow("3D minimap", V.Game.Graphics.Minimap),
             ToggleRow("Context-menu reach limit", V.Game.Ui.ContextMenuReachLimit),
+            ToggleRow("Classic main menu", V.Game.Ui.ClassicMainMenu),
             new Spacing(0, 3),
 
             new SimpleText("Gamma").Center(),

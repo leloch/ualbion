@@ -57,11 +57,22 @@ public class MainMenu : Dialog
             new Button(Base.SystemText.MainMenu_Credits).OnClick(() => _ = PlayVideo(Base.Video.Endgame4)),
             new Spacing(0,3),
             new Button(Base.SystemText.MainMenu_QuitGame).OnClick(() => Raise(new QuitEvent())),
-            new Spacing(0,2)
+            new Spacing(0,2),
+            new UAlbion.Game.Gui.Text.SimpleText($"UAlbion remake  v{Version}").Center(),
+            new Spacing(0,1)
         ]);
 
         var stack = new VerticalStacker(elements);
         AttachChild(new DialogFrame(stack));
+    }
+
+    static string Version
+    {
+        get
+        {
+            var v = typeof(MainMenu).Assembly.GetName().Version;
+            return v == null ? "dev" : $"{v.Major}.{v.Minor}.{v.Build}";
+        }
     }
 
     // Replay a menu cinematic via the FLIC player (the buttons were previously dead). The
