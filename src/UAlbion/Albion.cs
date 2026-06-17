@@ -225,6 +225,7 @@ static class Albion
 
         gameServices.Add(new UAlbion.Game.Veldrid.SaveThumbnailManager()); // #74: capture save-slot thumbnails
         gameServices.Add(new UAlbion.Core.Veldrid.TextRasterizer()); // crisp native-res text for the modern UI
+        gameServices.Add(new UAlbion.Core.Veldrid.RgbaImageLoader()); // PNG -> texture for save thumbnails
 
         global.Attach(gameServices);
 
