@@ -201,6 +201,7 @@ static class Albion
             new TextManager(),
             new LayoutManager(),
             new InventoryScreenManager(),
+            new UAlbion.Game.Gui.Menus.ExtrasMenuManager(),
             new CombatManager(),
             //new DiagWindow()
             //    .Add(new SpriteInstanceDataDebugBehaviour())

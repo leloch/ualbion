@@ -52,6 +52,7 @@ public class MainMenu : Dialog
         elements.AddRange([
             new Spacing(0,4),
             new Button(Base.SystemText.MainMenu_Options).OnClick(Options),
+            new Button("Extras").OnClick(Extras), // remake-only: opt-in enhancements
             new Button(Base.SystemText.MainMenu_ViewIntro).OnClick(() => _ = PlayVideo(Base.Video.ApproachToAlbion)),
             new Button(Base.SystemText.MainMenu_Credits).OnClick(() => _ = PlayVideo(Base.Video.Endgame4)),
             new Spacing(0,3),
@@ -145,6 +146,15 @@ public class MainMenu : Dialog
         var exchange = Exchange;
         optionsMenu.Closed += (_, _) => Attach(exchange);
         Exchange.Attach(optionsMenu);
+        Detach();
+    }
+
+    void Extras()
+    {
+        var extrasMenu = new ExtrasMenu();
+        var exchange = Exchange;
+        extrasMenu.Closed += (_, _) => Attach(exchange);
+        Exchange.Attach(extrasMenu);
         Detach();
     }
 }

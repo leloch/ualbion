@@ -63,6 +63,7 @@
     "Left": "+party_move -1  0",
     "Right": "+party_move  1  0",
 
+    "F8": "extras",
     "Tab": "inv:open Tom",
     /*"F1": "inv:open_pos 0",
     "F2": "inv:open_pos 1",
@@ -98,6 +99,7 @@
     // "Ctrl+X": "!loadprevmap",
 
     "M": "show_automap",
+    "F8": "extras",
     "T": "wait",
     "Ctrl+Shift+M": "set_mouse_mode MouseLook",
     "Ctrl+Shift+N": "set_mouse_mode Normal3D",
