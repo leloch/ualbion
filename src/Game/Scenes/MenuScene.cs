@@ -7,7 +7,9 @@ using UAlbion.Core.Visual;
 using UAlbion.Formats.Assets;
 using UAlbion.Formats.Config;
 using UAlbion.Formats.Ids;
+using UAlbion.Formats.ScriptEvents;
 using UAlbion.Game.Events;
+using UAlbion.Game.State;
 
 namespace UAlbion.Game.Scenes;
 
@@ -47,6 +49,12 @@ public class MenuScene : Container, IScene
 
         Raise(new PushMouseModeEvent(MouseMode.Normal2D));
         Raise(new PushInputModeEvent(InputMode.MainMenu));
+
+        // Title music - only on the boot/title menu (no game loaded). When the menu is opened over a
+        // running game (Escape), leave the map's music playing instead of stomping it.
+        var state = TryResolve<IGameState>();
+        if (state == null || !state.Loaded)
+            Raise(new SongEvent(Base.Song.JirinaarMusic));
 
         BuildBackdrop();
     }
