@@ -121,11 +121,10 @@ static class Albion
                 .Add(new Compass())
                 .Add(new MonsterEye()))
 
-            .Add(new MenuScene() // backdrop (classic 2D picture vs modern live 3D vista) is managed inside MenuScene
+            .Add(new MenuScene() // backdrop + menu UI (classic vs modern) are managed inside MenuScene
                 .Add(new StatusBar())
                 .Add(new DialogManager())
-                .Add(new PaletteManager())
-                .Add(new MainMenu()))
+                .Add(new PaletteManager()))
 
             .Add(new InventoryScene()
                 .Add(new StatusBar())
@@ -223,6 +222,9 @@ static class Albion
             try { gameServices.Add(new AudioManager(false)); }
             catch (Exception ex) { Console.WriteLine($"Audio device unavailable, running muted: {ex.Message}"); }
         }
+
+        gameServices.Add(new UAlbion.Game.Veldrid.SaveThumbnailManager()); // #74: capture save-slot thumbnails
+        gameServices.Add(new UAlbion.Core.Veldrid.TextRasterizer()); // crisp native-res text for the modern UI
 
         global.Attach(gameServices);
 
