@@ -31,6 +31,7 @@
     <PackageReference Include="Sinkers.Veldrid" Version="0.4.17" />
     <PackageReference Include="Sinkers.Veldrid.ImageSharp" Version="0.4.17" />
     <PackageReference Include="Sinkers.VeldridGen.Interfaces" Version="0.3.1" />
+    <PackageReference Include="StbTrueTypeSharp" Version="1.26.12" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Api\UAlbion.Api.csproj" />

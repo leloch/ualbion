@@ -18,6 +18,7 @@ public class MenuScene : Container, IScene
 {
     bool _clockWasRunning;
     IComponent _backdrop; // either the classic 2D picture or the live 3D vista, rebuilt per activation
+    IComponent _menuUi;   // classic MainMenu dialog or the modern native-res ModernMainMenu
     bool _backdropClassic;
     public ICamera Camera { get; }
 
@@ -34,8 +35,7 @@ public class MenuScene : Container, IScene
         {
             if (_backdrop != null && ReadVar(V.Game.Ui.ClassicMainMenu) != _backdropClassic)
             {
-                RemoveChild(_backdrop);
-                _backdrop = null;
+                TearDown();
                 BuildBackdrop();
             }
         });
@@ -68,7 +68,7 @@ public class MenuScene : Container, IScene
         _backdropClassic = classic;
         if (classic)
         {
-            // Vanilla 1996 look: a single full-screen title picture. (TODO: random selection like the original.)
+            // Vanilla 1996 look: a single full-screen title picture + the original bitmap-UI menu.
             _backdrop = AttachChild(new Sprite(
                 (SpriteId)Base.Picture.MenuBackground8,
                 DrawLayer.Interface,
@@ -78,12 +78,20 @@ public class MenuScene : Container, IScene
                 Position = new Vector3(-1.0f, 1.0f, 0),
                 Size = new Vector2(2.0f, -2.0f)
             });
+            _menuUi = AttachChild(new Gui.Menus.MainMenu());
         }
         else
         {
-            // Modern: a slowly-panning live 3D Albion vista (showcases the skybox/fog/bump rendering).
+            // Modern: live 3D Albion vista + the bespoke high-res menu rendered over it.
             _backdrop = AttachChild(new MenuBackdrop3D(Camera, Base.Map.Jirinaar));
+            _menuUi = AttachChild(new Gui.Menus.ModernMainMenu());
         }
+    }
+
+    void TearDown()
+    {
+        if (_menuUi != null) { RemoveChild(_menuUi); _menuUi = null; }
+        if (_backdrop != null) { RemoveChild(_backdrop); _backdrop = null; }
     }
 
     protected override void Unsubscribed()
@@ -93,10 +101,6 @@ public class MenuScene : Container, IScene
         if (_clockWasRunning)
             Raise(new StartClockEvent());
 
-        if (_backdrop != null)
-        {
-            RemoveChild(_backdrop);
-            _backdrop = null;
-        }
+        TearDown();
     }
 }
