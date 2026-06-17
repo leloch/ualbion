@@ -121,20 +121,11 @@ static class Albion
                 .Add(new Compass())
                 .Add(new MonsterEye()))
 
-            .Add(new MenuScene()
+            .Add(new MenuScene() // backdrop (classic 2D picture vs modern live 3D vista) is managed inside MenuScene
                 .Add(new StatusBar())
                 .Add(new DialogManager())
                 .Add(new PaletteManager())
-                .Add(new MainMenu())
-                .Add(new Sprite(
-                    (SpriteId)Base.Picture.MenuBackground8, // TODO: Random background selection like in original
-                    DrawLayer.Interface,
-                    SpriteKeyFlags.NoTransform,
-                    SpriteFlags.LeftAligned)
-                {
-                    Position = new Vector3(-1.0f, 1.0f, 0),
-                    Size = new Vector2(2.0f, -2.0f)
-                }))
+                .Add(new MainMenu()))
 
             .Add(new InventoryScene()
                 .Add(new StatusBar())
