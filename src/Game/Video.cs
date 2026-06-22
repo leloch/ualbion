@@ -86,8 +86,13 @@ public class Video : GameComponent
         _texture = texture;
         _dirtyEvent = new TextureDirtyEvent(_texture);
         _player = flic.Play(() => texture.GetMutableLayerBuffer(0).Buffer);
+        // A fullscreen cutscene must cover ALL the UI (status bar party portraits etc) - otherwise,
+        // when View Intro / Credits is launched mid-game, the party portraits show through the video
+        // and pick up the FLIC's palette (the "purple health bars" bug). Positioned overlays (the
+        // intro cockpit anims) stay on the normal Interface layer, above the backdrop picture.
+        var layer = _uiPosition.HasValue ? DrawLayer.Interface : DrawLayer.InterfaceOverlay;
         _sprite = AttachChild(new Sprite(SpriteId.None,
-            DrawLayer.Interface,
+            layer,
             SpriteKeyFlags.NoTransform,
             SpriteFlags.LeftAligned | SpriteFlags.FlipVertical,
             _ => _texture)
