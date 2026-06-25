@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
+using System.Reflection;
 using UAlbion.Api.Eventing;
 using UAlbion.Api.Visual;
 using UAlbion.Core;
@@ -51,6 +53,7 @@ public abstract class NativeMenuDialog : Dialog
     protected readonly List<Widget> Widgets = [];
     readonly List<BatchLease<SpriteKey, SpriteInfo>> _leases = [];
     readonly Dictionary<uint, ITexture> _solids = [];
+    static readonly Dictionary<string, ITexture> AssetCache = [];
     int _hover = -1;
     int _pressed = -1;
     bool _draggingSlider;
@@ -194,47 +197,80 @@ public abstract class NativeMenuDialog : Dialog
         var text = TryResolve<ITextRasterizer>();
         float s = Scale = H / 720f;
 
-        float titlePx = MathF.Round(40 * s);
-        float rowPx = MathF.Round(26 * s);
-        int rowH = (int)MathF.Round(rowPx * 1.7f);
-        int headerH = (int)MathF.Round(rowPx * 1.5f);
-        int spacerH = (int)MathF.Round(rowPx * 0.6f);
-        int pad = (int)MathF.Round(26 * s);
-        int titleArea = (int)(titlePx * 1.6f);
+        var panelTex = Asset("MenuPanel.png");
+        var btnTex = Asset("MenuButton.png");
+        var btnHovTex = Asset("MenuButtonHover.png");
+        var emblemTex = Asset("MenuEmblem.png");
+        var dividerTex = Asset("MenuDivider.png");
 
-        // Panel size.
+        float titlePx = MathF.Round(42 * s);
+        float rowPx = MathF.Round(25 * s);
+        int rowH = (int)MathF.Round(rowPx * 1.95f);
+        int rowGap = (int)MathF.Round(7 * s);
+        int headerH = (int)MathF.Round(rowPx * 1.5f);
+        int spacerH = (int)MathF.Round(rowPx * 0.5f);
+
+        int panelBorder = (int)MathF.Round(54 * s); // dst thickness of the ornate 9-slice frame
+        int contentPad = (int)MathF.Round(14 * s);
+        int inset = panelBorder + contentPad;        // from panel edge to content
+        int gap = (int)MathF.Round(10 * s);
+        int emblemH = (int)MathF.Round(102 * s);
+        int titleH = (int)MathF.Round(titlePx * 1.18f);
+        int dividerH = (int)MathF.Round(30 * s);
+
+        // Content width: widest of the title and the (padded) widget labels.
         float maxW = text?.Measure(Title, titlePx) ?? 200;
         foreach (var w in Widgets)
-            if (w.Label != null) maxW = MathF.Max(maxW, (text?.Measure(w.Label, rowPx) ?? 0) + 220 * s);
-        int contentH = 0;
-        foreach (var w in Widgets)
-            contentH += w.Kind switch { Kind.Header => headerH, Kind.Spacer => spacerH, _ => rowH };
+            if (w.Label != null) maxW = MathF.Max(maxW, (text?.Measure(w.Label, rowPx) ?? 0) + 240 * s);
 
-        int panelW = (int)MathF.Min(W * 0.7f, MathF.Max(520 * s, maxW + pad * 2));
-        int panelH = pad * 2 + titleArea + contentH;
-        panelH = (int)MathF.Min(panelH, H * 0.94f);
+        int contentH = emblemH + gap + titleH + gap + dividerH + gap;
+        foreach (var w in Widgets)
+            contentH += w.Kind switch { Kind.Header => headerH, Kind.Spacer => spacerH, _ => rowH + rowGap };
+
+        int panelW = (int)MathF.Min(W * 0.74f, MathF.Max(600 * s, maxW + inset * 2));
+        int panelH = (int)MathF.Min(inset * 2 + contentH, (int)(H * 0.96f));
         int panelX = (W - panelW) / 2;
         int panelY = (H - panelH) / 2;
 
-        DrawQuad(Solid(Panel), panelX, panelY, panelW, panelH, layer, W, H);
-        int bw = Math.Max(2, (int)(2 * s));
-        DrawQuad(Solid(Border), panelX, panelY, panelW, bw, layer, W, H);
-        DrawQuad(Solid(Border), panelX, panelY + panelH - bw, panelW, bw, layer, W, H);
-        DrawQuad(Solid(Border), panelX, panelY, bw, panelH, layer, W, H);
-        DrawQuad(Solid(Border), panelX + panelW - bw, panelY, bw, panelH, layer, W, H);
-
+        var midLayer = (DrawLayer)((int)layer + 1);
         var txtLayer = (DrawLayer)((int)layer + 2);
-        var hiLayer = (DrawLayer)((int)layer + 1);
 
+        // Ornate panel frame (9-slice), with a graceful solid fallback if the asset is missing.
+        if (panelTex != null)
+            DrawNineSlice(panelTex, panelX, panelY, panelW, panelH, 250, 250, panelBorder, panelBorder, layer, W, H);
+        else
+            DrawQuad(Solid(Panel), panelX, panelY, panelW, panelH, layer, W, H);
+
+        int cx = panelX + panelW / 2;
+        int innerX = panelX + inset, innerW = panelW - inset * 2;
+        int y = panelY + inset;
+
+        // Emblem crest.
+        if (emblemTex != null)
+        {
+            int eh = emblemH, ew = (int)(eh * emblemTex.Width / (float)emblemTex.Height);
+            DrawTex(emblemTex, cx - ew / 2, y, ew, eh, txtLayer, W, H);
+        }
+        y += emblemH + gap;
+
+        // Title.
         if (text != null)
         {
             var t = text.Render(Title, titlePx, Gold.r, Gold.g, Gold.b);
-            DrawTex(t, panelX + (panelW - t.Regions[0].Width) / 2, panelY + pad, t.Regions[0].Width, t.Regions[0].Height, txtLayer, W, H);
-            DrawQuad(Solid(Border), panelX + pad, panelY + pad + titleArea - (int)(8 * s), panelW - pad * 2, Math.Max(1, (int)(2 * s)), layer, W, H);
+            DrawTex(t, cx - t.Regions[0].Width / 2, y + (titleH - t.Regions[0].Height) / 2,
+                t.Regions[0].Width, t.Regions[0].Height, txtLayer, W, H);
         }
+        y += titleH + gap;
 
-        int y = panelY + pad + titleArea;
-        int innerX = panelX + pad, innerW = panelW - pad * 2;
+        // Divider flourish.
+        if (dividerTex != null)
+        {
+            int dw = innerW, dh = dividerH;
+            DrawTex(dividerTex, cx - dw / 2, y, dw, dh, txtLayer, W, H);
+        }
+        y += dividerH + gap;
+
+        int btnSrcCap = 200, btnDstCap = (int)MathF.Min(rowH, innerW / 2);
         for (int i = 0; i < Widgets.Count; i++)
         {
             var w = Widgets[i];
@@ -254,46 +290,47 @@ public abstract class NativeMenuDialog : Dialog
 
                 case Kind.Button:
                     w.Rect = new Rectangle(innerX, y, innerW, rowH);
-                    if (hov) DrawQuad(Solid(HoverBg), innerX, y + (int)(2 * s), innerW, rowH - (int)(4 * s), hiLayer, W, H);
+                    DrawPlate(hov ? btnHovTex : btnTex, innerX, y, innerW, rowH, btnSrcCap, btnDstCap, hov, midLayer, W, H);
                     if (text != null)
                     {
                         var col = hov ? HoverText : (w.Primary ? Gold : White);
                         var bt = text.Render(w.Label, rowPx, col.r, col.g, col.b);
                         DrawTex(bt, innerX + (innerW - bt.Regions[0].Width) / 2, y + (rowH - bt.Regions[0].Height) / 2, bt.Regions[0].Width, bt.Regions[0].Height, txtLayer, W, H);
                     }
-                    y += rowH;
+                    y += rowH + rowGap;
                     break;
 
                 case Kind.Toggle:
                     w.Rect = new Rectangle(innerX, y, innerW, rowH);
-                    if (hov) DrawQuad(Solid(HoverBg), innerX, y + (int)(2 * s), innerW, rowH - (int)(4 * s), hiLayer, W, H);
+                    DrawPlate(hov ? btnHovTex : btnTex, innerX, y, innerW, rowH, btnSrcCap, btnDstCap, hov, midLayer, W, H);
                     if (text != null)
                     {
                         var col = hov ? HoverText : White;
                         var lt = text.Render(w.Label, rowPx, col.r, col.g, col.b);
-                        DrawTex(lt, innerX + (int)(10 * s), y + (rowH - lt.Regions[0].Height) / 2, lt.Regions[0].Width, lt.Regions[0].Height, txtLayer, W, H);
+                        DrawTex(lt, innerX + (int)(28 * s), y + (rowH - lt.Regions[0].Height) / 2, lt.Regions[0].Width, lt.Regions[0].Height, txtLayer, W, H);
                         bool on = w.GetBool?.Invoke() ?? false;
                         var pill = on ? Gold : Dim;
                         string st = on ? "ON" : "OFF";
                         var stt = text.Render(st, rowPx, pill.r, pill.g, pill.b);
-                        DrawTex(stt, innerX + innerW - stt.Regions[0].Width - (int)(14 * s), y + (rowH - stt.Regions[0].Height) / 2, stt.Regions[0].Width, stt.Regions[0].Height, txtLayer, W, H);
+                        DrawTex(stt, innerX + innerW - stt.Regions[0].Width - (int)(28 * s), y + (rowH - stt.Regions[0].Height) / 2, stt.Regions[0].Width, stt.Regions[0].Height, txtLayer, W, H);
                     }
-                    y += rowH;
+                    y += rowH + rowGap;
                     break;
 
                 case Kind.Slider:
                     w.Rect = new Rectangle(innerX, y, innerW, rowH);
+                    DrawPlate(btnTex, innerX, y, innerW, rowH, btnSrcCap, btnDstCap, false, midLayer, W, H);
                     if (text != null)
                     {
                         var lt = text.Render(w.Label, rowPx, White.r, White.g, White.b);
-                        DrawTex(lt, innerX + (int)(10 * s), y + (rowH - lt.Regions[0].Height) / 2, lt.Regions[0].Width, lt.Regions[0].Height, txtLayer, W, H);
+                        DrawTex(lt, innerX + (int)(28 * s), y + (rowH - lt.Regions[0].Height) / 2, lt.Regions[0].Width, lt.Regions[0].Height, txtLayer, W, H);
                     }
-                    int trackW = (int)(innerW * 0.42f);
-                    int trackX = innerX + innerW - trackW - (int)(64 * s);
+                    int trackW = (int)(innerW * 0.40f);
+                    int trackX = innerX + innerW - trackW - (int)(78 * s);
                     int trackH = Math.Max(4, (int)(8 * s));
                     int trackY = y + (rowH - trackH) / 2;
                     w.TrackRect = new Rectangle(trackX, y, trackW, rowH);
-                    DrawQuad(Solid(TrackBg), trackX, trackY, trackW, trackH, hiLayer, W, H);
+                    DrawQuad(Solid(TrackBg), trackX, trackY, trackW, trackH, txtLayer, W, H);
                     int val = w.GetInt?.Invoke() ?? 0;
                     float frac = w.Max > w.Min ? (val - w.Min) / (float)(w.Max - w.Min) : 0;
                     DrawQuad(Solid(TrackFill), trackX, trackY, (int)(trackW * frac), trackH, txtLayer, W, H);
@@ -303,12 +340,22 @@ public abstract class NativeMenuDialog : Dialog
                     {
                         string vs = w.Fmt != null ? w.Fmt(val) : val.ToString();
                         var vt = text.Render(vs, MathF.Round(rowPx * 0.85f), Gold.r, Gold.g, Gold.b);
-                        DrawTex(vt, innerX + innerW - vt.Regions[0].Width - (int)(6 * s), y + (rowH - vt.Regions[0].Height) / 2, vt.Regions[0].Width, vt.Regions[0].Height, txtLayer, W, H);
+                        DrawTex(vt, innerX + innerW - vt.Regions[0].Width - (int)(20 * s), y + (rowH - vt.Regions[0].Height) / 2, vt.Regions[0].Width, vt.Regions[0].Height, txtLayer, W, H);
                     }
-                    y += rowH;
+                    y += rowH + rowGap;
                     break;
             }
         }
+    }
+
+    /// <summary>Draw a row's button plate (3-slice horizontal), or a solid hover wash if the asset
+    /// is unavailable.</summary>
+    void DrawPlate(ITexture plate, int x, int y, int w, int h, int srcCap, int dstCap, bool hov, DrawLayer layer, int W, int H)
+    {
+        if (plate != null)
+            DrawNineSlice(plate, x, y, w, h, srcCap, 0, dstCap, 0, layer, W, H);
+        else if (hov)
+            DrawQuad(Solid(HoverBg), x, y + (int)(2 * Scale), w, h - (int)(4 * Scale), layer, W, H);
     }
 
     protected ITexture Solid((byte r, byte g, byte b, byte a) c)
@@ -325,6 +372,12 @@ public abstract class NativeMenuDialog : Dialog
     protected void DrawTex(ITexture tex, float px, float py, float pw, float ph, DrawLayer layer, int W, int H)
     {
         if (tex == null) return;
+        DrawTexRegion(tex, tex.Regions[0], px, py, pw, ph, layer, W, H);
+    }
+
+    void DrawTexRegion(ITexture tex, Region src, float px, float py, float pw, float ph, DrawLayer layer, int W, int H)
+    {
+        if (tex == null) return;
         var sm = Resolve<IBatchManager<SpriteKey, SpriteInfo>>();
         var key = new SpriteKey(tex, SpriteSampler.TriLinear, layer, SpriteKeyFlags.NoDepthTest | SpriteKeyFlags.NoTransform);
         var lease = sm.Borrow(key, 1, this);
@@ -333,7 +386,55 @@ public abstract class NativeMenuDialog : Dialog
         var size = new Vector2(pw / W * 2f, -(ph / H * 2f));
         bool lockTaken = false;
         var inst = lease.Lock(ref lockTaken);
-        try { inst[0] = new SpriteInfo(SpriteFlags.TopLeft, position, size, tex.Regions[0]); }
+        try { inst[0] = new SpriteInfo(SpriteFlags.TopLeft, position, size, src); }
         finally { lease.Unlock(lockTaken); }
+    }
+
+    /// <summary>Draw <paramref name="tex"/> as a 9-slice into the dst rect: corners keep their size,
+    /// edges stretch along one axis, the centre stretches both. srcCorner/dstCorner of 0 on an axis
+    /// degenerates to a 3-slice along the other axis (used for the horizontal button plates).</summary>
+    protected void DrawNineSlice(ITexture tex, int px, int py, int pw, int ph,
+        int srcCornerX, int srcCornerY, int dstCornerX, int dstCornerY, DrawLayer layer, int W, int H)
+    {
+        if (tex == null) return;
+        int tw = tex.Width, th = tex.Height;
+        srcCornerX = Math.Min(srcCornerX, tw / 2); srcCornerY = Math.Min(srcCornerY, th / 2);
+        dstCornerX = Math.Min(dstCornerX, pw / 2); dstCornerY = Math.Min(dstCornerY, ph / 2);
+        int[] sx = [0, srcCornerX, tw - srcCornerX, tw];
+        int[] sy = [0, srcCornerY, th - srcCornerY, th];
+        int[] dx = [px, px + dstCornerX, px + pw - dstCornerX, px + pw];
+        int[] dy = [py, py + dstCornerY, py + ph - dstCornerY, py + ph];
+        for (int r = 0; r < 3; r++)
+        {
+            int sh = sy[r + 1] - sy[r], dh = dy[r + 1] - dy[r];
+            if (sh <= 0 || dh <= 0) continue;
+            for (int c = 0; c < 3; c++)
+            {
+                int sw = sx[c + 1] - sx[c], dw = dx[c + 1] - dx[c];
+                if (sw <= 0 || dw <= 0) continue;
+                DrawTexRegion(tex, new Region(sx[c], sy[r], sw, sh, tw, th, 0), dx[c], dy[r], dw, dh, layer, W, H);
+            }
+        }
+    }
+
+    /// <summary>Lazily load + cache an embedded menu asset (Resources\&lt;fileName&gt;) as a true-colour texture.</summary>
+    protected ITexture Asset(string fileName)
+    {
+        if (AssetCache.TryGetValue(fileName, out var cached)) return cached;
+        var loader = TryResolve<IRgbaImageLoader>();
+        if (loader == null) return null; // not ready yet - retry next frame, don't cache the miss
+        var data = ReadResource("UAlbion.Game.Resources." + fileName);
+        var tex = data == null ? null : loader.LoadPng(data);
+        AssetCache[fileName] = tex;
+        return tex;
+    }
+
+    static byte[] ReadResource(string resource)
+    {
+        using var stream = typeof(NativeMenuDialog).Assembly.GetManifestResourceStream(resource);
+        if (stream == null) return null;
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return ms.ToArray();
     }
 }

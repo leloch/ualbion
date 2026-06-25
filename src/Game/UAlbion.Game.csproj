@@ -19,7 +19,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Resources\MenuBackground.png" />
+    <EmbeddedResource Include="Resources\*.png" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Core\UAlbion.Core.csproj" />
