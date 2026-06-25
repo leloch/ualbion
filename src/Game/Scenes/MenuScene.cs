@@ -82,8 +82,8 @@ public class MenuScene : Container, IScene
         }
         else
         {
-            // Modern: live 3D Albion vista + the bespoke high-res menu rendered over it.
-            _backdrop = AttachChild(new MenuBackdrop3D(Camera, Base.Map.Jirinaar));
+            // Modern: a remastered, high-res painted Albion vista + the bespoke high-res menu over it.
+            _backdrop = AttachChild(new MenuBackdropImage());
             _menuUi = AttachChild(new Gui.Menus.ModernMainMenu());
         }
     }

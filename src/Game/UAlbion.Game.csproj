@@ -19,6 +19,9 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Resources\MenuBackground.png" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Core\UAlbion.Core.csproj" />
     <ProjectReference Include="..\Formats\UAlbion.Formats.csproj" />
   </ItemGroup>
