@@ -3,7 +3,25 @@
 > Produced 2026-06-13 by a multi-agent audit (14 subsystem finders → per-finding adversarial
 > verification → synthesis). 25 candidates raised, 24 survived verification, merged to 19 distinct
 > bugs. Severities below are the **verifier-confirmed** levels, not the finder's initial guess.
-> No code was changed — this is a backlog of things to address.
+
+## Fix status (updated 2026-06-25 after a re-verification pass against the evolved code)
+
+Re-checked every finding against current `master` (the repo moved ~12 days). Result:
+
+- **Already fixed upstream (5):** MERCH-01 (unlimited-stock guard added), MOV2D-01 (NPC null-guard),
+  LOCK-01 (unlock-text flow), LOCK-02 (chest text-byte order), LOCK-03 (one-use keys) — landed in
+  commits `624a3fcf`, `d174906f`, etc.
+- **Fixed this pass (15):** CMB-CRIT-01, STATE-01, INV-01, INV-02, INV-03, QRY-01, QRY-02, MOV3D-01,
+  MOV2D-02, MOV3D-02, MERCH-02, CMB-01, CMB-02, CMB-03, DLG-01, DLG-02. Verified: full CI suite
+  **623/623 green**, save smoke **13/13 clean**.
+- **Deferred (1):** DATA-01 — the percentage-op base. The shared `NumericOperation` formula clamps to
+  `max`, so a targeted fix is ambiguous (could alter the common current-stat heal path) and needs an
+  RE check of the original's percentage semantics. Left untouched pending that confirmation.
+
+> Note: CMB-03 fixed the condition-hook half (item debuffs now land on monsters); the area-enumeration
+> half (item area-spells still resolve on a single tile) is a larger follow-up, noted inline.
+> Build note: the Release build is currently red at HEAD due to **pre-existing** CA analyzer errors in
+> unrelated menu files (`NativeMenuDialog.cs`, `ExtrasMenu.cs`, `TextRasterizer.cs`) — not from this work.
 
 ## 1. Executive Summary
 

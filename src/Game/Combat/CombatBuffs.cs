@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using UAlbion.Formats.Ids;
+using UAlbion.Game.State;
 
 namespace UAlbion.Game.Combat;
 
@@ -48,7 +48,9 @@ public static class CombatBuffs
         public int RoundsLeft;
     }
 
-    static readonly Dictionary<SheetId, List<Buff>> Active = [];
+    // CMB-CRIT-01: keyed by the combatant INSTANCE, not SheetId — same-type monsters share a
+    // SheetId, which made one buff/freeze cast affect the whole same-type rank.
+    static readonly Dictionary<ICombatParticipant, List<Buff>> Active = [];
 
     /// <summary>
     /// View of Life (Dji-Kas spell 30): when active, the combat grid shows every
@@ -62,7 +64,7 @@ public static class CombatBuffs
         ViewOfLife = false;
     }
 
-    public static void Add(SheetId target, BuffKind kind, int amount, int rounds)
+    public static void Add(ICombatParticipant target, BuffKind kind, int amount, int rounds)
     {
         if (!Active.TryGetValue(target, out var list))
         {
@@ -84,7 +86,7 @@ public static class CombatBuffs
         }
     }
 
-    public static int Bonus(SheetId target, BuffKind kind)
+    public static int Bonus(ICombatParticipant target, BuffKind kind)
     {
         if (!Active.TryGetValue(target, out var list))
             return 0;
@@ -92,10 +94,10 @@ public static class CombatBuffs
         return buff?.Amount ?? 0;
     }
 
-    public static bool IsBerserk(SheetId target)
+    public static bool IsBerserk(ICombatParticipant target)
         => Active.TryGetValue(target, out var list) && list.Exists(b => b.Kind == BuffKind.Berserk);
 
-    public static bool IsFrozen(SheetId target)
+    public static bool IsFrozen(ICombatParticipant target)
         => Active.TryGetValue(target, out var list) && list.Exists(b => b.Kind == BuffKind.Freeze);
 
     /// <summary>Decrement all buff durations; called by Battle at the end of each round.</summary>

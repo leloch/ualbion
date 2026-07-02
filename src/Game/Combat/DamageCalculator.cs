@@ -82,8 +82,10 @@ public static class DamageCalculator
     {
         if (baseDamage <= 0) return 0;
         int variance = ((randomValue % 51) + 51) % 51;      // [0, 50]
-        int adjusted = baseDamage * (50 + variance) / 100;  // multiplier in [50, 100]
-        return Math.Max(1, adjusted);
+        // CMB-01: byte-exact RandomVary (fcn.00035c22) has NO lower floor — small values
+        // legitimately truncate to 0 (e.g. 1 * 50/100). The final damage is floored at 0 by
+        // the caller's max(0, variedAtk - variedDef); a Max(1) here diverged on both rolls.
+        return baseDamage * (50 + variance) / 100;          // multiplier in [50, 100]
     }
 
     /// <summary>

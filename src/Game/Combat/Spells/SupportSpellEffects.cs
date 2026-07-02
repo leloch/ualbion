@@ -40,7 +40,7 @@ public sealed class BuffSpellEffect : ISpellEffect
         if (!_persistent)
         {
             // Round-timed buffs (Hurry's AP flag, Berserk components, Freeze, ...).
-            CombatBuffs.Add(target.SheetId, _kind, _amount, rounds);
+            CombatBuffs.Add(target, _kind, _amount, rounds);
             return SpellCastOutcome.Hit;
         }
 
