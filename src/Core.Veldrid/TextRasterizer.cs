@@ -14,7 +14,7 @@ namespace UAlbion.Core.Veldrid;
 /// domain) into RGBA (SimpleTexture&lt;uint&gt;) at native resolution, so the bespoke menu gets crisp
 /// scalable text instead of the 360x240 bitmap font. Results are cached by text/size/colour.
 /// </summary>
-public sealed unsafe class TextRasterizer : ServiceComponent<ITextRasterizer>, ITextRasterizer
+public sealed unsafe class TextRasterizer : ServiceComponent<ITextRasterizer>, ITextRasterizer, IDisposable
 {
     static readonly string[] FontCandidates =
     [
@@ -139,9 +139,18 @@ public sealed unsafe class TextRasterizer : ServiceComponent<ITextRasterizer>, I
         return tex;
     }
 
-    protected override void Unsubscribed()
+    protected override void Unsubscribed() => ReleaseFont();
+    public void Dispose() => ReleaseFont();
+
+    // Also reset the init flags: the font data references the pinned buffer, so once the pin is
+    // freed the stbtt_fontinfo must not be used again — a resubscribe re-initialises from scratch.
+    void ReleaseFont()
     {
+        _font?.Dispose();
+        _font = null;
         if (_pin.IsAllocated)
             _pin.Free();
+        _haveFont = false;
+        _init = false;
     }
 }

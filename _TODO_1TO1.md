@@ -5,7 +5,7 @@
 > (every `PLACEHOLDER` / `TODO` marker), the RE docs, and the session logs. Update this
 > file as items land; nothing in it is tracked anywhere else.
 >
-> Verification gates for every change: `dotnet test src/ualbion.ci.sln` (587 green),
+> Verification gates for every change: `dotnet test src/ualbion.ci.sln` (623 green),
 > `_smoke_all_saves.ps1` (13/13), and a live harness check where behaviour is visible.
 >
 > **⮕ Expanded goal scope (2026-06-13): two axes, both in scope.** This file tracks

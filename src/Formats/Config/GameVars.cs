@@ -79,8 +79,8 @@ public class GameVars
         // Euclidean). Disable to allow interacting with any visible tile (the old behaviour + the
         // unintentional extended-reach "steal").
         public BoolVar ContextMenuReachLimit            { get; } = new(Library, "Game.UI.ContextMenuReachLimit", true);
-        // Modern main menu (live 3D backdrop) vs the classic 1996 box. Default = modern; set true for vanilla.
-        public BoolVar ClassicMainMenu                  { get; } = new(Library, "Game.UI.ClassicMainMenu", false);
+        // Classic 1996 main menu (default) vs the modern native-res menu; set false to opt in to modern.
+        public BoolVar ClassicMainMenu                  { get; } = new(Library, "Game.UI.ClassicMainMenu", true);
 
         public TransitionsVars Transitions { get; } = new();
         public class TransitionsVars

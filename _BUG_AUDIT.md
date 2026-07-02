@@ -20,8 +20,9 @@ Re-checked every finding against current `master` (the repo moved ~12 days). Res
 
 > Note: CMB-03 fixed the condition-hook half (item debuffs now land on monsters); the area-enumeration
 > half (item area-spells still resolve on a single tile) is a larger follow-up, noted inline.
-> Build note: the Release build is currently red at HEAD due to **pre-existing** CA analyzer errors in
-> unrelated menu files (`NativeMenuDialog.cs`, `ExtrasMenu.cs`, `TextRasterizer.cs`) — not from this work.
+> Build note: the CA analyzer errors that had turned the default build red (introduced by the menu
+> work: `NativeMenuDialog.cs`, `ExtrasMenu.cs`, `TextRasterizer.cs`, `ImGuiConsoleLogger.cs`) are
+> fixed — a plain `dotnet build src/ualbion.sln` is green again, no analyzer opt-outs needed.
 
 ## 1. Executive Summary
 
