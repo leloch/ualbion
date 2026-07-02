@@ -26,18 +26,19 @@ public abstract class NativeMenuDialog : Dialog
 
     protected sealed class Widget
     {
-        public Kind Kind;
-        public string Label;
-        public Action Action;                 // Button
-        public Func<bool> GetBool;            // Toggle
-        public Action<bool> SetBool;
-        public Func<int> GetInt;              // Slider
-        public Action<int> SetInt;
-        public int Min, Max;
-        public Func<int, string> Fmt;
-        public bool Primary;
-        public Rectangle Rect;                // pixel rect (set during layout)
-        public Rectangle TrackRect;           // slider track (pixel)
+        public Kind Kind { get; set; }
+        public string Label { get; set; }
+        public Action Action { get; set; }                 // Button
+        public Func<bool> GetBool { get; set; }            // Toggle
+        public Action<bool> SetBool { get; set; }
+        public Func<int> GetInt { get; set; }              // Slider
+        public Action<int> SetInt { get; set; }
+        public int Min { get; set; }
+        public int Max { get; set; }
+        public Func<int, string> Fmt { get; set; }
+        public bool Primary { get; set; }
+        public Rectangle Rect { get; set; }                // pixel rect (set during layout)
+        public Rectangle TrackRect { get; set; }           // slider track (pixel)
     }
 
     protected static readonly (byte r, byte g, byte b, byte a) Panel = (18, 14, 10, 236);
@@ -50,7 +51,7 @@ public abstract class NativeMenuDialog : Dialog
     protected static readonly (byte r, byte g, byte b, byte a) TrackBg = (8, 6, 4, 220);
     protected static readonly (byte r, byte g, byte b, byte a) TrackFill = (150, 120, 60, 230);
 
-    protected readonly List<Widget> Widgets = [];
+    protected List<Widget> Widgets { get; } = [];
     readonly List<BatchLease<SpriteKey, SpriteInfo>> _leases = [];
     readonly Dictionary<uint, ITexture> _solids = [];
     static readonly Dictionary<string, ITexture> AssetCache = [];

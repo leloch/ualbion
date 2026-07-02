@@ -77,7 +77,7 @@ public class ExtrasMenu : ModalDialog
         AttachChild(new DialogFrame(new VerticalStacker(elements)));
     }
 
-    IUiElement ToggleRow(string name, BoolVar var)
+    Button ToggleRow(string name, BoolVar var)
     {
         var toggle = new Toggle { Var = var, Original = ReadVar(var), Current = ReadVar(var) };
         _toggles.Add(toggle);

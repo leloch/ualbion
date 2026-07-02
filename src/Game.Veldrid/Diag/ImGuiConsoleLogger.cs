@@ -221,7 +221,7 @@ public class ImGuiConsoleLogger : Component, IImGuiWindow
                     if (matchLen > prefix.Length)
                     {
                         data.DeleteChars(wordStart, wordEnd - wordStart);
-                        data.InsertChars(data.CursorPos, candidates[0].Substring(0, matchLen));
+                        data.InsertChars(data.CursorPos, candidates[0].AsSpan(0, matchLen));
                     }
 
                     if (logExchange != null)
