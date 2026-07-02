@@ -81,7 +81,7 @@ public sealed class DamageSpellEffect : ISpellEffect
         {
             // Duration scales on the gate margin too (fcn.0004b8a1 receives the margin).
             int rounds = Math.Max(1, margin * FreezeBase / 100) + 1;
-            CombatBuffs.Add(context.Target.SheetId, CombatBuffs.BuffKind.Freeze, 0, rounds);
+            CombatBuffs.Add(context.Target, CombatBuffs.BuffKind.Freeze, 0, rounds);
         }
 
         return SpellCastOutcome.Hit;

@@ -768,6 +768,12 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
                 OnDataChange(new DataChangeEvent(target, ChangeProperty.Mana, NumericOperation.AddAmount, (ushort)Math.Min(ushort.MaxValue, spGain)));
         }
 
+        // STATE-01: zero the fatigue counter BEFORE advancing the clock. AdvanceTimeInHours
+        // raises HourElapsedEvent per hour, and StatusConditionTicker reads HoursSinceResting;
+        // if the stale pre-rest value (>48) is still set during the rest's own hour ticks it
+        // re-applies Exhausted and drains LP, undoing the cure/heal above. The original zeroes
+        // on both sides, so we keep the post-advance reset too (counter ends at 0).
+        _game.HoursSinceResting = 0;
         OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)hours));
         _game.HoursSinceResting = 0;
 

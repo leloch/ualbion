@@ -114,7 +114,7 @@ public class LogicalMap2D : LogicalMap
                 var targetIndex = Index(x + i, y + j);
                 var targetBlockIndex = j * block.Width + i;
 
-                if(targetIndex < 0 || targetIndex > _mapData.Tiles.Length)
+                if(targetIndex < 0 || targetIndex >= _mapData.Tiles.Length) // MOV2D-02: == Length is OOB
                 {
                     Error($"Tried to set out-of-range index {targetIndex}, @ ({x},{y}) + ({i},{j}) for block {blockId}");
                     return;

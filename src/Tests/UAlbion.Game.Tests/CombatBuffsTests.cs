@@ -10,55 +10,62 @@ namespace UAlbion.Game.Tests;
 public class CombatBuffsTests
 {
     static SheetId Sheet(int n) => new(AssetType.PartySheet, n);
+    // CMB-CRIT-01: buffs are now keyed by the combatant instance, so tests use distinct participants.
+    static FakeParticipant P(int n) => new(Sheet(n), null);
 
     [Fact]
     public void Bonus_Defaults_To_Zero()
     {
         CombatBuffs.Clear();
-        Assert.Equal(0, CombatBuffs.Bonus(Sheet(1), CombatBuffs.BuffKind.Attack));
-        Assert.False(CombatBuffs.IsBerserk(Sheet(1)));
+        var p1 = P(1);
+        Assert.Equal(0, CombatBuffs.Bonus(p1, CombatBuffs.BuffKind.Attack));
+        Assert.False(CombatBuffs.IsBerserk(p1));
     }
 
     [Fact]
     public void Add_And_Query_Bonus()
     {
         CombatBuffs.Clear();
-        CombatBuffs.Add(Sheet(1), CombatBuffs.BuffKind.Defense, 8, 2);
-        Assert.Equal(8, CombatBuffs.Bonus(Sheet(1), CombatBuffs.BuffKind.Defense));
-        Assert.Equal(0, CombatBuffs.Bonus(Sheet(2), CombatBuffs.BuffKind.Defense)); // other sheet unaffected
+        var p1 = P(1);
+        CombatBuffs.Add(p1, CombatBuffs.BuffKind.Defense, 8, 2);
+        Assert.Equal(8, CombatBuffs.Bonus(p1, CombatBuffs.BuffKind.Defense));
+        Assert.Equal(0, CombatBuffs.Bonus(P(2), CombatBuffs.BuffKind.Defense)); // other combatant unaffected
     }
 
     [Fact]
     public void Buffs_Expire_After_Duration()
     {
         CombatBuffs.Clear();
-        CombatBuffs.Add(Sheet(1), CombatBuffs.BuffKind.Speed, 10, 2);
+        var p1 = P(1);
+        CombatBuffs.Add(p1, CombatBuffs.BuffKind.Speed, 10, 2);
         CombatBuffs.TickRound();
-        Assert.Equal(10, CombatBuffs.Bonus(Sheet(1), CombatBuffs.BuffKind.Speed));
+        Assert.Equal(10, CombatBuffs.Bonus(p1, CombatBuffs.BuffKind.Speed));
         CombatBuffs.TickRound();
-        Assert.Equal(0, CombatBuffs.Bonus(Sheet(1), CombatBuffs.BuffKind.Speed));
+        Assert.Equal(0, CombatBuffs.Bonus(p1, CombatBuffs.BuffKind.Speed));
     }
 
     [Fact]
     public void Recasting_Refreshes_Rather_Than_Stacks()
     {
         CombatBuffs.Clear();
-        CombatBuffs.Add(Sheet(1), CombatBuffs.BuffKind.Attack, 6, 1);
-        CombatBuffs.Add(Sheet(1), CombatBuffs.BuffKind.Attack, 6, 3);
-        Assert.Equal(6, CombatBuffs.Bonus(Sheet(1), CombatBuffs.BuffKind.Attack)); // not 12
+        var p1 = P(1);
+        CombatBuffs.Add(p1, CombatBuffs.BuffKind.Attack, 6, 1);
+        CombatBuffs.Add(p1, CombatBuffs.BuffKind.Attack, 6, 3);
+        Assert.Equal(6, CombatBuffs.Bonus(p1, CombatBuffs.BuffKind.Attack)); // not 12
         CombatBuffs.TickRound();
         CombatBuffs.TickRound();
-        Assert.Equal(6, CombatBuffs.Bonus(Sheet(1), CombatBuffs.BuffKind.Attack)); // refreshed duration survives
+        Assert.Equal(6, CombatBuffs.Bonus(p1, CombatBuffs.BuffKind.Attack)); // refreshed duration survives
     }
 
     [Fact]
     public void Berserk_Flag_Set_And_Expires()
     {
         CombatBuffs.Clear();
-        CombatBuffs.Add(Sheet(3), CombatBuffs.BuffKind.Berserk, 0, 1);
-        Assert.True(CombatBuffs.IsBerserk(Sheet(3)));
+        var p3 = P(3);
+        CombatBuffs.Add(p3, CombatBuffs.BuffKind.Berserk, 0, 1);
+        Assert.True(CombatBuffs.IsBerserk(p3));
         CombatBuffs.TickRound();
-        Assert.False(CombatBuffs.IsBerserk(Sheet(3)));
+        Assert.False(CombatBuffs.IsBerserk(p3));
     }
 
     [Fact]
@@ -69,7 +76,7 @@ public class CombatBuffsTests
         var target = new FakeParticipant(Sheet(2), null);
         var result = effect.Apply(new SpellCastContext { Caster = new FakeParticipant(Sheet(1), null), Target = target });
         Assert.Equal(SpellCastOutcome.Hit, result);
-        Assert.True(CombatBuffs.IsBerserk(Sheet(2)));
+        Assert.True(CombatBuffs.IsBerserk(target));
     }
 
     [Fact]

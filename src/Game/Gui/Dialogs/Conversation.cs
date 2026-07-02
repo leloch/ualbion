@@ -75,10 +75,14 @@ public class Conversation : GameComponent
     {
         var options = new List<(IText, BlockId?, BlockId)>
         {
-            (_tf.Format(Base.SystemText.Dialog_WhatsYourProfession), null, BlockId.Profession),
             (_tf.Format(Base.SystemText.Dialog_WhatDoYouKnowAbout), null, BlockId.QueryWord),
             (_tf.Format(Base.SystemText.Dialog_WhatDoYouKnowAboutThisItem), null, BlockId.QueryItem),
         };
+
+        // DLG-02: "What's your profession?" reads the NPC's event-text set; a word-set-only NPC
+        // (EventSetId.IsNone) has none, so only offer it when an event set exists.
+        if (!_npc.EventSetId.IsNone)
+            options.Insert(0, (_tf.Format(Base.SystemText.Dialog_WhatsYourProfession), null, BlockId.Profession));
 
         // Recruitment / dismissal are offered only when the NPC's set actually has the chain
         // (ActionType 0x4 / 0x5). The chain bodies do the real add/remove_party_member.
@@ -128,6 +132,8 @@ public class Conversation : GameComponent
                 {
                     var setId = _npc.EventSetId.ToEventText();
                     var strings = (IStringSet)Resolve<IModApplier>().LoadAssetCached(setId);
+                    if (strings == null) // DLG-02: defensive — no event-text set for this NPC
+                        break;
 
                     ushort subId = 0;
                     for (ushort i = 0; i < strings.Count; i++)

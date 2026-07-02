@@ -28,11 +28,9 @@ public class PartyInventory : Component
         // SCRIPT-01: honour the NumericOperation (Subtract must REMOVE, SetToMinimum clears) like
         // the sibling ChangeItemEvent — the old GiveToParty ignored it and always added.
         On<ModifyItemCountEvent>(e => ChangePartyItemAmount(e.ItemId, e.Operation, e.Amount));
-        On<ChangeItemEvent>(e =>
-        {
-            var amount = e.IsRandom ? (ushort)Resolve<IRandom>().Generate(e.Amount) : e.Amount;
-            ChangePartyItemAmount(e.ItemId, e.Operation, amount);
-        });
+        // INV-01: ChangeItemEvent is handled by GameState -> SheetApplier.ApplyItem (target-aware,
+        // the faithful path that honours the event's TargetId incl. Everyone). A second handler
+        // here applied it party-wide as well, doubling every change_item. Removed to apply once.
 
         On<SimpleChestEvent>(e =>
         {
@@ -148,7 +146,9 @@ public class PartyInventory : Component
             if (amount == 0)
                 break;
         }
-        SetLastResult(slot.Amount == 0);
+        // INV-03: `slot` is the accumulating acceptor (grows as items are taken), so success is
+        // `amount == 0` (full requested quantity removed), NOT slot.Amount == 0 (which inverts it).
+        SetLastResult(amount == 0);
         return donor;
     }
 

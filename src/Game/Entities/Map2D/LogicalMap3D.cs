@@ -99,7 +99,11 @@ public class LogicalMap3D : LogicalMap
     public (byte, Wall) GetWall(int index)
     {
         byte tileIndex = _mapData.GetWall(index);
-        var tile = tileIndex > 0 && tileIndex < _labyrinth.Walls.Count
+        // MOV3D-01: wall ids are 1-based, so the valid range is 1..Walls.Count (indexing
+        // Walls[tileIndex-1]). The guard must be tileIndex-1 < Count (== Count is valid),
+        // matching GetFloor/GetCeiling/GetObject; `< Count` dropped the highest wall to null,
+        // making it walkable and invisible to the automap despite rendering solid.
+        var tile = tileIndex > 0 && tileIndex - 1 < _labyrinth.Walls.Count
             ? _labyrinth.Walls[tileIndex - 1]
             : null;
         return (tileIndex, tile);

@@ -300,6 +300,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
                 slot.Clear();
         }
         Update(e.Id);
+        Update(leaderInv); // MERCH-02: refresh the buyer's inventory (TryGiveItems doesn't raise it)
     }
 
     // Sell one unit of an owned backpack item to the active merchant (the backpack "Sell"
@@ -1067,7 +1068,8 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
             return;
         }
 
-        Raise(new LearnSpellEvent(e.SlotId.Id.ToSheetId(), item.Spell));
+        // INV-02: teach the spell to the validated learner (target), not the scroll's holder.
+        Raise(new LearnSpellEvent(target.Id.ToSheet(), item.Spell));
         Raise(new HoverTextEvent(tf.Format(Base.SystemText.InvMsg_XLearnedTheSpell)));
         
         slot.Amount--;

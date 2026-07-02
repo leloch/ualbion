@@ -196,11 +196,11 @@ public sealed class BerserkSpellEffect : ISpellEffect
         int crit    = target.Effective?.Skills?.CriticalChance?.Current ?? 0;
         int baseAtk = target.Effective?.Combat?.BaseAttack ?? 0;
 
-        CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.Strength,          str / 2,     rounds);
-        CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.CloseCombatSkill,  close / 2,   rounds);
-        CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.RangedCombatSkill, ranged / 2,  rounds);
-        CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.CritSkill,         crit / 2,    rounds);
-        CombatBuffs.Add(target.SheetId, CombatBuffs.BuffKind.Attack,            baseAtk / 2, rounds);
+        CombatBuffs.Add(target, CombatBuffs.BuffKind.Strength,          str / 2,     rounds);
+        CombatBuffs.Add(target, CombatBuffs.BuffKind.CloseCombatSkill,  close / 2,   rounds);
+        CombatBuffs.Add(target, CombatBuffs.BuffKind.RangedCombatSkill, ranged / 2,  rounds);
+        CombatBuffs.Add(target, CombatBuffs.BuffKind.CritSkill,         crit / 2,    rounds);
+        CombatBuffs.Add(target, CombatBuffs.BuffKind.Attack,            baseAtk / 2, rounds);
         return SpellCastOutcome.Hit;
     }
 }

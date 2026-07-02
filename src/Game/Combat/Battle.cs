@@ -29,7 +29,12 @@ public class Battle : GameComponent, IReadOnlyBattle
     // Battle-scoped HP shadow keyed by SheetId. Avoids the Effective-vs-underlying ambiguity:
     // party members have their Effective snapshot recomputed per frame, while monsters are
     // transient clones that aren't in GameState.Sheets so DataChangeEvent can't reach them.
-    readonly Dictionary<SheetId, int> _liveHp = [];
+    // CMB-CRIT-01: keyed by the participant INSTANCE, not SheetId. Same-type monsters share a
+    // SheetId (the cloned monster type id), so keying these per-battle shadows by SheetId made
+    // every duplicate monster share one HP/SP/condition/removed entry — damage, status and death
+    // leaked across the whole rank. Reference identity is unique per combatant and stable across
+    // moves (CombatPosition can change). Party members are also distinct instances.
+    readonly Dictionary<ICombatParticipant, int> _liveHp = [];
     // Queued per-character actions (chosen by player via context menu before the round
     // begins). Members not in this map fall through to default Melee — matches Albion's
     // "leave defaults" behaviour when the player doesn't explicitly set actions.
@@ -40,14 +45,14 @@ public class Battle : GameComponent, IReadOnlyBattle
     // SP shadow for MONSTERS (transient clones DataChangeEvent can't reach) — party
     // members read/write their persistent sheets via Mana events instead. Without this,
     // monster casts never drained SP and repeated casts were free.
-    readonly Dictionary<SheetId, int> _liveSp = [];
+    readonly Dictionary<ICombatParticipant, int> _liveSp = []; // CMB-CRIT-01: per-instance key
     // Condition shadow for MONSTERS — status spells (Sleep/Paralyse/Blind/Panic) must land on
     // enemies too, but monster clones aren't in GameState.Sheets so ChangeStatusEvent can't
     // reach them. Party conditions live on their Effective sheet; monster conditions live here.
-    readonly Dictionary<SheetId, UAlbion.Formats.Assets.Sheets.PlayerConditions> _liveConditions = [];
+    readonly Dictionary<ICombatParticipant, UAlbion.Formats.Assets.Sheets.PlayerConditions> _liveConditions = []; // CMB-CRIT-01: per-instance key
     // Combatants removed from the battle (fled via Retreat — fcn.0004b49e); excluded
     // from LiveParticipants. _fledParty drives the "party escaped" outcome.
-    readonly HashSet<SheetId> _removed = [];
+    readonly HashSet<ICombatParticipant> _removed = []; // CMB-CRIT-01: per-instance key
     bool _fledParty;
     int _initialMonsterCount;
 
@@ -490,7 +495,7 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     static int EffectiveSpeed(ICombatParticipant p)
         => (p?.Effective?.Attributes?.Speed?.Current ?? 0)
-           + (p?.SheetId != null ? CombatBuffs.Bonus(p.SheetId, CombatBuffs.BuffKind.Speed) : 0);
+           + (p != null ? CombatBuffs.Bonus(p, CombatBuffs.BuffKind.Speed) : 0);
 
     void DecaySleepOnAllCombatants()
     {
@@ -503,9 +508,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             {
                 Raise(new ChangeStatusEvent(target.Value, UAlbion.Formats.Assets.Sheets.PlayerCondition.Asleep, NumericOperation.SubtractAmount, 1));
             }
-            else if (_liveConditions.TryGetValue(p.SheetId, out var c)) // monster — wake via the shadow
+            else if (_liveConditions.TryGetValue(p, out var c)) // monster — wake via the shadow
             {
-                _liveConditions[p.SheetId] = c & ~UAlbion.Formats.Assets.Sheets.PlayerConditions.Asleep;
+                _liveConditions[p] = c & ~UAlbion.Formats.Assets.Sheets.PlayerConditions.Asleep;
             }
         }
     }
@@ -516,7 +521,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         {
             if (IsParty(p) != forParty) continue;
             if (LifePoints(p) <= 0) continue;
-            if (_removed.Contains(p.SheetId)) continue; // fled / removed from battle
+            if (_removed.Contains(p)) continue; // fled / removed from battle
             yield return p;
         }
     }
@@ -695,7 +700,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (strikes < 1) strikes = 1;
         // Hurry doubles the strike count — the original's "powered" flag at
         // Combatant+0x04 bit 0 (fcn.0004ef8b / the attack planners).
-        if (CombatBuffs.IsBerserk(attacker.SheetId))
+        if (CombatBuffs.IsBerserk(attacker))
             strikes <<= 1;
 
         int ammoReserve = ranged ? CountAmmo(attacker) : int.MaxValue;
@@ -862,7 +867,7 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         ShowCombatMessage(Base.SystemText.CombatMsg_XIsFleeing, p); // SYSTEXTS 445
         _tiles[tile] = null;
-        _removed.Add(p.SheetId);
+        _removed.Add(p);
 
         if (IsParty(p))
         {
@@ -930,8 +935,8 @@ public class Battle : GameComponent, IReadOnlyBattle
         var candidates = new List<ICombatParticipant>();
         foreach (var other in _mobs)
         {
-            if (other == null || LifePoints(other) <= 0 || _removed.Contains(other.SheetId)) continue;
-            if (other.SheetId == p.SheetId && !ranged) continue; // melee can't self-target
+            if (other == null || LifePoints(other) <= 0 || _removed.Contains(other)) continue;
+            if (ReferenceEquals(other, p) && !ranged) continue; // CMB-CRIT-01: self = same instance (SheetId collides for same-type monsters)
             if (!ranged && !IsAdjacent(p, other)) continue;
             candidates.Add(other);
         }
@@ -1121,7 +1126,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         var clamped = (ushort)Math.Min(ushort.MaxValue, amount);
         var current = LifePoints(target);
         var next = Math.Max(0, current - clamped);
-        _liveHp[target.SheetId] = next;
+        _liveHp[target] = next;
 
         var targetId = TryToTarget(target);
         if (targetId != null)
@@ -1141,7 +1146,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         var clamped = (ushort)Math.Min(ushort.MaxValue, amount);
         var max = target.Effective?.Combat?.LifePoints?.Max ?? int.MaxValue;
         var next = Math.Min(max, LifePoints(target) + clamped);
-        _liveHp[target.SheetId] = next;
+        _liveHp[target] = next;
 
         var targetId = TryToTarget(target);
         if (targetId != null)
@@ -1316,7 +1321,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             GetConditions = Conditions // includes the transient monster-condition shadow
         };
 
-        var outcome = SpellCastOutcome.Resisted;
+        var outcome = SpellCastOutcome.Failed;
         if (selfManagedArea || recipients.Count == 0)
         {
             outcome = SpellEffectRegistry.Cast(spellId, BuildContext(recipients.FirstOrDefault() ?? caster));
@@ -1326,7 +1331,10 @@ public class Battle : GameComponent, IReadOnlyBattle
             foreach (var recipient in recipients)
             {
                 var result = SpellEffectRegistry.Cast(spellId, BuildContext(recipient));
-                if (result == SpellCastOutcome.Hit || (result == SpellCastOutcome.Failed && outcome != SpellCastOutcome.Hit))
+                // CMB-02: precedence Hit > Resisted > Failed. A real attempt (Hit/Resisted) on any
+                // recipient must never be downgraded to Failed by a later no-op recipient, else the
+                // whole area cast refunds SP. Outcome stays Failed only when EVERY recipient failed.
+                if (result == SpellCastOutcome.Hit || (result == SpellCastOutcome.Resisted && outcome != SpellCastOutcome.Hit))
                     outcome = result;
                 if (Exchange == null || _combatEnded)
                     return; // an area kill may have ended the battle mid-loop
@@ -1351,7 +1359,7 @@ public class Battle : GameComponent, IReadOnlyBattle
                 if (casterTarget != null)
                     Raise(new DataChangeEvent(casterTarget.Value, ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
                 else
-                    _liveSp[caster.SheetId] = Math.Max(0, SpellPoints(caster) - cost); // monster SP shadow
+                    _liveSp[caster] = Math.Max(0, SpellPoints(caster) - cost); // monster SP shadow
 
                 // Over-cast surcharge: pay the SP shortfall in LP (computed at the cost check). SP is
                 // already floored at 0 by the SubtractAmount/Max(0,..) above.
@@ -1415,7 +1423,13 @@ public class Battle : GameComponent, IReadOnlyBattle
             ModifySp = ModifySpellPoints,
             GetActiveSpellPct = LookupActiveSpellPct,
             InstantKill = p => ApplyDirectDamage(p, Math.Max(1, LifePoints(p))),
-            SoulRise = p => Raise(new CombatSoulRiseEvent(TileOf(p)))
+            SoulRise = p => Raise(new CombatSoulRiseEvent(TileOf(p))),
+            // CMB-03: item casts need the same condition hooks as spellbook casts, otherwise
+            // InflictStatusEffect falls back to the PartySheet-only event path and silently
+            // no-ops against monsters. (Area item-spells still resolve on a single tile — see
+            // _BUG_AUDIT.md CMB-03 for the larger area-enumeration follow-up.)
+            ApplyCondition = (p, c) => ApplyCondition(p, c),
+            GetConditions = Conditions
         };
 
         var outcome = SpellEffectRegistry.Cast(pending.Spell, context);
@@ -1443,7 +1457,7 @@ public class Battle : GameComponent, IReadOnlyBattle
     UAlbion.Formats.Assets.Sheets.PlayerConditions Conditions(ICombatParticipant p)
     {
         var conds = p?.Effective?.Combat?.Conditions ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
-        if (p != null && _liveConditions.TryGetValue(p.SheetId, out var extra))
+        if (p != null && _liveConditions.TryGetValue(p, out var extra))
             conds |= extra;
         return conds;
     }
@@ -1463,8 +1477,8 @@ public class Battle : GameComponent, IReadOnlyBattle
         }
         else
         {
-            _liveConditions.TryGetValue(p.SheetId, out var cur);
-            _liveConditions[p.SheetId] = cur | flag;
+            _liveConditions.TryGetValue(p, out var cur);
+            _liveConditions[p] = cur | flag;
         }
         return true;
     }
@@ -1479,7 +1493,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             return false;
         // Frost-line freeze (the original's kind-1 round-timed buff sets Paralysed and
         // clears it at expiry; we model it directly as a timed turn-skip).
-        if (p != null && CombatBuffs.IsFrozen(p.SheetId))
+        if (p != null && CombatBuffs.IsFrozen(p))
             return false;
         return true;
     }
@@ -1487,11 +1501,11 @@ public class Battle : GameComponent, IReadOnlyBattle
     int LifePoints(ICombatParticipant p)
     {
         if (p == null) return 0;
-        if (_liveHp.TryGetValue(p.SheetId, out var hp))
+        if (_liveHp.TryGetValue(p, out var hp))
             return hp;
         // Lazy seed from Effective on first read; subsequent damage updates the shadow.
         var initial = p.Effective?.Combat?.LifePoints?.Current ?? 0;
-        _liveHp[p.SheetId] = initial;
+        _liveHp[p] = initial;
         return initial;
     }
 
@@ -1513,7 +1527,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         else
         {
             int max = p.Effective?.Magic?.SpellPoints?.Max ?? int.MaxValue;
-            _liveSp[p.SheetId] = Math.Clamp(SpellPoints(p) + delta, 0, max);
+            _liveSp[p] = Math.Clamp(SpellPoints(p) + delta, 0, max);
         }
     }
 
@@ -1526,10 +1540,10 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (p == null) return 0;
         if (p.SheetId.Type == AssetType.PartySheet)
             return p.Effective?.Magic?.SpellPoints?.Current ?? 0;
-        if (_liveSp.TryGetValue(p.SheetId, out var sp))
+        if (_liveSp.TryGetValue(p, out var sp))
             return sp;
         var initial = p.Effective?.Magic?.SpellPoints?.Current ?? 0;
-        _liveSp[p.SheetId] = initial;
+        _liveSp[p] = initial;
         return initial;
     }
 
@@ -1547,7 +1561,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             CombatBuffs.BuffKind.CritSkill         => p?.Effective?.Skills?.CriticalChance?.Current ?? 0,
             _ => 0
         };
-        skill += CombatBuffs.Bonus(p.SheetId, buffKind);
+        skill += CombatBuffs.Bonus(p, buffKind);
         bool blind = ((p?.Effective?.Combat?.Conditions ?? 0) & UAlbion.Formats.Assets.Sheets.PlayerConditions.Blind) != 0;
         return DamageCalculator.EffectiveSkill(skill, isWeaponSkill, blind);
     }
@@ -1645,11 +1659,11 @@ public class Battle : GameComponent, IReadOnlyBattle
             int atkRoll = rng.Generate(51);
             int defRoll = rng.Generate(51);
             int strength = (attacker.Effective?.Attributes?.Strength?.Current ?? 0)
-                           + CombatBuffs.Bonus(attacker.SheetId, CombatBuffs.BuffKind.Strength);
+                           + CombatBuffs.Bonus(attacker, CombatBuffs.BuffKind.Strength);
             int rawAtk = DamageCalculator.TotalAttackWithStrength(a, strength)
-                         + CombatBuffs.Bonus(attacker.SheetId, CombatBuffs.BuffKind.Attack);
+                         + CombatBuffs.Bonus(attacker, CombatBuffs.BuffKind.Attack);
             int rawDef = DamageCalculator.TotalDefense(d)
-                         + CombatBuffs.Bonus(defender.SheetId, CombatBuffs.BuffKind.Defense);
+                         + CombatBuffs.Bonus(defender, CombatBuffs.BuffKind.Defense);
             // MagicShield/PersonalProtection: the active-spell type-1 percentage
             // MULTIPLIES defense (fcn.0004ee3b: rawDef += rawDef·pct/100). The table is
             // party-only and persists across battles, decaying hourly (RE 5B).
@@ -1681,7 +1695,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         var amount = (ushort)Math.Min(ushort.MaxValue, adjusted);
         var current = LifePoints(defender);
         var next = Math.Max(0, current - amount);
-        _liveHp[defender.SheetId] = next;
+        _liveHp[defender] = next;
 
         // Also route through the data-change pipeline so any persistent sheet (party members
         // resolved via GameState.Sheets) updates and SheetApplier.LifeChecks fires

@@ -64,10 +64,11 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
         });
         OnQuery<   QueryDoorUnlockedEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().IsDoorOpen(q.DoorId) ? 1 : 0, q.Immediate));
         OnQuery<  QueryChestUnlockedEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().IsChestOpen(q.ChestId) ? 1 : 0, q.Immediate));
-        // Leader character-attribute / day-count branches (previously threw at map load).
-        OnQuery<         QueryGenderEvent, bool>(q => FormatUtil.Compare(q.Operation, (int)Resolve<IGameState>().Party.Leader.Effective.Gender, q.Immediate));
-        OnQuery<          QueryClassEvent, bool>(q => FormatUtil.Compare(q.Operation, (int)Resolve<IGameState>().Party.Leader.Effective.PlayerClass, q.Immediate));
-        OnQuery<           QueryRaceEvent, bool>(q => FormatUtil.Compare(q.Operation, (int)Resolve<IGameState>().Party.Leader.Effective.Race, q.Immediate));
+        // QRY-02: gender/class/race queries match if ANY party member qualifies (the original
+        // opcode loops members 1..6), not just the current leader.
+        OnQuery<         QueryGenderEvent, bool>(q => Resolve<IGameState>().Party.StatusBarOrder.Any(m => FormatUtil.Compare(q.Operation, (int)m.Effective.Gender, q.Immediate)));
+        OnQuery<          QueryClassEvent, bool>(q => Resolve<IGameState>().Party.StatusBarOrder.Any(m => FormatUtil.Compare(q.Operation, (int)m.Effective.PlayerClass, q.Immediate)));
+        OnQuery<           QueryRaceEvent, bool>(q => Resolve<IGameState>().Party.StatusBarOrder.Any(m => FormatUtil.Compare(q.Operation, (int)m.Effective.Race, q.Immediate)));
         OnQuery<            QueryDayEvent, bool>(q =>
         {
             int days = (int)(Resolve<IGameState>().Time - UAlbion.Formats.Assets.Save.SavedGame.Epoch).TotalDays;
@@ -121,8 +122,20 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
 
         OnQuery<QueryChainActiveEvent, bool>(q => !Resolve<IGameState>().IsChainDisabled(q.MapId, q.ChainNum));
         OnQuery<QueryNpcActiveOnMapEvent, bool>(q => !Resolve<IGameState>().IsNpcDisabled(q.MapId, q.NpcNum));
-        OnQuery<QueryNpcXEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().Npcs[q.Immediate].X, q.Argument));
-        OnQuery<QueryNpcYEvent, bool>(q => FormatUtil.Compare(q.Operation, Resolve<IGameState>().Npcs[q.Immediate].Y, q.Argument));
+        // QRY-01: guard the NPC array against OOB (q.Immediate is a byte, Npcs is fixed-size) and
+        // null slots, mirroring the QueryUnkC handler below.
+        OnQuery<QueryNpcXEvent, bool>(q =>
+        {
+            var npcs = Resolve<IGameState>().Npcs;
+            var npc = q.Immediate < npcs.Count ? npcs[q.Immediate] : null;
+            return npc != null && FormatUtil.Compare(q.Operation, npc.X, q.Argument);
+        });
+        OnQuery<QueryNpcYEvent, bool>(q =>
+        {
+            var npcs = Resolve<IGameState>().Npcs;
+            var npc = q.Immediate < npcs.Count ? npcs[q.Immediate] : null;
+            return npc != null && FormatUtil.Compare(q.Operation, npc.Y, q.Argument);
+        });
 
         // The four formerly-unknown opcodes, RE batch 5C (dispatcher table 0x3ca53):
 

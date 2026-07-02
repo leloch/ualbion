@@ -98,8 +98,8 @@ public class DamageCalculatorTests
         => Assert.Equal(0, DamageCalculator.VaryDamage(0, 5));
 
     [Fact]
-    public void Vary_Damage_Never_Returns_Below_One_For_Positive_Input()
-        => Assert.Equal(1, DamageCalculator.VaryDamage(1, 0));
+    public void Vary_Damage_Can_Truncate_To_Zero_For_Small_Input() // CMB-01: byte-exact RandomVary has no floor
+        => Assert.Equal(0, DamageCalculator.VaryDamage(1, 0)); // 1 * 50/100 = 0
 
     [Theory]
     // RE'd from MAIN.EXE fcn.00035b15 (PercentRoll): success iff roll <= value, with

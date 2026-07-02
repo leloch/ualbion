@@ -129,8 +129,10 @@ public class Movement3D : Component
             return;
 
         var pos = leader.GetPosition();
-        int tileX = (int)MathF.Round(pos.X);
-        int tileY = (int)MathF.Round(pos.Z);
+        // MOV3D-02: use Floor (not Round) so the reported tile matches the convention used by
+        // FilterCollision and the automap (tile N owns [N, N+1)); Round flipped a half-tile early.
+        int tileX = (int)MathF.Floor(pos.X);
+        int tileY = (int)MathF.Floor(pos.Z);
         if (tileX == _lastTileX && tileY == _lastTileY)
             return;
 

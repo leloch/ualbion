@@ -11,7 +11,9 @@ public class WordLookup : GameServiceComponent<IWordLookup>, IWordLookup
     readonly Dictionary<string, List<WordId>> _lookup = [];
     readonly Dictionary<WordId, string> _reverse = [];
 
-    public WordLookup() => On<LanguageChangedEvent>(_ => _lookup.Clear());
+    // DLG-01: clear BOTH maps on language change so they can't desync (a stale _reverse hit
+    // with an empty _lookup made GetHomonyms throw KeyNotFoundException).
+    public WordLookup() => On<LanguageChangedEvent>(_ => { _lookup.Clear(); _reverse.Clear(); });
     public WordId Parse(string s)
     {
         if (string.IsNullOrEmpty(s))
@@ -26,10 +28,14 @@ public class WordLookup : GameServiceComponent<IWordLookup>, IWordLookup
             : WordId.None;
     }
 
-    public IEnumerable<WordId> GetHomonyms(WordId word) =>
-        _reverse.TryGetValue(word, out var text) 
-            ? _lookup[text] 
+    public IEnumerable<WordId> GetHomonyms(WordId word)
+    {
+        if (_lookup.Count == 0)
+            Rebuild();
+        return _reverse.TryGetValue(word, out var text) && _lookup.TryGetValue(text, out var ids)
+            ? ids
             : Array.Empty<WordId>();
+    }
 
     public string GetText(WordId id, string language) 
         => _reverse.TryGetValue(id, out var text) ? text : id.ToString();
