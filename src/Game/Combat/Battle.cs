@@ -1237,54 +1237,7 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         var rng = Resolve<IRandom>();
 
-        // Target-AREA enumeration (RE 5B fcn.0005ef24/fcn.0005fb21): RowOfMonsters hits
-        // every enemy in the picked tile's 6-tile grid row; AllMonsters hits every
-        // living enemy; DeadParty (0x04) is actually the WHOLE LIVING PARTY; the rest
-        // are single-target. Each recipient runs the effect (and its own gate)
-        // separately. GoddessWrath manages its own victims (the random picker).
-        var targets = spell?.Targets ?? default;
-        bool selfManagedArea = SpellEffectRegistry.TryGet(spellId, out var registered)
-                               && registered is Spells.GoddessWrathEffect;
-
-        var recipients = new List<ICombatParticipant>();
-        switch (SpellTargeting.Classify(targets, selfManagedArea))
-        {
-            case SpellArea.AllMonsters:
-                recipients.AddRange(EnumerateTilesRowMajor(enemyOf: caster));
-                break;
-
-            case SpellArea.Row:
-            {
-                int row = targetTile >= 0
-                    ? targetTile / SavedGame.CombatColumns
-                    : TileOf(LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault());
-                if (row >= 0)
-                    foreach (var p in EnumerateTilesRowMajor(enemyOf: caster))
-                        if (TileOf(p) / SavedGame.CombatColumns == row)
-                            recipients.Add(p);
-                break;
-            }
-
-            case SpellArea.WholeParty:
-                // 0x04 = whole living party (the "DeadParty" name predates the RE).
-                recipients.AddRange(LiveParticipants(forParty: IsParty(caster)));
-                break;
-
-            default: // SpellArea.SingleTarget
-            {
-                var single = targetTile >= 0 && targetTile < _tiles.Length ? _tiles[targetTile] : null;
-                if (single == null || LifePoints(single) <= 0)
-                {
-                    // Empty / dead tile picked: monster-targeting spells retarget the
-                    // nearest live enemy (like melee); party-targeting ones self-cast.
-                    single = SpellTargeting.IsOffensive(targets)
-                        ? LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault() ?? caster
-                        : caster;
-                }
-                recipients.Add(single);
-                break;
-            }
-        }
+        var recipients = EnumerateSpellRecipients(caster, spellId, spell, targetTile, out bool selfManagedArea);
 
         if (recipients.Count == 0 && !selfManagedArea)
         {
@@ -1390,6 +1343,66 @@ public class Battle : GameComponent, IReadOnlyBattle
     }
 
     /// <summary>
+    /// Target-AREA enumeration (RE 5B fcn.0005ef24/fcn.0005fb21): RowOfMonsters hits
+    /// every enemy in the picked tile's 6-tile grid row; AllMonsters hits every
+    /// living enemy; DeadParty (0x04) is actually the WHOLE LIVING PARTY; the rest
+    /// are single-target. Each recipient runs the effect (and its own gate)
+    /// separately. GoddessWrath manages its own victims (the random picker).
+    /// Shared by spellbook casts and magic-item uses — the original's cast core is the
+    /// same code path for both (RE 5B fcn.0005fdf7; only the mastery multiplier differs).
+    /// </summary>
+    List<ICombatParticipant> EnumerateSpellRecipients(
+        ICombatParticipant caster, SpellId spellId, UAlbion.Formats.Assets.SpellData spell,
+        int targetTile, out bool selfManagedArea)
+    {
+        var targets = spell?.Targets ?? default;
+        selfManagedArea = SpellEffectRegistry.TryGet(spellId, out var registered)
+                          && registered is Spells.GoddessWrathEffect;
+
+        var recipients = new List<ICombatParticipant>();
+        switch (SpellTargeting.Classify(targets, selfManagedArea))
+        {
+            case SpellArea.AllMonsters:
+                recipients.AddRange(EnumerateTilesRowMajor(enemyOf: caster));
+                break;
+
+            case SpellArea.Row:
+            {
+                int row = targetTile >= 0
+                    ? targetTile / SavedGame.CombatColumns
+                    : TileOf(LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault());
+                if (row >= 0)
+                    foreach (var p in EnumerateTilesRowMajor(enemyOf: caster))
+                        if (TileOf(p) / SavedGame.CombatColumns == row)
+                            recipients.Add(p);
+                break;
+            }
+
+            case SpellArea.WholeParty:
+                // 0x04 = whole living party (the "DeadParty" name predates the RE).
+                recipients.AddRange(LiveParticipants(forParty: IsParty(caster)));
+                break;
+
+            default: // SpellArea.SingleTarget
+            {
+                var single = targetTile >= 0 && targetTile < _tiles.Length ? _tiles[targetTile] : null;
+                if (single == null || LifePoints(single) <= 0)
+                {
+                    // Empty / dead tile picked: monster-targeting spells retarget the
+                    // nearest live enemy (like melee); party-targeting ones self-cast.
+                    single = SpellTargeting.IsOffensive(targets)
+                        ? LiveParticipants(forParty: !IsParty(caster)).FirstOrDefault() ?? caster
+                        : caster;
+                }
+                recipients.Add(single);
+                break;
+            }
+        }
+
+        return recipients;
+    }
+
+    /// <summary>
     /// Resolve a queued magic-item use: cast the item's spell with no SP cost; a charge
     /// (or one consumable) is consumed on success via ConsumeItemChargeEvent below.
     /// </summary>
@@ -1398,11 +1411,22 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (user == null || pending.Spell.IsNone)
             return;
 
-        var target = pending.TargetTile >= 0 && pending.TargetTile < _tiles.Length ? _tiles[pending.TargetTile] : null;
-        target ??= user;
+        // CMB-03 (area half): item casts run the same target-area enumeration as spellbook
+        // casts — the original's cast core is shared, so an area item-spell (e.g. a wand
+        // firing Frost Avalanche) hits its whole row/side rather than a single tile.
+        var spell = Assets.LoadSpell(pending.Spell);
+        var recipients = EnumerateSpellRecipients(user, pending.Spell, spell, pending.TargetTile, out bool selfManagedArea);
+        if (recipients.Count == 0 && !selfManagedArea)
+        {
+            // Nothing in the area: fizzle (sound 698); no charge is consumed — matches the
+            // spell path's zero-continuation rule (RE 5B).
+            Raise(new SoundEffectEvent(new SampleId(698), 100, 0, 0, 0, SoundMode.GlobalOneShot));
+            Info($"[Combat] {user.SheetId} uses item {pending.Item} ({pending.Spell}) but nothing is in the area (fizzle)");
+            return;
+        }
 
         var rng = Resolve<IRandom>();
-        var context = new SpellCastContext
+        SpellCastContext BuildContext(ICombatParticipant target) => new()
         {
             Caster = user,
             Target = target,
@@ -1417,7 +1441,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             ApplyHeal = ApplyDirectHeal,
             PlaceTrap = (tile, damage) => _traps[tile] = damage,
             RemoveTrap = tile => _traps.Remove(tile),
-            GetLiveEnemies = () => LiveParticipants(forParty: !IsParty(user)).ToList(),
+            GetLiveEnemies = () => EnumerateTilesRowMajor(enemyOf: user).ToList(),
             GetAllies = () => LiveParticipants(forParty: IsParty(user)).ToList(),
             HoursAwake = () => TryResolve<IGameState>()?.HoursSinceResting ?? 0,
             ModifySp = ModifySpellPoints,
@@ -1426,15 +1450,32 @@ public class Battle : GameComponent, IReadOnlyBattle
             SoulRise = p => Raise(new CombatSoulRiseEvent(TileOf(p))),
             // CMB-03: item casts need the same condition hooks as spellbook casts, otherwise
             // InflictStatusEffect falls back to the PartySheet-only event path and silently
-            // no-ops against monsters. (Area item-spells still resolve on a single tile — see
-            // _BUG_AUDIT.md CMB-03 for the larger area-enumeration follow-up.)
+            // no-ops against monsters.
             ApplyCondition = (p, c) => ApplyCondition(p, c),
             GetConditions = Conditions
         };
 
-        var outcome = SpellEffectRegistry.Cast(pending.Spell, context);
-        Info($"[Combat] {user.SheetId} uses item {pending.Item} ({pending.Spell}): {outcome}");
-        TraceLog.Emit("combat_use_item", ("actor", user.SheetId), ("item", pending.Item), ("spell", pending.Spell), ("outcome", outcome));
+        var outcome = SpellCastOutcome.Failed;
+        if (selfManagedArea)
+        {
+            outcome = SpellEffectRegistry.Cast(pending.Spell, BuildContext(recipients.FirstOrDefault() ?? user));
+        }
+        else
+        {
+            foreach (var recipient in recipients)
+            {
+                var result = SpellEffectRegistry.Cast(pending.Spell, BuildContext(recipient));
+                // Same outcome precedence as spellbook casts (CMB-02): Hit > Resisted > Failed,
+                // so one no-op recipient can't turn a landed area cast into a free one.
+                if (result == SpellCastOutcome.Hit || (result == SpellCastOutcome.Resisted && outcome != SpellCastOutcome.Hit))
+                    outcome = result;
+                if (Exchange == null || _combatEnded)
+                    return; // an area kill may have ended the battle mid-loop
+            }
+        }
+
+        Info($"[Combat] {user.SheetId} uses item {pending.Item} ({pending.Spell}) at tile {pending.TargetTile} ({recipients.Count} target(s)): {outcome}");
+        TraceLog.Emit("combat_use_item", ("actor", user.SheetId), ("item", pending.Item), ("spell", pending.Spell), ("targets", recipients.Count), ("outcome", outcome));
 
         if (outcome != SpellCastOutcome.Failed)
         {

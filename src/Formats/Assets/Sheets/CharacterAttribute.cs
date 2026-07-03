@@ -35,7 +35,10 @@ public class CharacterAttribute : ICharacterAttribute
 
     public void ApplyToMax(NumericOperation operation, ushort amount)
     {
-        Max = operation.Apply16(Max, amount);
+        // DATA-01: max values are "unbounded" quantities — percentage ops take a percentage
+        // of the CURRENT max (fcn.0003e0d5, fed by the max(1, stored) getter fcn.00036934),
+        // clamped to 0x7FFF. The old path computed percent-of-65535.
+        Max = (ushort)operation.ApplyUnbounded(Math.Max((ushort)1, Max), amount, 0x7FFF);
         if (Current > Max)
             Current = Max;
     }
