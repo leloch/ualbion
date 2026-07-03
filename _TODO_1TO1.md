@@ -206,9 +206,14 @@ All five confirmed against the actual code, not comments:
 - Save-slot picker: scrollbar + 99 slots (`PickSaveSlotMenu.cs:23`); dedupe the save
   path logic (`GameState.cs` + `PickSaveSlotMenu.cs`). (The MODERN save browser already
   scrolls and shows thumbnails; this item is about the classic-skin picker.)
-- Keyboard support in conversation topic window (`ConversationTopicWindow.cs:20`).
+- ~~Keyboard support in conversation topic window~~ DONE 2026-07-02 — number keys 1-9
+  (respond) + 0 (enter word) were already bound; added Escape → dismiss_message
+  (closes the topic window / message like a right-click). Arrow-key navigation is a
+  non-goal (the original is mouse+number driven).
 - LoadMapPromptDialog → textbox (`LoadMapPromptDialog.cs:9`).
-- i18n: price formatting (`TextFormatter.cs:164`).
+- ~~i18n: price formatting~~ RESOLVED 2026-07-02 — the `{PRIC}` token dropped its
+  modern `$` prefix; the original renders gold-in-tenths as `<whole>.<tenth>` with a
+  hardcoded '.' in every language, so no locale separator is needed anywhere.
 - New-game start coords → config (`MainMenu.cs:76`).
 - NightPalettes → config/asset (`NightPalettes.cs:7`).
 

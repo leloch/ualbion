@@ -72,8 +72,8 @@ public static class SyntheticScenarioLibrary
         S("kenget", "Ch.8 — Kenget Kamulos late dungeon (3D). Flags best-effort.",
             Base.Map.Kenget, LateParty, 5000),
 
-        S("finale", "Endgame — Toronto finale location. NOTE: the surrender/Seed combat rig is " +
-            "still the B2/B3 stub, so this only places you here; it can't yet run the ending.",
+        S("finale", "Endgame — Toronto finale location. The surrender win condition is live: " +
+            "encounter MonsterGroup.OneAI, down a member, and the AI requests surrender -> endgame FLICs.",
             Base.Map.TorontoBegin, LateParty, 5000),
     ];
 
