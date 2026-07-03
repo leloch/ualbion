@@ -1,7 +1,32 @@
 ﻿# UAlbion — Iteration Session Status
 
-> Rolling status. Updated 2026-06-13 after the **RE batch-5 sweep** (the work ledger is
-> `_TODO_1TO1.md` — check it first).
+> Rolling status. Updated 2026-07-02 after the **cleanup + "make it perfect" pass** (the work
+> ledger is `_TODO_1TO1.md` — check it first).
+
+## 2026-07-02 — audit closure, green build, classic menu default, shakeout fix
+
+- **All 19 `_BUG_AUDIT.md` bugs now CLOSED.** The 15-fix re-verification pass that had been
+  sitting uncommitted is committed (`54e59b1d`); DATA-01 resolved after a fresh radare2 pass
+  (`_RE_DATA01.md` + `e612aa8f`): bounded stats take percent-of-max, unbounded quantities
+  (XP/TP/gold/food/max-stats) percent-of-CURRENT capped at 0x7FFF, gold/food REJECT
+  out-of-range changes (fail the chain branch) instead of clamping, IsRandom = 1+rand()%n.
+- **CMB-03 area half done:** item casts share the spellbook target-area enumeration
+  (`Battle.EnumerateSpellRecipients`), live-verified (one item cast hit targets=3).
+- **Default build is green again** (`31e23640`): the menu work's CA errors fixed properly —
+  TextRasterizer is now IDisposable (real leak + use-after-free on resubscribe), field/return
+  style fixes elsewhere. No analyzer opt-out flags needed any more.
+- **Classic 1996 main menu is the default again** (`Game.UI.ClassicMainMenu` = true); the
+  modern native-res menu stays as the Extras opt-in. Verified both ways via harness screenshots.
+- **New crash found+fixed by the shakeout** (`b5de8f22`): entering Kenget7 after Kenget6's
+  lever chains threw on a replayed zone with the 0xFFFF "no chain" sentinel — both
+  FireEventChains paths now skip it.
+- Small stuff: combat Move queue-time claim mask (snd 442); Escape closes conversation
+  topics; `{PRIC}` lost its `$`; classic save picker pages all 99 slots; scenario/doc rot.
+- **Verification:** CI 628/628 (5 new NumericOperation tests), smoke 13/13, harness drive
+  20/20, narrative shakeout re-running post-fix. **Next: the B6 empirical story playthrough**
+  (beats 6+ past Hunter Clan) via synth_scenario warps + the conversation shakeout.
+
+---
 
 ## 2026-06-13 — the four-cluster RE sweep, decoded AND applied (~20 commits)
 
