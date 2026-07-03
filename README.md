@@ -39,14 +39,16 @@ Implemented (most mechanics reverse-engineered from MAIN.EXE for 1:1 behaviour â
 - Video playback, NPC movement/schedules, map event scripting
 - Exporting assets; mod layer system (e.g. an HD asset override mod)
 
-Remaining gaps are tracked in **`_TODO_1TO1.md`** (the work ledger): combat move
-path-finding animation, spell target areas, a few undecoded constants, and polish items.
+Remaining gaps are tracked in **`_TODO_1TO1.md`** (the work ledger) â€” at this point mostly
+polish and modding-convenience items; the mechanics, combat, magic and the story content
+pipeline are implemented and verified (all 166 story maps load and run their event chains
+cleanly).
 
 Planned improvements / changes from the original gameplay:
-- Add hotkeys to streamline the interface, reduce the amount of right clicking required etc (partially done: quicksave/quickload, window scaling)
-- Add some pathfinding logic to make mouse-based movement easier
+- Add hotkeys to streamline the interface, reduce the amount of right clicking required etc (largely done: quicksave/quickload, window scaling, conversation number keys + Escape)
+- Add some pathfinding logic to make mouse-based movement easier (done: A* click-to-walk on 2D maps)
 - Add a take-all button when looting chests / fallen foes (done)
-- Graphical improvements in 3D environments
+- Graphical improvements in 3D environments (done, opt-in via the Extras menu: texture filtering, distance fog, minimap, gamma, interactable highlighting, bump mapping)
 - Fix bugs in original game (with option to toggle when there is a gameplay impact)
 - Modding support (asset override layers work; see `mods/`)
 - A built-in editor for modifying and adding assets
