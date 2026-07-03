@@ -1081,6 +1081,9 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         var eventSet = Assets.LoadEventSet(Base.EventSet.InventoryItems);
         foreach (var eventIndex in eventSet.Chains)
         {
+            if (eventIndex >= eventSet.Events.Count) // 0xFFFF = unused chain slot
+                continue;
+
             if (eventSet.Events[eventIndex].Event is not ActionEvent action)
                 continue;
 
