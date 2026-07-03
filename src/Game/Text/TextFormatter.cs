@@ -166,10 +166,12 @@ public class TextFormatter : GameServiceComponent<ITextFormatter>, ITextFormatte
         }
     }
 
+    // Gold is stored in tenths; the original renders prices as "<whole>.<tenth>" with a
+    // hardcoded '.' in every language (no currency symbol) — so no i18n separator needed.
     static (Token, object) SubstitutePrice(object active) =>
-        active is not ItemData item 
-            ? (Token.Text, "{PRIC}") 
-            : (Token.Text, $"${item.Value / 10}.{item.Value % 10}"); // TODO:  i18n
+        active is not ItemData item
+            ? (Token.Text, "{PRIC}")
+            : (Token.Text, $"{item.Value / 10}.{item.Value % 10}");
 
     (Token, object) SubstituteName(object active)
     {

@@ -164,7 +164,8 @@
     "7": "respond 7",
     "8": "respond 8",
     "9": "respond 9",
-    "0": "enter_word" // Used to trigger 'Enter word' in conversation
+    "0": "enter_word", // Used to trigger 'Enter word' in conversation
+    "Escape": "dismiss_message" // Close the topic window / message like a right-click
   },
   "MainMenu": {
     "Ctrl+N": "new_game TorontoBegin 31 76",
