@@ -163,6 +163,13 @@ public class FlatMap : GameComponent, IMap
 
             foreach (var zone in zones)
             {
+                // 0xFFFF = "no chain" sentinel: legitimate for zones whose trigger mask was
+                // set by a change_icon Trigger without an event chain (e.g. cross-map lever
+                // effects replayed on entry). The tile-entry paths skip these via the
+                // zone.Node null-check; the bulk path must skip them too, not throw.
+                if (zone.EventIndex == EventNode.UnusedEventId)
+                    continue;
+
                 await RaiseA(
                     new TriggerChainEvent(
                         _logicalMap.EventSet,
