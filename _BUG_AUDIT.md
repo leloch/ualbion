@@ -14,12 +14,17 @@ Re-checked every finding against current `master` (the repo moved ~12 days). Res
 - **Fixed this pass (15):** CMB-CRIT-01, STATE-01, INV-01, INV-02, INV-03, QRY-01, QRY-02, MOV3D-01,
   MOV2D-02, MOV3D-02, MERCH-02, CMB-01, CMB-02, CMB-03, DLG-01, DLG-02. Verified: full CI suite
   **623/623 green**, save smoke **13/13 clean**.
-- **Deferred (1):** DATA-01 — the percentage-op base. The shared `NumericOperation` formula clamps to
-  `max`, so a targeted fix is ambiguous (could alter the common current-stat heal path) and needs an
-  RE check of the original's percentage semantics. Left untouched pending that confirmation.
+- **DATA-01: FIXED 2026-07-02** after the RE check landed (`_RE_DATA01.md`): the original has two
+  appliers — bounded stats take percent-of-max (fcn.0003e2f1, the remake was already right there);
+  XP/TP/gold/rations/max-stats take percent-of-CURRENT with a 0x7FFF cap (fcn.0003e0d5); and
+  gold/rations REJECT out-of-range changes outright (fcn.0003e1f8) instead of clamping — paying an
+  unaffordable cost now fails the chain branch. IsRandom also corrected to the original's
+  `1 + rand() % amount` (was `rand() % amount`). New coverage in `NumericOperationTests`.
 
-> Note: CMB-03 fixed the condition-hook half (item debuffs now land on monsters); the area-enumeration
-> half (item area-spells still resolve on a single tile) is a larger follow-up, noted inline.
+> Note: CMB-03's area-enumeration half (item area-spells resolved on a single tile) is also FIXED
+> (2026-07-02): item casts now share the spellbook path's target-area enumeration
+> (`Battle.EnumerateSpellRecipients`) and outcome precedence; live-verified via the harness
+> (one DemonExodus item cast hit targets=3).
 > Build note: the CA analyzer errors that had turned the default build red (introduced by the menu
 > work: `NativeMenuDialog.cs`, `ExtrasMenu.cs`, `TextRasterizer.cs`, `ImGuiConsoleLogger.cs`) are
 > fixed — a plain `dotnet build src/ualbion.sln` is green again, no analyzer opt-outs needed.

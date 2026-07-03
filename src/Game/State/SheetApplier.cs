@@ -14,6 +14,18 @@ namespace UAlbion.Game.State;
 
 public class SheetApplier : Component
 {
+    // The original rolls the amount BEFORE the property switch (fcn.0003c3eb @0x3c442):
+    // amount = 1 + rand() % Amount, i.e. uniform 1..Amount (never 0). For percentage ops
+    // this randomizes the percentage itself.
+    ushort RollAmount(bool isRandom, ushort amount)
+        => !isRandom || amount == 0
+            ? amount
+            : (ushort)(1 + Resolve<IRandom>().Generate(amount));
+
+    // Failed changes (e.g. paying gold you don't have) fail the event chain's branch
+    // result, mirroring fcn.00031699 clearing the event's success bit.
+    static void SetLastResult(bool result) => ((EventContext)Context).LastEventResult = result;
+
     public void Apply(IDataChangeEvent e, CharacterSheet sheet)
     {
         ArgumentNullException.ThrowIfNull(e);
@@ -39,9 +51,7 @@ public class SheetApplier : Component
 
     void ApplyGeneric(CharacterSheet sheet, DataChangeEvent generic)
     {
-        var amount = generic.IsRandom
-            ? (ushort)Resolve<IRandom>().Generate(generic.Amount)
-            : generic.Amount;
+        var amount = RollAmount(generic.IsRandom, generic.Amount);
 
         switch (generic.ChangeProperty)
         {
@@ -63,20 +73,36 @@ public class SheetApplier : Component
                 sheet.Magic.SpellPoints.ApplyToMax(generic.Operation, amount);
                 break;
 
+            // DATA-01 (RE _RE_DATA01.md): Experience/TrainingPoints/Gold/Food are "unbounded"
+            // quantities — percentage ops take a percentage of the CURRENT value (not of a max),
+            // clamped at 0x7FFF (experience: 0x7FFFFFFF).
             case ChangeProperty.Experience:
-                sheet.Combat.ExperiencePoints = generic.Operation.Apply(sheet.Combat.ExperiencePoints, amount);
+                sheet.Combat.ExperiencePoints = generic.Operation.ApplyUnbounded(sheet.Combat.ExperiencePoints, amount, int.MaxValue);
                 ExperienceChecks(sheet);
                 break;
 
             case ChangeProperty.TrainingPoints:
-                sheet.Combat.TrainingPoints = generic.Operation.Apply16(sheet.Combat.TrainingPoints, amount);
+                sheet.Combat.TrainingPoints = (ushort)generic.Operation.ApplyUnbounded(sheet.Combat.TrainingPoints, amount, 0x7FFF);
                 break;
             case ChangeProperty.Gold:
-                sheet.Inventory.Gold.Amount = generic.Operation.Apply16(sheet.Inventory.Gold.Amount, amount);
+            {
+                // Gold/Food changes are pre-validated (fcn.0003e1f8): an out-of-range change
+                // (e.g. paying more gold than held) is REJECTED outright — nothing is written
+                // and the event chain's branch result goes false — rather than clamped to 0.
+                bool ok = generic.Operation.IsValidUnbounded(sheet.Inventory.Gold.Amount, amount, 0x7FFF);
+                if (ok)
+                    sheet.Inventory.Gold.Amount = (ushort)generic.Operation.ApplyUnbounded(sheet.Inventory.Gold.Amount, amount, 0x7FFF);
+                SetLastResult(ok);
                 break;
+            }
             case ChangeProperty.Food:
-                sheet.Inventory.Rations.Amount = generic.Operation.Apply16(sheet.Inventory.Rations.Amount, amount);
+            {
+                bool ok = generic.Operation.IsValidUnbounded(sheet.Inventory.Rations.Amount, amount, 0x7FFF);
+                if (ok)
+                    sheet.Inventory.Rations.Amount = (ushort)generic.Operation.ApplyUnbounded(sheet.Inventory.Rations.Amount, amount, 0x7FFF);
+                SetLastResult(ok);
                 break;
+            }
 
             case ChangeProperty.Unused4:
             case ChangeProperty.Unused6:
@@ -127,9 +153,7 @@ public class SheetApplier : Component
         if (invManager == null)
             return;
 
-        var amount = itemEvent.IsRandom
-            ? (ushort)Resolve<IRandom>().Generate(itemEvent.Amount == 0 ? (ushort)1 : itemEvent.Amount)
-            : itemEvent.Amount;
+        var amount = RollAmount(itemEvent.IsRandom, itemEvent.Amount);
         if (amount == 0) amount = 1;
 
         var inventoryId = new InventoryId(sheet.Id);
@@ -264,9 +288,7 @@ public class SheetApplier : Component
             _ => throw new ArgumentException($"Unknown attribute {attribEvent.Attribute} in event {attribEvent}", nameof(attribEvent))
         };
 
-        var amount = attribEvent.IsRandom
-            ? (ushort)Resolve<IRandom>().Generate(attribEvent.Amount)
-            : attribEvent.Amount;
+        var amount = RollAmount(attribEvent.IsRandom, attribEvent.Amount);
 
         attrib.Apply(attribEvent.Operation, amount);
         Raise(new AttributeChangedEvent(sheet.Id, attribEvent.Attribute));
@@ -283,9 +305,7 @@ public class SheetApplier : Component
             _ => throw new ArgumentException($"Unknown skill {skillEvent.Skill} in event {skillEvent}", nameof(skillEvent))
         };
 
-        var amount = skillEvent.IsRandom
-            ? (ushort)Resolve<IRandom>().Generate(skillEvent.Amount)
-            : skillEvent.Amount;
+        var amount = RollAmount(skillEvent.IsRandom, skillEvent.Amount);
 
         skill.Apply(skillEvent.Operation, amount);
         Raise(new SkillChangedEvent(sheet.Id, skillEvent.Skill));
