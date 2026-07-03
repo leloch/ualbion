@@ -1,5 +1,25 @@
 # Intro Playthrough Report — New Game → Crash Site → Hunter Clan (2026-06-12)
 
+> **SECOND PASS 2026-07-02 — every open item below is resolved or reclassified:**
+> 1. **`play` / `start_anim` visuals — FIXED & VERIFIED.** VideoManager now implements
+>    show_pic / start_anim / play-cycles / stop_anim; the flight sequence renders the
+>    scout-ship cutaway over the starfield (`_shots/story/pt2_01..03`), no more black
+>    screen with a floating sprite.
+> 2. **`start_anim` no-op — FIXED** (same VideoManager work).
+> 3. **`/npcs` MapTextIndex ids — NOT A BUG.** Simple-message NPCs legitimately carry a
+>    MapTextIndex id (MapNpc.SimpleMsg flag); talking to them shows the map text popup
+>    (handled in both Npc2D and SelectionHandler3D). The dump is faithful.
+> 4. **Pistol gate** — still not organically driven (chains fire crash-free in the
+>    166-map shakeout; `has_item` queries are unit-tested). Low priority.
+> 5. The DumpText crashes were the old asset-dump CLI, since fixed (event-set dump
+>    verified clean 2026-07-02).
+>
+> Beats 6+ sampled the same day: Sebai-Li Wrinn's shuttle-metal signing choice plays
+> with correct options; Sira converses at the Dji-Kas guild (standard topic menu);
+> **the finale is complete end-to-end** — encounter MonsterGroup.OneAI → boss
+> surrender → endgame FLIC sequence → clean main-menu return (a post-surrender
+> RunRound NRE was found in this pass and fixed, `7a5a6186`).
+
 Driven end-to-end via the HTTP harness (`--harness-http 7878`), D3D11, Release build.
 Screenshots: `_pt_*.png` (repo root). Game stdout: `_pt_stdout.log` / `_pt_stdout2.log`.
 
