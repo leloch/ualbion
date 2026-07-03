@@ -284,6 +284,10 @@ public class Battle : GameComponent, IReadOnlyBattle
             await RaiseA(new WallClockTimerEvent(TurnDelaySeconds));
             if (Exchange == null || _combatEnded) return;
             TakeTurn(attacker, forParty: isParty);
+            // The turn itself may end the battle (kill, retreat, boss surrender -> endgame):
+            // HandleCombatEnd detaches this component, and RaiseA on a detached component
+            // throws NRE — re-check before the post-turn pause.
+            if (Exchange == null || _combatEnded) return;
             await RaiseA(new WallClockTimerEvent(TurnResultDelaySeconds));
             if (Exchange == null || _combatEnded) return;
 
