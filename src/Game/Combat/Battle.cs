@@ -112,6 +112,25 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     void OnQueueAction(QueueCombatActionEvent e)
     {
+        // Move claim mask (RE 5A, player Move UI 0x56c1a): the original's picker excludes
+        // tiles already claimed by queued same-team moves (candidates &= ~fcn.0004db61),
+        // so two members can never book the same destination. Refuse the pick with the
+        // "no valid move" sound 442 and leave the member's previous order intact.
+        if (e.Action == CombatAction.Move && e.TargetTile >= 0)
+        {
+            foreach (var kvp in _pendingActions)
+            {
+                if (kvp.Key == e.Actor || kvp.Value.Action != CombatAction.Move)
+                    continue;
+                if (kvp.Value.TargetTile == e.TargetTile)
+                {
+                    Info($"[Combat] {e.Actor} move to {e.TargetTile} refused (already claimed by {kvp.Key})");
+                    Raise(new SoundEffectEvent(new SampleId(442), 100, 0, 0, 0, SoundMode.GlobalOneShot));
+                    return;
+                }
+            }
+        }
+
         _pendingActions[e.Actor] = e;
         RefreshTargetHighlights();
     }
