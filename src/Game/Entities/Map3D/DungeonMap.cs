@@ -397,8 +397,16 @@ public class DungeonMap : GameComponent, IMap
                 Raise(new SetLogLevelEvent(LogLevel.Warning));
 
             foreach (var zone in zones)
+            {
+                // 0xFFFF = "no chain" sentinel: legitimate for zones whose trigger mask was
+                // set by a change_icon Trigger without an event chain (e.g. a Kenget6 lever
+                // recording a change onto Kenget7, replayed on entry). Skip, don't throw.
+                if (zone.EventIndex == EventNode.UnusedEventId)
+                    continue;
+
                 Raise(new TriggerChainEvent(_mapData, zone.EventIndex,
                     new EventSource(_mapData.Id, type, zone.X, zone.Y)));
+            }
 
             if (!log)
                 Raise(new SetLogLevelEvent(LogLevel.Info));

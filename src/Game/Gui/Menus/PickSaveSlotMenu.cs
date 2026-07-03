@@ -20,7 +20,9 @@ public class PickSaveSlotMenu : ModalDialog
 {
     readonly bool _showEmptySlots;
     readonly StringId _stringId;
-    const ushort MaxSaveNumber = 10; // TODO: Add scroll bar and bump up to 99
+    const ushort MaxSaveNumber = 99;
+    const int SlotsPerPage = 10;
+    int _page;
 
     public PickSaveSlotMenu(bool showEmptySlots, TextId textId, int depth) : this(showEmptySlots, new StringId(textId), depth) { }
     public PickSaveSlotMenu(bool showEmptySlots, StringId stringId, int depth) : base(DialogPositioning.Center, depth)
@@ -58,9 +60,29 @@ public class PickSaveSlotMenu : ModalDialog
     }
 
     const int MaxSaveSlotWidth = 280;
-    protected override void Subscribed()
+    protected override void Subscribed() => Rebuild();
+
+    // Pages beyond the first only appear when needed: the save dialog always offers all
+    // 99 slots; the load dialog pages up to the highest slot that actually has a file.
+    int PageCount(IFileSystem disk)
     {
+        if (_showEmptySlots)
+            return (MaxSaveNumber + SlotsPerPage - 1) / SlotsPerPage;
+
+        int highest = 0;
+        for (ushort i = 1; i <= MaxSaveNumber; i++)
+            if (disk.FileExists(BuildSaveFilename(i)))
+                highest = i;
+        return Math.Max(1, (highest + SlotsPerPage - 1) / SlotsPerPage);
+    }
+
+    void Rebuild()
+    {
+        RemoveAllChildren();
         var disk = Resolve<IFileSystem>();
+        int pageCount = PageCount(disk);
+        if (_page >= pageCount) _page = pageCount - 1;
+        if (_page < 0) _page = 0;
 
         IText BuildEmptySlotText(int x) =>
             new DynamicText(() =>
@@ -75,7 +97,9 @@ public class PickSaveSlotMenu : ModalDialog
             });
 
         var buttons = new List<IUiElement>();
-        for (ushort i = 1; i <= MaxSaveNumber; i++)
+        var first = (ushort)(_page * SlotsPerPage + 1);
+        var last = (ushort)Math.Min(first + SlotsPerPage - 1, MaxSaveNumber);
+        for (ushort i = first; i <= last; i++)
         {
             var filename = BuildSaveFilename(i);
             if (disk.FileExists(filename))
@@ -97,6 +121,17 @@ public class PickSaveSlotMenu : ModalDialog
         var elements = new List<IUiElement> { new Spacing(MaxSaveSlotWidth, 0) };
         elements.AddRange(buttons);
         elements.Add(new Spacing(0, 4));
+
+        if (pageCount > 1)
+        {
+            elements.Add(new HorizontalStacker(
+                new Button("<").OnClick(() => { if (_page > 0) { _page--; Rebuild(); } }),
+                new Spacing(4, 0),
+                new SimpleText($"{_page + 1} / {pageCount}").Center(),
+                new Spacing(4, 0),
+                new Button(">").OnClick(() => { if (_page < pageCount - 1) { _page++; Rebuild(); } })));
+            elements.Add(new Spacing(0, 4));
+        }
 
         var header = new UiTextBuilder(_stringId).Center().NoWrap();
         elements.Add(new ButtonFrame(new Padding(header, 2)) { State = ButtonState.Pressed });
