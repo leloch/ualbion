@@ -38,9 +38,10 @@ edge, 50/50 insane move-vs-attack over BOTH sides); fleeing leaves the battle sa
 (monsters still pay XP; "party escaped" outcome); monster morale flight
 ((deadPct+lostPct)/2 ≥ Morale + behaviour variants); hover bob (sine ±4-6 units,
 3.0-4.95 s, classes 2/3/4). "Summon" was dead code — no action exists.
-*Still open from A:* battle-view WALK animation for multi-tile monster moves (lerp at
-Move-anim length per tile — state side done, view-side pending); class-2 ghost
-translucency; party Move UI single-tile picker claim-mask (minor).
+*Still open from A:* ~~battle-view WALK animation~~ DONE `6927f129`; ~~class-2 ghost
+translucency~~ DONE `973b57a5`; ~~party Move UI claim-mask~~ DONE 2026-07-02 —
+`Battle.OnQueueAction` refuses a Move pick whose destination another member's queued
+Move already claims (sound 442), mirroring the original picker's `& ~claimed` mask.
 
 ### Cluster B (SPELLDAT & cast core) — ✅ DECODED (`_RE_5B.md`) and ✅ APPLIED (`9212f855`)
 Row/all target areas, Big traps = whole row, wrath picker (rejection sampling + grid
@@ -198,14 +199,16 @@ All five confirmed against the actual code, not comments:
 
 ## 6. QoL / maintainer wishlist (not 1:1 fidelity, but wanted)
 
-- 2D mouse-click path-finding movement (README wishlist).
+- ~~2D mouse-click path-finding movement~~ DONE `62a173e1` (A* click-to-walk).
+- ~~`DumpJson.cs` NRE when dumping event sets~~ RESOLVED — `--DUMP -t EventSet`
+  verified clean 2026-07-02 (315 KB event_sets.json, no exception).
 - Key rebinding UI (`InputBinder` exists, no UI).
 - Save-slot picker: scrollbar + 99 slots (`PickSaveSlotMenu.cs:23`); dedupe the save
-  path logic (`GameState.cs` + `PickSaveSlotMenu.cs`).
+  path logic (`GameState.cs` + `PickSaveSlotMenu.cs`). (The MODERN save browser already
+  scrolls and shows thumbnails; this item is about the classic-skin picker.)
 - Keyboard support in conversation topic window (`ConversationTopicWindow.cs:20`).
 - LoadMapPromptDialog → textbox (`LoadMapPromptDialog.cs:9`).
 - i18n: price formatting (`TextFormatter.cs:164`).
-- `DumpJson.cs:46` NRE when dumping event sets.
 - New-game start coords → config (`MainMenu.cs:76`).
 - NightPalettes → config/asset (`NightPalettes.cs:7`).
 
