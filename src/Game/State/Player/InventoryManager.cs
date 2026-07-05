@@ -805,14 +805,22 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         if (item == null || item.Spell.IsNone || (stackable ? slot.Amount <= 0 : slot.Charges <= 0))
             return;
 
+        // OFFENSIVE item spells (fireball wands etc.) have no valid target out of combat —
+        // the original gates them to combat only. Refuse rather than self-cast, which would
+        // damage the wielder (target defaults to the holder for non-party-target spells).
+        var spell = Assets.LoadSpell(item.Spell);
+        if (spell != null && UAlbion.Game.Combat.SpellTargeting.IsOffensive(spell.Targets))
+        {
+            Raise(new HoverTextEvent(Resolve<ITextFormatter>().Format(Base.SystemText.MapPopup_ThisItemDoesntWorkHere)));
+            return;
+        }
+
         // Route through the field-cast machinery (PartyMagicMenu.CastInner) so the spell gets
         // the real out-of-combat hooks (ApplyHeal → sheets, active-spell entries, cast SFX) —
         // the old bare context meant a healing wand from the inventory couldn't heal anyone.
         // The holder is the inventory's owner; party-targeting spells pick a member first.
         var holder = new PartyMemberId(AssetType.PartyMember, e.SlotId.Id.Id);
-        var spell = Assets.LoadSpell(item.Spell);
-        bool needsTarget = spell != null
-            && (spell.Targets & (UAlbion.Formats.Assets.SpellTargets.Party | UAlbion.Formats.Assets.SpellTargets.DeadParty)) != 0;
+        bool needsTarget = (spell?.Targets & (UAlbion.Formats.Assets.SpellTargets.Party | UAlbion.Formats.Assets.SpellTargets.DeadParty)) != 0;
 
         if (needsTarget)
             Raise(new Magic.PartyMagicMenu.ShowMagicTargetMenuEvent(holder, item.Spell, e.SlotId));
