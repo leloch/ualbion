@@ -93,8 +93,9 @@ value = byte sheet[+5];                           // fcn.000365d5 = read sheet b
 Unlock;
 return Compare(value, op, arg);
 ```
-Sheet byte offsets already RE'd: +1 gender, +2 race, +3 class, +8 languages. +5 = Level
-(matches the remake's CharacterSheetLoader offset — verify note below).
+Sheet byte offsets already RE'd: +1 gender, +2 race, +3 class, +8 languages. **+5 = Level** —
+CONFIRMED against the remake's own loader (`CharacterSheet.cs:194` — `Level ... // 5`).
+So **0x13 = Compare(party leader's LEVEL, op, arg)**.
 
 ### 0x24 @ 0x3d6d8 = **"the ITEM used to trigger this chain has TYPE byte == arg"** (CONFIRMED)
 
@@ -129,9 +130,103 @@ fcn.00035c77(leaderHandle, imm): `if (imm >= 9) return 0; value = word[sheet + i
 — the attribute array (9 records of 8 bytes @ sheet+0x2A, current-value word first).
 Compare(value, op, arg).
 
-## B. Action types 0x02, 0x09, 0x0E, 0x17, 0x2D, 0x39
+## B. Action types 0x02, 0x09, 0x0E, 0x17, 0x2D, 0x39 — ALL DECODED
 
-(in progress)
+### The trigger machinery (CONFIRMED)
+
+- Action chains are consumed by a **trigger-task system**: a 24-byte param block is passed to
+  **fcn.0002fca0 / fcn.0002fce1** ("RunTrigger"). Block layout:
+  `+0` flags, `+2` target kind, `+4` target id, **`+6` = ACTION TYPE**, `+8` = argument (u16),
+  `+0xA` = byte argument, `+0xC` = optional callback fn ptr (called at end of stream), `+0x10` = extra ptr.
+- fcn.0002fce1 pushes a task (24-byte stack at **0x153930**, top idx [0x13d708], alloc
+  fcn.000311c0), memcpys the block in (fcn.00092bcd), picks one of three static **(cmd,param)
+  word streams** — 0x13d70c (normal), 0x13d73c (if [0x15e5be] = in-conversation), 0x13d768
+  (if [0x13e142] = combat) — and runs the stream interpreter fcn.0002fd69: each (cmd,param)
+  pair calls `[cmd*4 + 0x13d810]` (handler table; "events.c").
+- **Stream cmd 1 = fcn.0002ff5b = "find & run map ACTION chain"**: walks every NPC on the
+  current tile with flag 0x400 + every map chain; matches chain HEAD events of
+  **type 0xE (Action)** by: `head.byte1 == task+6 (action type)` AND
+  (`head.byte3 == task+0xA` OR (`head.byte3 == 0xFF` AND `head.word6 == task+8`));
+  a head with `word6 == 0x7D00 (32000)` is remembered as the WILDCARD fallback chain.
+  Other cmds run the event-set (conversation partner) and per-party-member variants.
+- The matched chain then runs through the standard chain runner (records at 0x153160), with
+  the record's context word +0x2C available to queries 0x0D/0x24.
+
+### Trigger sites — every fcn.0002fca0/fce1 call in MAIN.EXE (param block +6 = type)
+
+| Site | Block | Type | Context |
+|---|---|---|---|
+| 0x26888 | 0x13d074 | 0x42 | (beyond remake enum; +2=1, +4=dyn id, cb 0x268a2) |
+| 0x2bc1d / 0x2bd3a | 0x13d33a | 0x2E UseItem | item use, cb 0x2c491 |
+| 0x356ff | 0x13da64 | 0x43 | (beyond remake enum; cb 0x35719) |
+| 0x3b04d | 0x13daf4 | **0x39 SignalTarget** | MAP SIGNAL handler (see below) |
+| 0x46009 | stack | 0x06 StartDialogue | conversation open |
+| 0x46dcb | 0x13e0dc | 0x08 DialogueLine | +0xA = chosen prompt number |
+| 0x46f98 | stack | **0x09** | word-input: UNKNOWN word typed (see below) |
+| 0x4703f | stack | 0x00 Word | per-synonym word match |
+| 0x470f0 | stack | **0x02** | word-input: known word, no Word chain matched |
+| 0x47269/0x47373/0x4746b/0x47546 | stack | dyn | conversation misc (flags|=2; 0x47546 cb 0x475a2) |
+| 0x490dd / 0x4936b | 0x13e0f4/0x13e10c | 0x00 Word | word said via other UI paths (cb 0x49101/0x49387) |
+| 0x4ad2b | 0x13e178 | 0x0A | |
+| 0x4dfe4 / 0x4e0cc | 0x15f126 | **0x0E** | scripted damage: target KILLED (see below) |
+| 0x4e018 / 0x4e117 | 0x15f126 | **0x0D** | scripted damage: target hurt but survived |
+| 0x4ea9c | 0x13e1be | 0x13 | (cb 0x4eac1 — melee strike fn! combat round hook) |
+| 0x4f032 | 0x13e1d6 | 0x15 | (cb 0x4f057 — ranged strike fn! combat round hook) |
+| 0x59c26 | 0x13e666 | 0x31/0x32 dyn | (0x59xxx module; type written before call) |
+| 0x59db5 | 0x13e67e | 0x34 PlacedItemInChest | (cb 0x59dd2) |
+| 0x5acf1 | 0x13e7c2 | 0x3B | (cb 0x5acff) |
+| 0x5eccd | 0x13e9c2 | **0x2D** | OUT-OF-COMBAT SPELL CAST (see below) |
+| 0x5ef16 | 0x13e9da | **0x17** | COMBAT SPELL CAST (see below) |
+| 0x68ab5 | 0x13ec02 | 0x3D PartySleeps | rest executor (word[0x178020] = hours) |
+
+### The six requested types
+
+**0x02 — "said a known word that no Word-chain handles" (conversation fallback).**
+fcn.00046f28 (the word-input handler): gets typed/selected word (fcn.0004460c);
+if the word is a real dictionary word, expands its synonym group (fcn.00044398) and fires
+ActionType 0 (Word) per synonym (on a hit it sets word-bit blocks 5, 6 AND 8 for the whole
+group = word known + 2 sibling sets). **If no synonym matched any Word chain → fire
+ActionType 2 (arg 0)**; if a 0x02 chain exists it runs (then fcn.00048973(2,0) bookkeeping),
+else the stock "nothing to say" text prints. So 0x02 = per-NPC catch-all "whatever you ask
+about" head (ES156 Garris: he answers everything with his fare demand — the remake's "Pay?"
+guess is wrong; it is a generic unknown-topic responder).
+
+**0x09 — "typed word NOT in the dictionary"** (fcn.0004460c returned 0xFFFE): fire
+ActionType 9 (arg 0); if no 0x09 chain → default text. This is the PASSWORD-PROMPT
+mechanism (Riko 234 / Gerwad 242: wrong-password reply chains); the right password is a
+dictionary word handled by a Word(0) chain.
+
+**0x0D / 0x0E — scripted-damage outcome triggers.** The event-damage routine (0x4df3d..0x4e11c;
+used by trap/DataChange-style damage with sample 0x10c and text 0x1C2) fires after applying
+damage: target-kind word +2 (1 = NPC-sheet path via dead-flag fcn.000364b0&1; 2 = party
+member via LP get/set fcn.0003674c/fcn.00036799), +4 = target id;
+**type 0x0E if the target DIED, 0x0D if it survived**. (Remake note "981_Tom endgame" fits:
+Action 0x0E = on-kill hook.)
+
+**0x17 — spell cast IN COMBAT.** Combat spell executor stores a 0x1C-byte spell context at
+combatant+0x52 (fcn.0005ee?? via shared ExecuteSpell fcn.0005ef24), then fcn.0005eea8
+(called from the combat pipeline at 0x4f81b / 0x4f912) fires: +2/+4 = caster kind/id
+(combatant words +0/+2), **+8 = spell school, +0xA = spell number**, +0x10 = combatant ptr,
+cb fcn.0005ecda. So Action(0x17, school, spell#) = "this spell was just cast in combat"
+(the scripted Sira/Kenget beats).
+
+**0x2D — spell cast OUT of combat.** The map-context cast routine (0x5ec00..0x5ecd2; spell
+from the sheet's active-spell list +0x31C, school byte+0x15 / number byte+0x16 → globals
+0x1775a0/0x1775a2, caster slot & handle → 0x1775a8/0x1775aa) calls ExecuteSpell
+fcn.0005ef24; **if it returns nonzero** fires Action(0x2D): +4 = caster slot,
++8 = school, +0xA = spell number, cb fcn.0005ecda.
+
+**0x39 SignalTarget — fired by the MAP SIGNAL event (opcode 0xF, handler 0x3af2d).**
+Handler tail (0x3afb7..0x3b04d): resolves the running chain's owner id (record+0x2A):
+if it equals the active conversation NPC ([0x15e5c0], only meaningful when in-dialogue
+[0x15e5be]/[0x15e5c2]) → target (kind 3, id 0); else if it is a party member
+(fcn.00035783) → (kind 1, id = member slot); else (3,0).
+Then fires Action(0x39) with **+8 (argument) = the Signal event's byte+1**. I.e. the Signal
+opcode re-dispatches into an Action(SignalTarget) chain keyed by the signal number, aimed at
+the entity that owns the current chain.
+
+Bonus: the original also has action types 0x42, 0x43, 0x47 (beyond the remake's 0x3D max) —
+engine-internal triggers never present in map data (map data caps at 0x3D).
 
 ## C. Map opcodes 0x10 CloneAutomap, 0x17 Wipe, 0x1A Pause
 
@@ -175,16 +270,18 @@ if (a[2] == 1) {                                      // 3D maps only (byte+2 = 
 `WipeEvent.Value` (event byte+1) selects a screen-transition mode, switch 0..5 in
 fcn.0006c54f (>5 = no-op):
 
-| Value | Call | Meaning |
+| Value | Call | Behaviour (decoded) |
 |---|---|---|
-| 0 | fcn.00075e71 | (see below) |
-| 1 | fcn.00077ab9(x=0, y=0, w=[0x147124], h=[0x14712a]) | full-viewport rect op |
-| 2 | fcn.0008137a | transition variant |
-| 3 | fcn.000813e0 | transition variant |
-| 4 | fcn.0008144f | transition variant |
-| 5 | fcn.000814b1 | transition variant |
+| 0 | fcn.00075e71 | poll input (fcn.000757d7) + rebuild frame (fcn.0007382a) + present (fcn.00075e9f) — an IMMEDIATE full redraw ("wipe now", no transition) |
+| 1 | fcn.00077ab9(0, 0, w=[0x147124], h=[0x14712a]) | fill the whole viewport (mode-8 rect op) — CUT TO BLACK/blank |
+| 2 | fcn.0008137a | stepped PALETTE FADE: loop pct = 10,20..100, fcn.00080fdb(0,0x100,0,0,0,pct) + present twice per step (~10 frames) |
+| 3 | fcn.000813e0 | sibling stepped palette fade (opposite direction / variant) |
+| 4 | fcn.0008144f | sibling stepped palette fade variant |
+| 5 | fcn.000814b1 | sibling stepped palette fade variant |
 
-(sub-function identification below)
+So Wipe = screen-transition opcode: 0 = redraw, 1 = blank, 2..5 = ~10-step palette fades
+over the full 256-colour palette. (2/3 and 4/5 pair as out/in — INFERRED from shape; the
+exact in/out polarity of 3/4/5 not traced instruction-by-instruction.)
 
 ### 0x1A Pause — handler 0x3bbb4 (CONFIRMED)
 
@@ -202,13 +299,81 @@ if (len == 0) {
     }
 }
 ```
-- Unit = ticks of the global timer dword[0x1835f0] (incremented by the timer ISR —
-  rate identified below).
+- **Unit = 1/60 second.** dword[0x1835f0] is the system timer tick (incremented in
+  fcn.00089ba8 when the ISR flag byte [0x13fde8]&0x10 is set; PIT reprogram fn at
+  0xac460). The M-HT static recompile emulates exactly this counter (`Game_TimerTick`,
+  Albion-timer.c) at 16/17/17 ms intervals = **60.0 Hz**. So `Pause N` = wait N/60 s
+  while keeping the engine pumping; `Pause 0` = wait for a keypress/click.
 
-## D. Torch burn
+## D. Torch burn — YES, the original burns LightSource charges hourly (CONFIRMED)
 
-(in progress)
+**fcn.0003911d** is the FIRST call of the hour tick (fcn.00043acc, before spell decay
+fcn.000605ed and the hour-counter increment). For each present party member (fcn.00039941),
+it locks the sheet and scans BOTH:
 
-## E. Campfire rest scene
+- the 9 EQUIPMENT slots (6-byte ItemSlots @ sheet+0x2E6), and
+- the 24 BACKPACK slots (@ sheet+0x31C):
 
-(in progress)
+```c
+tmpl = LockItemTemplate(slot);                    // fcn.0004a521 (skip empty, fcn.0004a49c)
+if (tmpl.byte1 == 0x16 /* ItemType.LightSource */) {
+    if (slot.charges != 0xFF) {                   // slot byte+1; 0xFF = INFINITE (magic lights)
+        slot.charges--;                           // ONE CHARGE PER GAME HOUR
+        if (slot.charges == 0)
+            RemoveItemsFromSlot(member, slotIdx, 1);   // fcn.00049584 — slotIdx 1..9 equip,
+    }                                                  // 10.. backpack; amount--, slot cleared
+}                                                      // at amount 0 (fcn.0004a4ee)
+```
+
+- Hour-tick call chain: fcn.00043acc → fcn.0003911d (torch burn) → fcn.000605ed (spell
+  decay) → `word[0x153b2e]++` (hour) → fcn.000395ec → hunger every 2h (fcn.00039362) →
+  EveryHour map trigger fcn.0003236a(7) → day rollover fcn.00043b86 (EveryDay trigger 8).
+- ItemData.Charges IS the torch lifetime in HOURS; burning applies everywhere the item is
+  carried (equipped hand or backpack), all six members.
+- **Stack quirk (faithful-to-original):** RemoveItemsFromSlot decrements only the AMOUNT
+  and does NOT reset the slot's charges byte. For a stacked slot (amount ≥ 2) the byte is 0
+  after the removal, so next hour `0 - 1 = 0xFF` → the remaining stack reads as INFINITE
+  and never burns again. Recommended remake behaviour: implement the per-hour decrement +
+  destroy; either replicate the wrap or (defensible fix) re-init charges from the template
+  when a stacked item is consumed — mark whichever is chosen.
+
+## E. Campfire rest scene — NO picture; the original rest is fade-to-black + text (CONFIRMED)
+
+Rest executor **fcn.00068b05**, full sequence (complete call list — no picture/FLIC/overlay
+anywhere in it):
+
+1. `fcn.00077bba(0x1F)` — UI/cursor mode.
+2. `fcn.0009251d(0x1470f4, 0x14709c, 0,0, 360, [0x147138], 0, 0)` — palette **fade-out**.
+3. `fcn.00077ce4(0x14709c, 0, 0, 360, [0x147138])` — **fill the whole viewport** (blank
+   screen), `fcn.00075e9f()` present. The screen is BLACK for the duration.
+4. Per-member rest recovery loop (fcn.00037958) — heals BEFORE the clock advance (as in _RE_5C §4).
+5. Duration + message: if `[0x147990]==1` (rest-anywhere map flag) or hour in 4..18 →
+   text ptr [0x15e198] ("you rest 8 hours"), hours = 8. Otherwise (night, outdoor camp):
+   text ptr [0x15e194], hours = `hour < 4 ? 7-hour : 24-hour+7` — **sleep until 7am**.
+   Text goes through fcn.0007dc07 = the standard MESSAGE WINDOW (text renderer, no image).
+6. Rations: per present member — if the PartySleeps action set [0x178020] use its healing
+   value [0x17800e] (fcn.00068d2f(member, pct): LP += maxLP*pct/100); else if rations >= 2:
+   rations -= 2, fcn.00068d2f(member, 50) (heal 50% of max LP); else print "too hungry"
+   text [0x15e19c] for that member. Write rations back (fcn.00038bbb).
+7. `AdvanceClock(hours)` (fcn.000439b3).
+8. Palette **fade-in** (fcn.0009251d again), present, fcn.00077c9e, fcn.00075589.
+
+**Verdict for _TODO_1TO1 item 18: there is NO campfire scene/picture in the original.**
+The remake's text-only rest is already faithful; the only missing visuals are the palette
+fade-out/in and blanked viewport around the clock advance. (CAMP pictures in the assets are
+used by the intro/cutscene sequences, not the rest command.)
+
+## F. Corrections / bonus findings for other docs
+
+- `_RE_5C.md §3` said 0x20/0x25 "fallthrough no-op" — they are no-ops returning **TRUE**
+  (dispatcher default result = 1), not false. `Querier.cs` stubs them false — wrong polarity
+  (harmless per shakeout, but should be fixed for 1:1).
+- Out-of-combat casting: a "spell index" >= 10 in the cast routine (0x5ec00) means casting
+  FROM AN ITEM in backpack slot idx-10; school/number come from the item template bytes
+  +0x15/+0x16.
+- Word bit-sets: matching a Word action in conversation sets the word's bit in blocks 5, 6
+  AND 8 (three parallel 1500-bit sets; 5 = known words, 6/8 = un-RE'd siblings — likely
+  "mentioned in this conversation" style tracking).
+- Combat-round action hooks exist: type 0x13 (cb = melee strike fn 0x4eac1) and 0x15
+  (cb = ranged strike fn 0x4f057) are triggered around combat rounds — relevant if UnkD
+  (0x13)/(0x15) chains ever show in data.
