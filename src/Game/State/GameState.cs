@@ -94,6 +94,9 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public int GetActiveSpellPct(PartyMemberId member, int type)
         => _game?.GetActiveSpellPct(PartySlotOf(member), type) ?? 0;
 
+    public int GetActiveSpellHours(PartyMemberId member, int type)
+        => _game?.GetActiveSpellHours(PartySlotOf(member), type) ?? 0;
+
     public int AmbientLightSpellPct => _game?.GetAmbientLightPct() ?? 0;
     public bool IsEventUsed(AssetId eventSetId, ActionEvent action) => _game.IsEventUsed(eventSetId, action);
 

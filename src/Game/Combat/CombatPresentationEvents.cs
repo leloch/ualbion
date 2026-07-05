@@ -36,6 +36,13 @@ public record CombatCastEvent(UAlbion.Formats.Ids.SpellId SpellId) : EventRecord
 public record CombatSoulRiseEvent(int TileIndex) : EventRecord, IVerboseEvent;
 
 /// <summary>
+/// Planning-phase order: queue a one-row-forward Move for every live party member whose
+/// destination tile is free (the combat menu's "Advance party"). Claim-mask rules apply —
+/// members whose forward tile is occupied or already claimed keep their previous order.
+/// </summary>
+public record CombatAdvancePartyEvent : EventRecord;
+
+/// <summary>
 /// Round-playback presentation: a combatant walks a (possibly multi-tile) path.
 /// The battle state has already committed the final tile; the view lerps the sprite
 /// along the waypoints (RE 5A: N engine frames per tile, N = Move anim length, with
