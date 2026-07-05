@@ -99,16 +99,27 @@ Everything is a `Component` (`src/Api/Eventing/Component.cs`) attached to a tree
 GET  /healthz                       → { ok, fps, frame, lastError }
 GET  /state                         → { loaded, map, time, leader, party[], ... }
 GET  /ui                            → visible UI elements [{ id, kind, label, x,y,w,h }]
-GET  /labyrinth /camera /tilemap    → 3D-render diagnostics
+GET  /zones [?near=1&trigger=...]   → the current map's event zones (2D + 3D) with trigger/chain/first event
+GET  /quest                         → progress snapshot: set switches, non-zero tickers, discovered words, gold/rations
+GET  /conversation /combat /npcs /inventory /clock → subsystem introspection
+GET  /switch?id=Switch.X /ticker?id=Ticker.X → single story-flag values
+GET  /labyrinth /camera /tilemap /tile?x=&y= → 3D-render/collision diagnostics
 GET  /wallpixels?layer=N /floorpixels?layer=N → atlas pixel sampling
 POST /event/raw   body "load_game 7"→ fire any UAlbion event (text form)
 POST /event       { name, args }    → same, JSON form
-POST /click       { id, button? }   → click a UI element by stable id (from /ui)
-POST /click/at    { x, y, button }  → synthetic mouse click at coords
-POST /screenshot                    → PNG (currently 503 — see Known issues)
+POST /click       { id, button? }   → click a UI element by stable id (from /ui; use the kind=Button id — clicking a child UiText does nothing)
+POST /click/at    { x, y, button }  → synthetic mouse click at coords (unreliable: the real mouse overrides the cursor)
+POST /screenshot                    → PNG of the current frame
 POST /quit                          → graceful shutdown
 ```
 Example (PowerShell): `Invoke-RestMethod -Method POST http://localhost:7878/event/raw -Body "load_game 7" -ContentType text/plain`
+`_story_drive_lib.ps1` (repo root) wraps all of this for beat-by-beat playthrough driving (Start-Albion / E / State / Conv / Talk / Respond / Shot / Scenario...).
+
+**Playing organically** (no teleports): `party_goto <x> <y>` walks the party to a tile like a
+player click (A* on 2D maps, BFS over the collision grid + glide on 3D); `trigger_tile <Type> <x> <y>`
+fires a tile's zone like the context-menu verbs (Examine/Manipulate/Take/TalkTo/UseItem);
+`synth_scenario <name>` warps to any chapter (see SyntheticScenarioLibrary); conversations run via
+`start_dialogue` → GET /conversation → `respond N` / `dismiss_message`.
 
 Combat can be driven fully through HTTP: `load_game 2` → `encounter MonsterGroup.OneArgim` → `queue_combat_action PartySheet.Tom Melee -1` → `begin_combat_round`.
 

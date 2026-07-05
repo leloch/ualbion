@@ -40,3 +40,8 @@ function Dismiss { E 'dismiss_message' }
 function WaitIdle([int]$seconds = 2) { Start-Sleep -Seconds $seconds }
 function LastError { (Invoke-RestMethod "$Base/lasterror" -TimeoutSec 10).detail }
 function Scenario([string]$name) { E "synth_scenario $name" }
+function Quest { Invoke-RestMethod "$Base/quest" -TimeoutSec 10 }               # set switches / tickers / words / gold
+function Zones([string]$extra = '?near=1') { Invoke-RestMethod "$Base/zones$extra" -TimeoutSec 10 }
+function Goto([int]$x, [int]$y) { E "party_goto $x $y" }                        # organic walk (A* 2D / BFS 3D)
+function Interact([string]$type, [int]$x, [int]$y) { E "trigger_tile $type $x $y" } # Examine/Manipulate/Take/TalkTo/UseItem
+function TileInfo([int]$x, [int]$y) { Invoke-RestMethod "$Base/tile?x=$x&y=$y" -TimeoutSec 10 }
