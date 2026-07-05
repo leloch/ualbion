@@ -262,6 +262,39 @@ All five confirmed against the actual code, not comments:
 > the ApplyCondition hook, save name-entry exists, day/night blending is gradual, all 64 spells
 > registered, all economy/services live).
 
+## ✅ ALL OF §9 RESOLVED 2026-07-05 (commits d421de22..b9a803be)
+
+Every item below is done or confirmed not-a-gap. Backing RE: `_RE_SPELLANIM.md`,
+`_RE_COMBATAUDIO.md`, `_RE_MISC7.md`.
+
+- **T1.1/1.2** — volume sliders now drive the mixer (AudioManager master gains, live rescale);
+  combat music switches to the fixed battle track (Song 26) + game-over track, restores map
+  music/ambient on exit. *(Audible confirmation still needs a human on a real machine — the
+  wiring is code-verified; headless is muted. This is the only residual, and it's inherent.)*
+- **T1.3** — combat spell-cast VISUALS: CombatSpellFx table + BattleView projectile/impact
+  layer, raised from both cast paths. Live-verified (Fireball explosion sprites). Timing is
+  fire-and-forget vs the original's blocking coroutine; finer particle detail approximated.
+- **T1.4** — Advance-party queues a one-row-forward Move for the whole party (claim mask).
+- **T1.5** — character page III shows conditions / languages / temporary-spell entries.
+- **T1.6** — party portraits flash the CharEffect overlay while afflicted.
+- **T2.a** — inventory "Use" verb (chain-gated); cursed items trap on equip; torches burn
+  hourly and are destroyed at 0 (RE fcn.00049584; 0xFF eternal, 0 untracked).
+- **T2.b** — combat-audio contradiction settled (`_RE_COMBATAUDIO.md`): 442/454/698 were
+  message texts not samples (fixed); sample 268 is the shared hit-thud on every damaging hit.
+- **T2.c** — CloneAutomap (0x10), Wipe (0x17), Pause (0x1A) all handled.
+- **T2.d** — automap goto-points show their name labels.
+- **T2.e** — intro/credits: the multi-part intro + real credits are CD-only SMK assets absent
+  from the floppy FLIC data — the single arrival FLIC is the faithful maximum (documented).
+- **T2.f** — out-of-combat wand casts route through the field-cast machinery (heal/buff hooks).
+- **T3** — queries 0x0B/0x13/0x25/0x26/0x27 decoded (0x08/0x0D/0x24 need trigger-context,
+  stay false); spinner random case always turns to a new facing; campfire = confirmed no
+  scene in the original (text rest is faithful); verb-cursor = InfoOverlay text (no distinct
+  floppy asset). ActionTypes 0x02/0x09/0x0D/0x0E/0x17/0x2D/0x39 decoded in `_RE_MISC7.md` §B
+  (mostly conversation/combat-hook plumbing already covered by the chain dispatcher).
+
+Remaining genuine debt (not §9): audible audio verification (human ears); save-persistence for
+mod-added entities (modding axis); the finer per-spell particle/driver/clone-flash detail.
+
 ### Tier 1 — a returning player notices in the first hour
 1. **Audio: volume sliders are dead ends.** SetMusicVolume/SetFxVolume persist to settings but
    `AudioManager` never reads `V.User.Audio.*` — no master gain anywhere (`AudioManager.cs:132,155,191,244`).
