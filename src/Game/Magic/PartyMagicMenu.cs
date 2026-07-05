@@ -25,6 +25,18 @@ public record CastPartySpellEvent(
     [property: EventPart("target")] PartyMemberId TargetId) : EventRecord;
 
 /// <summary>
+/// Casts a magic item's spell outside combat through the same field-cast machinery as
+/// cast_spell (so heals/buffs get the real ApplyHeal/sheet hooks), but with the item rules:
+/// flat mastery 50, no SP cost, no mastery growth, and the SLOT's charge consumed
+/// (RE 5B: cast core fcn.0005fdf7 returns 0x32 for item slots).
+/// </summary>
+public record CastPartyItemSpellEvent(
+    PartyMemberId MemberId,
+    SpellId SpellId,
+    PartyMemberId TargetId,
+    UAlbion.Formats.Assets.Inv.InventorySlotId ItemSlot) : EventRecord;
+
+/// <summary>
 /// Out-of-combat spell casting: lists the member's known spells that are castable in the
 /// current environment (SpellData.Environments vs the map type), resolves them through
 /// the same SpellEffectRegistry as combat with the RE'd mastery multiplier, and deducts
@@ -36,7 +48,8 @@ public class PartyMagicMenu : GameComponent
     {
         On<ShowMagicMenuEvent>(e => ShowSpells(e.MemberId));
         On<ShowMagicTargetMenuEvent>(ShowTargetMenu);
-        On<CastPartySpellEvent>(Cast);
+        On<CastPartySpellEvent>(e => CastInner(e.MemberId, e.SpellId, e.TargetId, null));
+        On<CastPartyItemSpellEvent>(e => CastInner(e.MemberId, e.SpellId, e.TargetId, e.ItemSlot));
         On<UAlbion.Game.Events.ShowTeleporterMenuEvent>(_ => ShowTeleporterMenu());
     }
 
@@ -127,8 +140,12 @@ public class PartyMagicMenu : GameComponent
         ShowMenu(tf.Center().NoWrap().Fat().Format(Base.SystemText.PartyPopup_UseMagic), options);
     }
 
-    /// <summary>Second step for party-targeting spells: pick the target member.</summary>
-    public record ShowMagicTargetMenuEvent(PartyMemberId MemberId, SpellId SpellId) : EventRecord;
+    /// <summary>Second step for party-targeting spells: pick the target member. When
+    /// ItemSlot is set the pick fires an ITEM cast (wand rules) instead of a spellbook cast.</summary>
+    public record ShowMagicTargetMenuEvent(
+        PartyMemberId MemberId,
+        SpellId SpellId,
+        UAlbion.Formats.Assets.Inv.InventorySlotId? ItemSlot = null) : EventRecord;
 
     void ShowTargetMenu(ShowMagicTargetMenuEvent e)
     {
@@ -140,7 +157,10 @@ public class PartyMagicMenu : GameComponent
         foreach (var member in party.StatusBarOrder)
         {
             var name = new LiteralText(member.Apparent.GetName(language));
-            options.Add(new ContextMenuOption(name, new CastPartySpellEvent(e.MemberId, e.SpellId, member.Id), ContextMenuGroup.Actions));
+            IEvent cast = e.ItemSlot is { } slot
+                ? new CastPartyItemSpellEvent(e.MemberId, e.SpellId, member.Id, slot)
+                : new CastPartySpellEvent(e.MemberId, e.SpellId, member.Id);
+            options.Add(new ContextMenuOption(name, cast, ContextMenuGroup.Actions));
         }
 
         ShowMenu(tf.Center().NoWrap().Fat().Format(Base.SystemText.PartyPopup_UseMagic), options);
@@ -154,7 +174,10 @@ public class PartyMagicMenu : GameComponent
         Raise(new ContextMenuEvent(uiPosition, heading, options));
     }
 
-    void Cast(CastPartySpellEvent e)
+    // Shared field-cast core. itemSlot == null → a spellbook cast (SP cost, mastery growth);
+    // itemSlot set → a magic-item cast (flat M=50, no SP, no mastery; the slot's charge is
+    // consumed afterwards — RE 5B item-cast rules).
+    void CastInner(PartyMemberId memberId, SpellId spellId, PartyMemberId targetId, UAlbion.Formats.Assets.Inv.InventorySlotId? itemSlot)
     {
         // Party members already implement ICombatParticipant with a computed Effective
         // sheet — reuse them directly.
@@ -162,26 +185,32 @@ public class PartyMagicMenu : GameComponent
         IPlayer caster = null, target = null;
         foreach (var member in party.StatusBarOrder)
         {
-            if (member.Id == e.MemberId) caster = member;
-            if (member.Id == e.TargetId) target = member;
+            if (member.Id == memberId) caster = member;
+            if (member.Id == targetId) target = member;
         }
         target ??= caster;
         if (caster == null)
             return;
 
-        var spell = Assets.LoadSpell(e.SpellId);
-        int cost = spell?.Cost ?? 0;
+        var spell = Assets.LoadSpell(spellId);
+        int cost = itemSlot == null ? spell?.Cost ?? 0 : 0; // item casts are SP-free
         int sp = caster.Effective?.Magic?.SpellPoints?.Current ?? 0;
         if (cost > 0 && sp < cost)
         {
-            Info($"[Magic] {e.MemberId} lacks SP for {e.SpellId} ({sp}/{cost})");
+            Info($"[Magic] {memberId} lacks SP for {spellId} ({sp}/{cost})");
             return;
         }
 
-        // Same RE'd mastery multiplier as combat casts.
-        ushort mastery = 0;
-        caster.Effective?.Magic?.SpellStrengths?.TryGetValue(e.SpellId, out mastery);
-        int m = System.Math.Max(1, (mastery + 50) / 100);
+        // Same RE'd mastery multiplier as combat casts; items run at the flat 50.
+        int m;
+        if (itemSlot != null)
+            m = 50;
+        else
+        {
+            ushort mastery = 0;
+            caster.Effective?.Magic?.SpellStrengths?.TryGetValue(spellId, out mastery);
+            m = System.Math.Max(1, (mastery + 50) / 100);
+        }
 
         var rng = Resolve<IRandom>();
         var context = new SpellCastContext
@@ -202,31 +231,42 @@ public class PartyMagicMenu : GameComponent
                 : 0,
         };
 
-        var outcome = SpellEffectRegistry.Cast(e.SpellId, context);
-        Info($"[Magic] {e.MemberId} casts {e.SpellId} on {e.TargetId}: {outcome}");
+        var outcome = SpellEffectRegistry.Cast(spellId, context);
+        Info($"[Magic] {memberId} casts {spellId} on {targetId}{(itemSlot != null ? " (item)" : "")}: {outcome}");
+
+        // Item casts consume the slot's charge on every attempt (the original charges the
+        // item even for unfulfilled effects), then skip SP/mastery entirely.
+        if (itemSlot != null)
+        {
+            Raise(new UAlbion.Game.Events.Inventory.ConsumeItemSlotChargeEvent(itemSlot.Value));
+            if (outcome != SpellCastOutcome.Failed)
+                foreach (var sample in CombatAudio.GetCastSamples(spellId))
+                    Raise(new SoundEffectEvent(sample, 100, 0, 0, 0, SoundMode.GlobalOneShot));
+            return;
+        }
 
         if (outcome == SpellCastOutcome.Failed)
             return;
 
         if (cost > 0)
-            Raise(new DataChangeEvent(new TargetId(AssetType.PartyMember, e.MemberId.Id), ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
+            Raise(new DataChangeEvent(new TargetId(AssetType.PartyMember, memberId.Id), ChangeProperty.Mana, NumericOperation.SubtractAmount, (ushort)cost));
 
         // Mastery grows with use (RE post-cast fcn.000603ae: mastery += MagicTalent, cap
         // 10000) — persisted on the caster's base sheet, same as the combat cast path.
-        var baseSheet = TryResolve<IGameState>()?.GetSheet(e.MemberId.ToSheet());
+        var baseSheet = TryResolve<IGameState>()?.GetSheet(memberId.ToSheet());
         var strengths = baseSheet?.Magic?.SpellStrengths;
         if (strengths != null)
         {
             int talent = baseSheet.Attributes?.MagicTalent?.Current ?? 0;
             if (talent > 0)
             {
-                strengths.TryGetValue(e.SpellId, out var current);
-                strengths[e.SpellId] = Combat.CombatFormulas.GrowMastery(current, talent);
+                strengths.TryGetValue(spellId, out var current);
+                strengths[spellId] = Combat.CombatFormulas.GrowMastery(current, talent);
             }
         }
 
         // Cast SFX — same RE'd per-spell sample table the combat path uses.
-        foreach (var sample in CombatAudio.GetCastSamples(e.SpellId))
+        foreach (var sample in CombatAudio.GetCastSamples(spellId))
             Raise(new SoundEffectEvent(sample, 100, 0, 0, 0, SoundMode.GlobalOneShot));
     }
 

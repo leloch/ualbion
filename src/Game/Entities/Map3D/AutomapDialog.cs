@@ -10,6 +10,7 @@ using UAlbion.Formats.Assets;
 using UAlbion.Formats.Assets.Maps;
 using UAlbion.Formats.Ids;
 using UAlbion.Game.Entities.Map2D;
+using UAlbion.Game.Gui;
 using UAlbion.Game.State;
 
 namespace UAlbion.Game.Entities.Map3D;
@@ -38,6 +39,7 @@ public class AutomapDialog : GameComponent
     readonly LogicalMap3D _map;
     readonly MapData3D _mapData;
     readonly Automap _discovered;
+    readonly List<IUiElement> _markerLabels = [];
     Sprite _sprite;
     SimpleTexture<byte> _texture;
     bool _visible;
@@ -213,6 +215,7 @@ public class AutomapDialog : GameComponent
             RemoveChild(_sprite);
             _sprite = null;
         }
+        ClearMarkerLabels();
         _visible = false;
         RefreshMinimap(); // bring the corner minimap back if it's enabled
     }
@@ -308,8 +311,55 @@ public class AutomapDialog : GameComponent
             : new Vector2(1.5f * aspect, 1.5f);
         _sprite.Position = new Vector3(-size.X / 2, -size.Y / 2, 0);
         _sprite.Size = size;
+
+        BuildMarkerLabels(new Vector2(-size.X / 2, -size.Y / 2), size);
+
         _visible = true;
         Info($"[Automap] shown for {_mapData.Id} ({_map.Width}x{_map.Height}, party at {partyX},{partyY})");
+    }
+
+    // Draw the NAME of each visited goto-point next to its glyph (the original labels its
+    // markers; we only drew the glyph). Positioned in UI-pixel space, converted from the
+    // marker tile's spot within the map sprite's NDC box.
+    void BuildMarkerLabels(Vector2 ndcOrigin, Vector2 ndcSize)
+    {
+        ClearMarkerLabels();
+        var state = TryResolve<IGameState>();
+        var window = TryResolve<UAlbion.Core.IGameWindow>();
+        if (state == null || window == null || _mapData.Automap == null)
+            return;
+
+        foreach (var marker in _mapData.Automap)
+        {
+            if (marker == null || string.IsNullOrWhiteSpace(marker.Name))
+                continue;
+            if (!state.IsAutomapMarkerFound(marker.MarkerId))
+                continue;
+            if (marker.X >= _map.Width || marker.Y >= _map.Height)
+                continue;
+
+            // Tile centre as a fraction of the map, → NDC within the sprite box. The sprite is
+            // FlipVertical, so texture-top (fy=0) is at the NDC top (ndcOrigin.Y + ndcSize.Y).
+            float fx = (marker.X + 0.5f) / _map.Width;
+            float fy = (marker.Y + 0.5f) / _map.Height;
+            float ndcX = ndcOrigin.X + fx * ndcSize.X;
+            float ndcY = ndcOrigin.Y + ndcSize.Y - fy * ndcSize.Y;
+            var ui = window.NormToUi(new Vector2(ndcX, ndcY));
+
+            var label = new UAlbion.Game.Gui.Text.SimpleText(marker.Name)
+                .Ink(Base.Ink.White)
+                .Center();
+            var stacker = new UAlbion.Game.Gui.Controls.FixedPositionStacker()
+                .Add(label, (int)ui.X - 20, (int)ui.Y + 3, 40, 8);
+            _markerLabels.Add(AttachChild(stacker));
+        }
+    }
+
+    void ClearMarkerLabels()
+    {
+        foreach (var label in _markerLabels)
+            RemoveChild((IComponent)label);
+        _markerLabels.Clear();
     }
 
     // #43: opt-in always-on corner minimap (Game.Graphics.Minimap). Reuses the exact automap
