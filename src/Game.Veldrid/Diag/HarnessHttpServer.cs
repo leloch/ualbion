@@ -53,6 +53,10 @@ namespace UAlbion.Game.Veldrid.Diag;
 ///   GET  /findtiles?kind=water|wall|open|floor0|object[&max=N] → coords of tiles matching a kind
 ///   GET  /switch?id=Switch.X            → current value of a story switch
 ///   GET  /ticker?id=Ticker.X           → current value of a ticker counter
+///   GET  /quest                         → progress snapshot: all set switches, non-zero tickers, discovered words, pooled gold/rations
+///   GET  /zones [?near=1&trigger=...]   → the current map's event zones (2D and 3D) with trigger/chain/first-event
+///     (organic play: `party_goto x y` walks the party there — A* 2D / BFS 3D — and
+///      `trigger_tile <Type> x y` fires a zone like the context-menu verbs; both via /event/raw)
 ///   POST /input  {velX,velY,yaw,pitch,frames?} → inject a PartyMove3DEvent (mouse-compass paths; frames>1 = held)
 ///   GET  /combat                        → combat state: combatants, team, tile, hp, conditions
 ///   GET  /inventory                     → party inventories: gold, rations, item counts (B5 trade testing)
@@ -222,6 +226,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /findtiles":       WriteJson(ctx, BuildFindTiles(ctx)); break;
             case "GET /switch":          WriteJson(ctx, BuildSwitchQuery(ctx)); break;
             case "GET /ticker":          WriteJson(ctx, BuildTickerQuery(ctx)); break;
+            case "GET /quest":           WriteJson(ctx, BuildQuestDump()); break;
             case "GET /conversation":    WriteJson(ctx, BuildConversationDump()); break;
             case "GET /clock":           WriteJson(ctx, BuildClockDump()); break;
             case "GET /zones":           WriteJson(ctx, BuildZonesDump(ctx)); break;
@@ -1109,38 +1114,109 @@ public sealed class HarnessHttpServer : Component, IDisposable
     // near=1 limits to zones within 6 tiles of the party.
     string BuildZonesDump(HttpListenerContext ctx)
     {
-        var lm = GetLogicalMap3D();
-        if (lm == null) return "{\"is3d\":false}";
         string triggerFilter = ctx.Request.QueryString["trigger"];
         bool near = ctx.Request.QueryString["near"] == "1";
+        var lm = GetLogicalMap3D();
+        bool is3d = lm != null;
+
         int pcx = -100, pcy = -100;
-        if (near)
+        var p = TryResolve<IParty>()?.Leader?.GetPosition();
+        if (p != null)
         {
-            var cam = TryResolve<UAlbion.Game.IMapManager>()?.Current;
-            var p = TryResolve<IParty>()?.Leader?.GetPosition();
-            if (p != null) { pcx = (int)MathF.Round(p.Value.X); pcy = (int)MathF.Round(p.Value.Z); }
+            pcx = (int)MathF.Round(is3d ? p.Value.X : p.Value.X);
+            pcy = (int)MathF.Round(is3d ? p.Value.Z : p.Value.Y);
         }
+
+        // 2D maps read the raw map data (same source as dump_map_zones); 3D goes through
+        // LogicalMap3D so replayed wall/zone changes are reflected.
+        var mapData = TryResolve<UAlbion.Game.IMapManager>()?.Current?.MapData as UAlbion.Formats.Assets.Maps.BaseMapData;
+        if (!is3d && mapData == null)
+            return "{\"zones\":[],\"error\":\"no map loaded\"}";
+
+        int width = is3d ? lm.Width : mapData.Width;
+        int height = is3d ? lm.Height : mapData.Height;
 
         var seen = new HashSet<int>();
         var sb = new StringBuilder();
-        sb.Append("{\"is3d\":true,\"party\":[").Append(pcx).Append(',').Append(pcy).Append("],\"zones\":[");
+        sb.Append("{\"is3d\":").Append(is3d ? "true" : "false")
+          .Append(",\"party\":[").Append(pcx).Append(',').Append(pcy).Append("],\"zones\":[");
         bool first = true;
-        for (int y = 0; y < lm.Height; y++)
-        for (int x = 0; x < lm.Width; x++)
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
         {
             if (near && (System.Math.Abs(x - pcx) > 6 || System.Math.Abs(y - pcy) > 6)) continue;
-            var zone = lm.GetZone(x, y);
+            var zone = is3d ? lm.GetZone(x, y) : mapData.GetZone(y * width + x);
             if (zone?.Node == null) continue;
             int key = y * 1000 + x;
             if (!seen.Add(key)) continue;
             string trig = zone.Trigger.ToString();
             if (!string.IsNullOrEmpty(triggerFilter) && trig.IndexOf(triggerFilter, StringComparison.OrdinalIgnoreCase) < 0) continue;
-            string evt = zone.Node.Event?.GetType().Name ?? "?";
+            string evt = zone.Node.Event?.ToString() ?? "?";
             if (!first) sb.Append(',');
             first = false;
             sb.Append($"{{\"x\":{x},\"y\":{y},\"trigger\":{JsonString(trig)},\"event\":{JsonString(evt)},\"chain\":{zone.EventIndex}}}");
         }
         sb.Append("]}");
+        return sb.ToString();
+    }
+
+    // GET /quest — quest-progress introspection: every set switch, every non-zero ticker, the
+    // discovered conversation words, and the party's pooled gold/rations. Lets an autonomous
+    // playthrough assert story progress ("did the trial verdict set its switch?") without
+    // poking single ids blind via /switch.
+    string BuildQuestDump()
+    {
+        var state = TryResolve<UAlbion.Game.State.IGameState>();
+        if (state?.Loaded != true) return "{\"loaded\":false}";
+
+        var sb = new StringBuilder();
+        sb.Append("{\"loaded\":true,\"map\":").Append(JsonString(state.MapId.ToString()));
+        sb.Append(",\"time\":").Append(JsonString(state.Time.ToString("O")));
+
+        sb.Append(",\"switches\":[");
+        bool first = true;
+        for (int i = 0; i < 1024; i++)
+        {
+            var id = new UAlbion.Formats.Ids.SwitchId(UAlbion.Config.AssetType.Switch, i);
+            if (!state.GetSwitch(id)) continue;
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append(JsonString(id.ToString()));
+        }
+        sb.Append("],\"tickers\":{");
+        first = true;
+        for (int i = 0; i < 256; i++)
+        {
+            var id = new UAlbion.Formats.Ids.TickerId(UAlbion.Config.AssetType.Ticker, i);
+            var value = state.GetTicker(id);
+            if (value == 0) continue;
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append(JsonString(id.ToString())).Append(':').Append(value);
+        }
+        sb.Append("},\"words\":[");
+        first = true;
+        foreach (var word in state.DiscoveredWords)
+        {
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append(JsonString(word.ToString()));
+        }
+        sb.Append(']');
+
+        int gold = 0, rations = 0;
+        var party = TryResolve<IParty>();
+        if (party != null)
+        {
+            foreach (var member in party.StatusBarOrder)
+            {
+                var inv = member?.Effective?.Inventory;
+                gold += inv?.Gold?.Amount ?? 0;
+                rations += inv?.Rations?.Amount ?? 0;
+            }
+        }
+        sb.Append(",\"gold\":").Append(gold).Append(",\"rations\":").Append(rations);
+        sb.Append('}');
         return sb.ToString();
     }
 

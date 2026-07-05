@@ -171,6 +171,7 @@ public class DungeonMap : GameComponent, IMap
         AttachChild(new ScriptManager());
         AttachChild(new Collider3D(_logicalMap));
         AttachChild(new Movement3D(_camera));
+        AttachChild(new PartyGoto3D()); // party_goto: harness organic-walk (BFS over the collision grid)
 
         if (!_labyrinthData.BackgroundId.IsNone)
         {

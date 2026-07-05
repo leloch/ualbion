@@ -41,6 +41,7 @@ public sealed class SelectionHandler2D : GameComponent
         On<ShowMapMenuEvent>(_ => ShowMapMenu());
         On<CursorModeEvent>(e => _cursorMode = e.Mode);
         On<UiLeftClickEvent>(OnLeftClick); // #5: click-to-walk (A* path to the clicked tile)
+        On<UAlbion.Game.Events.PartyGotoEvent>(e => StartGoto(e.X, e.Y)); // harness: walk like a click
         On<UAlbion.Game.Events.FastClockEvent>(_ => FollowPath());
         // Cancel an auto-walk the instant the player steers manually. EventExchange.Raise SKIPS the
         // sender's own subscriptions, so FollowPath's own PartyMoveEvent never triggers this — only
@@ -74,11 +75,25 @@ public sealed class SelectionHandler2D : GameComponent
             return;
 
         e.Propagating = false;
+        StartGoto(cx, cy);
+    }
 
-        // Faithful 2D click-to-walk: route to the clicked tile with A* (8-directional, walkability
-        // via the registered Collider2D). FollowPath then steps the party tile-by-tile each tick.
-        // If no route exists (unreachable / off-map), fall back to a single greedy step so a click
-        // still nudges the party (the original behaviour before pathing).
+    // Faithful 2D click-to-walk: route to the target tile with A* (8-directional, walkability
+    // via the registered Collider2D). FollowPath then steps the party tile-by-tile each tick.
+    // If no route exists (unreachable / off-map), fall back to a single greedy step so a click
+    // still nudges the party (the original behaviour before pathing). Also reachable via the
+    // party_goto event (the harness's organic-walk primitive).
+    void StartGoto(int cx, int cy)
+    {
+        var leader = TryResolve<IParty>()?.Leader;
+        if (leader == null)
+            return;
+
+        var pos = leader.GetPosition();
+        int lx = (int)MathF.Round(pos.X), ly = (int)MathF.Round(pos.Y);
+        if ((cx == lx && cy == ly) || cx < 0 || cy < 0 || cx >= _map.Width || cy >= _map.Height)
+            return;
+
         var path = FindPath(lx, ly, cx, cy);
         _path.Clear();
         _stuckTicks = 0;
