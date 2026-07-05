@@ -103,6 +103,16 @@ public class BattleView : GameComponent
         public int Frame;
         public int FrameCount;
         public int Counter;
+
+        // Projectile flight (spell casts): the effect glides from Centre toward Target over
+        // FlightFrames; on arrival OnArrive fires (spawn the impact) and the projectile is
+        // removed. Non-projectile effects leave FlightFrames 0.
+        public Vector2 Target;
+        public int FlightFrames;
+        public int FlightElapsed;
+        public Vector2 CentreNow; // current interpolated position while flying
+        public System.Action OnArrive;
+        public bool Loop; // impact bursts play once; projectiles loop their frames while flying
     }
 
     const float UiW = 360f, UiH = 240f;
@@ -146,7 +156,92 @@ public class BattleView : GameComponent
         On<CombatHitEvent>(OnHit);
         On<CombatWalkEvent>(OnWalk);
         On<CombatSoulRiseEvent>(OnSoulRise);
+        On<CombatSpellCastEvent>(OnSpellCast);
     }
+
+    // Cast VISUAL (RE'd in _RE_SPELLANIM.md, table in CombatSpellFx): the Dji-Kas school
+    // orb, the caster→target projectile, and the on-target impact. Fire-and-forget: the
+    // sprites animate over the following frames (the original blocks the round; the remake
+    // overlaps them with the hit playback — approximate timing, faithful visuals).
+    void OnSpellCast(CombatSpellCastEvent e)
+    {
+        var fx = CombatSpellFxTable.Get(e.SpellId);
+        if (fx == null || e.TargetTiles == null)
+            return;
+
+        Vector2 CentreOf(int tile)
+        {
+            int col = tile % SavedGame.CombatColumns, row = tile / SavedGame.CombatColumns;
+            if (row >= SavedGame.CombatRowsForMobs) // party rows: the virtual aim point
+                return new Vector2(24f + 62.4f * col, 108f);
+            var (x, y, rowScale) = TileToScreen(col, row);
+            return new Vector2(x, y - 0.4f * GetBodyHeightAt(tile, rowScale));
+        }
+
+        var casterCentre = CentreOf(e.CasterTile);
+
+        foreach (var targetTile in e.TargetTiles)
+        {
+            var targetCentre = CentreOf(targetTile);
+            int tile = targetTile; // capture for the closure
+
+            // Dji-Kas school orb flies caster→target first, then the impact.
+            if (fx.Orb is { } orb)
+                SpawnProjectile(orb, casterCentre, targetCentre, 24, () => SpawnImpact(fx, tile, targetCentre));
+            else if (fx.Projectile is { } proj)
+                SpawnProjectile(proj, fx.CasterOrigin ? casterCentre : targetCentre + new Vector2(0, -60), targetCentre, 18,
+                    () => SpawnImpact(fx, tile, targetCentre));
+            else
+                SpawnImpact(fx, tile, targetCentre); // condition/flash spells: straight to the impact
+        }
+    }
+
+    void SpawnImpact(CombatSpellFx fx, int tile, Vector2 centre)
+    {
+        var gfxId = (SpriteId)fx.Impact;
+        var tex = Assets.LoadTexture(gfxId);
+        if (tex?.Regions is not { Count: > 0 })
+            return;
+
+        int row = tile / SavedGame.CombatColumns;
+        float scale = row >= SavedGame.CombatRowsForMobs ? 2.5f : TileToScreen(tile % SavedGame.CombatColumns, row).Scale * 2.0f;
+
+        var sprite = AttachChild(new Sprite(gfxId, EffectLayer,
+            SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest, SpriteFlags.LeftAligned));
+        var effect = new Effect { Sprite = sprite, Centre = centre, Scale = scale, FrameCount = tex.Regions.Count };
+        LayoutEffect(effect, tex);
+        _effects.Add(effect);
+    }
+
+    void SpawnProjectile(Base.CombatGfx gfx, Vector2 from, Vector2 to, int flightFrames, System.Action onArrive)
+    {
+        var gfxId = (SpriteId)gfx;
+        var tex = Assets.LoadTexture(gfxId);
+        if (tex?.Regions is not { Count: > 0 })
+        {
+            onArrive?.Invoke(); // no gfx — still show the impact
+            return;
+        }
+
+        var sprite = AttachChild(new Sprite(gfxId, EffectLayer,
+            SpriteKeyFlags.NoTransform | SpriteKeyFlags.NoDepthTest, SpriteFlags.LeftAligned));
+        var effect = new Effect
+        {
+            Sprite = sprite,
+            Centre = from,
+            Target = to,
+            FlightFrames = Math.Max(1, flightFrames),
+            Scale = 1.5f,
+            FrameCount = tex.Regions.Count,
+            Loop = true,
+            OnArrive = onArrive,
+        };
+        LayoutEffect(effect, tex);
+        _effects.Add(effect);
+    }
+
+    float GetBodyHeightAt(int tile, float rowScale)
+        => _mobs.TryGetValue(tile, out var mob) ? GetBodyHeight(mob, rowScale) : 32f * rowScale;
 
     /// <summary>
     /// Banish dissolve (RE 6): mark the mob soul-rising (it lifts/shrinks/fades and is
@@ -570,6 +665,27 @@ public class BattleView : GameComponent
         for (int i = _effects.Count - 1; i >= 0; i--)
         {
             var effect = _effects[i];
+
+            // Projectile flight: glide from Centre toward Target; on arrival fire OnArrive
+            // (spawns the impact) and remove the projectile.
+            if (effect.FlightFrames > 0)
+            {
+                effect.FlightElapsed++;
+                float t = Math.Clamp(effect.FlightElapsed / (float)effect.FlightFrames, 0f, 1f);
+                var start = effect.Centre;
+                effect.CentreNow = Vector2.Lerp(start, effect.Target, t);
+                if (effect.Counter++ % FramesPerEffectStep == 0)
+                    effect.Frame = (effect.Frame + 1) % Math.Max(1, effect.FrameCount);
+                LayoutEffectAt(effect, effect.CentreNow, null);
+                if (t >= 1f)
+                {
+                    effect.Sprite.Remove();
+                    _effects.RemoveAt(i);
+                    effect.OnArrive?.Invoke();
+                }
+                continue;
+            }
+
             if (++effect.Counter % FramesPerEffectStep != 0)
                 continue;
 
@@ -585,7 +701,9 @@ public class BattleView : GameComponent
         }
     }
 
-    void LayoutEffect(Effect effect, ITexture tex)
+    void LayoutEffect(Effect effect, ITexture tex) => LayoutEffectAt(effect, effect.Centre, tex);
+
+    void LayoutEffectAt(Effect effect, Vector2 centre, ITexture tex)
     {
         tex ??= Assets.LoadTexture(effect.Sprite.Id);
         if (tex?.Regions is not { Count: > 0 })
@@ -598,8 +716,8 @@ public class BattleView : GameComponent
 
         // Centred on the aim point (anchor 50,50 in the original).
         effect.Sprite.Position = new Vector3(
-            -1 + 2 * (effect.Centre.X - w / 2) / UiW,
-            1 - 2 * (effect.Centre.Y - h / 2) / UiH,
+            -1 + 2 * (centre.X - w / 2) / UiW,
+            1 - 2 * (centre.Y - h / 2) / UiH,
             0);
         effect.Sprite.Size = new Vector2(2 * w / UiW, -2 * h / UiH);
     }

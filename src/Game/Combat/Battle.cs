@@ -1319,6 +1319,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             GetConditions = Conditions // includes the transient monster-condition shadow
         };
 
+        // Cast VISUAL (RE _RE_SPELLANIM.md): orb / projectile / impact over the recipient tiles.
+        RaiseSpellCastVisual(caster, spellId, recipients);
+
         var outcome = SpellCastOutcome.Failed;
         if (selfManagedArea || recipients.Count == 0)
         {
@@ -1396,6 +1399,22 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// Shared by spellbook casts and magic-item uses — the original's cast core is the
     /// same code path for both (RE 5B fcn.0005fdf7; only the mastery multiplier differs).
     /// </summary>
+    // Fire the cast-visual event for the recipient tiles (skipped when there are none, e.g.
+    // pure self-buffs, which have no CombatSpellFx entry anyway).
+    void RaiseSpellCastVisual(ICombatParticipant caster, SpellId spellId, List<ICombatParticipant> recipients)
+    {
+        if (recipients == null || recipients.Count == 0)
+            return;
+        var targetTiles = new List<int>(recipients.Count);
+        foreach (var r in recipients)
+        {
+            int t = TileOf(r);
+            if (t >= 0) targetTiles.Add(t);
+        }
+        if (targetTiles.Count > 0)
+            Raise(new CombatSpellCastEvent(spellId, TileOf(caster), targetTiles));
+    }
+
     List<ICombatParticipant> EnumerateSpellRecipients(
         ICombatParticipant caster, SpellId spellId, UAlbion.Formats.Assets.SpellData spell,
         int targetTile, out bool selfManagedArea)
@@ -1499,6 +1518,8 @@ public class Battle : GameComponent, IReadOnlyBattle
             ApplyCondition = (p, c) => ApplyCondition(p, c),
             GetConditions = Conditions
         };
+
+        RaiseSpellCastVisual(user, pending.Spell, recipients);
 
         var outcome = SpellCastOutcome.Failed;
         if (selfManagedArea)
