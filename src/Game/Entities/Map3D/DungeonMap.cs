@@ -54,13 +54,18 @@ public class DungeonMap : GameComponent, IMap
 
     // Spinner tile (RE _RE_OPCODES_WORLD.md, handler 0x3a8a1): sets the party's FACING — 0..3 are
     // absolute quadrants (N/E/S/W); 4 = random direction (the classic disorientation tile). It only
-    // acts in 3D and never moves the party. (PLACEHOLDER: the random case doesn't exclude the
-    // current facing — a small chance of no turn; the original re-rolls until different.)
+    // acts in 3D and never moves the party. The random case always turns to a DIFFERENT facing
+    // (the original re-rolls until different), so the disorientation is guaranteed.
     void OnSpinner(SpinnerEvent e)
     {
         int dir = e.Unk1;
         if (dir == 4)
-            dir = Resolve<UAlbion.Game.IRandom>().Generate(4);
+        {
+            // yaw 0 = N; quadrant = round(yaw / 90°). Pick one of the other three quadrants so
+            // the party always ends up facing somewhere new.
+            int current = ((int)MathF.Round(_camera.Yaw / (MathF.PI / 2f)) % 4 + 4) % 4;
+            dir = (current + 1 + Resolve<UAlbion.Game.IRandom>().Generate(3)) % 4;
+        }
         Raise(new UAlbion.Formats.ScriptEvents.PartyTurnEvent((UAlbion.Formats.Direction)(dir & 3)));
     }
 

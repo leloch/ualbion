@@ -180,18 +180,66 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
             TryResolve<IMapManager>()?.Current?.MapData,
             Resolve<IAssetManager>()));
 
-        // Undecoded query subtypes (Phase-0 crash guard, QueryUndecodedEvents.cs): they now parse,
-        // so a map using one loads; until the semantics are RE'd they evaluate to the safe default
-        // (false = take the branch's false path). Deterministic so behaviour can't depend on
-        // handler-presence accidents.
+        // Query subtypes decoded in RE batch 7 (_RE_MISC7.md §A, dispatcher 0x3ca53).
+
+        // 0x0B = MAP LIGHT-ENVIRONMENT: Compare(mapFlags & 3, op, arg) — 0 always-light,
+        // 1 dungeon-lighting, 2 day/night. (fcn @0x3cdbb)
+        OnQuery<QueryUnkBEvent, bool>(q =>
+        {
+            int env = (int)(TryResolve<IMapManager>()?.Current?.MapData?.Flags ?? 0) & 3;
+            return FormatUtil.Compare(q.Operation, env, q.Argument);
+        });
+
+        // 0x13 = LEADER LEVEL: Compare(leader.Level, op, arg). (fcn @0x3d0ca)
+        OnQuery<QueryUnk13Event, bool>(q =>
+            FormatUtil.Compare(q.Operation, Resolve<IGameState>().Leader?.Level ?? 0, q.Argument));
+
+        // 0x25 = unconditional TRUE (its jump-table entry falls straight through to the merge —
+        // the original never branches false here). The old `false` stub had the wrong polarity.
+        OnQuery<QueryUnk25Event, bool>(_ => true);
+
+        // 0x26 = LEADER SKILL[imm]: Compare(skill.Current, op, arg). imm 0 Melee / 1 Ranged /
+        // 2 CriticalChance / 3 LockPicking. (fcn @0x3d…, word[sheet+imm*8+0x7A])
+        OnQuery<QueryUnk26Event, bool>(q =>
+        {
+            var skills = Resolve<IGameState>().Leader?.Skills;
+            int value = q.Immediate switch
+            {
+                0 => skills?.CloseCombat?.Current ?? 0,
+                1 => skills?.RangedCombat?.Current ?? 0,
+                2 => skills?.CriticalChance?.Current ?? 0,
+                3 => skills?.LockPicking?.Current ?? 0,
+                _ => 0
+            };
+            return FormatUtil.Compare(q.Operation, value, q.Argument);
+        });
+
+        // 0x27 = LEADER ATTRIBUTE[imm]: Compare(attr.Current, op, arg). imm 0..7 =
+        // Strength..MagicTalent (word[sheet+imm*8+0x2A]). (CONFIRMED)
+        OnQuery<QueryUnk27Event, bool>(q =>
+        {
+            var attrs = Resolve<IGameState>().Leader?.Attributes;
+            int value = q.Immediate switch
+            {
+                0 => attrs?.Strength?.Current ?? 0,
+                1 => attrs?.Intelligence?.Current ?? 0,
+                2 => attrs?.Dexterity?.Current ?? 0,
+                3 => attrs?.Speed?.Current ?? 0,
+                4 => attrs?.Stamina?.Current ?? 0,
+                5 => attrs?.Luck?.Current ?? 0,
+                6 => attrs?.MagicResistance?.Current ?? 0,
+                7 => attrs?.MagicTalent?.Current ?? 0,
+                _ => 0
+            };
+            return FormatUtil.Compare(q.Operation, value, q.Argument);
+        });
+
+        // Still not implemented (need the chain's trigger context, which the current dispatch
+        // doesn't thread through): 0x08 IsWordKnown(arg), 0x0D triggering-word match,
+        // 0x24 triggering-item ItemType==arg. Default false = take the false branch. (_RE_MISC7 §A)
         OnQuery<QueryUnk8Event, bool>(_ => false);
-        OnQuery<QueryUnkBEvent, bool>(_ => false);
         OnQuery<QueryUnkDEvent, bool>(_ => false);
-        OnQuery<QueryUnk13Event, bool>(_ => false);
         OnQuery<QueryUnk24Event, bool>(_ => false);
-        OnQuery<QueryUnk25Event, bool>(_ => false);
-        OnQuery<QueryUnk26Event, bool>(_ => false);
-        OnQuery<QueryUnk27Event, bool>(_ => false);
     }
 
     /// <summary>Camera yaw → facing quadrant 0..3 (the original's 0x153b38 word).</summary>

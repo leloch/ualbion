@@ -44,8 +44,25 @@ public class ScreenFadeManager : Component
         OnAsync<FadeFromWhiteEvent>(_ => StartFade(CommonColor.White, 0.0f));
         On<FillScreenEvent>(e => Fill(MapColor(e.Color)));
         On<FillScreen0Event>(_ => Fill(CommonColor.Black1));
+        // wipe (map opcode 0x17, RE _RE_MISC7.md §C): value 0 = instant redraw (no-op here),
+        // 1 = blank the viewport (hold black), 2-5 = a ~10-step palette fade. We approximate
+        // 2-5 with a fade-to-then-from-black, and 1 with a held black fill.
+        OnAsync<WipeEvent>(OnWipe);
         On<EngineUpdateEvent>(e => Update(e.DeltaSeconds));
         On<UnloadMapEvent>(_ => Clear());
+    }
+
+    async AlbionTask OnWipe(WipeEvent e)
+    {
+        switch (e.Value)
+        {
+            case 0: return; // instant redraw — nothing to animate
+            case 1: Fill(CommonColor.Black1); return; // blank the viewport (held)
+            default: // 2-5: palette fade out then back in
+                await StartFade(CommonColor.Black1, 1.0f);
+                await StartFade(CommonColor.Black1, 0.0f);
+                return;
+        }
     }
 
     static CommonColor MapColor(int paletteIndex)
