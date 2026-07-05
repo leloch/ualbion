@@ -777,7 +777,10 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
             return;
 
         var item = _getItem(slot.Item);
-        if (item.Charges <= 0 || item.Spell.IsNone)
+        // Charges are PER-SLOT state (ItemSlot.Charges, save-serialized) — ItemData.Charges is
+        // the asset template's initial value; mutating it would drain every item of the type.
+        bool stackable = item != null && (item.Flags & ItemFlags.Stackable) != 0;
+        if (item == null || item.Spell.IsNone || (stackable ? slot.Amount <= 0 : slot.Charges <= 0))
             return;
 
         // Dispatch to the spell-effect registry. Unimplemented spells fall through with
@@ -806,7 +809,20 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
                 break;
         }
 
-        item.Charges--;
+        // Consume from the SLOT, mirroring the combat path (OnConsumeCharge): stackables lose
+        // one from the stack; otherwise a charge, and a discharged vanish-flagged item is destroyed.
+        if (stackable)
+        {
+            slot.Amount--;
+            if (slot.Amount == 0)
+                slot.Clear();
+        }
+        else
+        {
+            slot.Charges--;
+            if (slot.Charges == 0 && (item.Flags & ItemFlags.Unk4) != 0)
+                slot.Clear(); // vanishes when discharged (thrown weapons, some wands)
+        }
         Update(e.SlotId.Id);
     }
 

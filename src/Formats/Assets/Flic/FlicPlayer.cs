@@ -35,6 +35,11 @@ public class FlicPlayer
     public ushort Delay => _frames[Frame].Delay;
     public int FrameCount => _frames.Length;
 
+    /// <summary>Incremented whenever a frame carries a palette chunk — multi-scene FLICs
+    /// (e.g. the endgame montage) swap palettes mid-stream, and the renderer must re-upload
+    /// the palette when this changes, not just at load.</summary>
+    public int PaletteVersion { get; private set; }
+
     void ApplyFrame(FlicFrame frame)
     {
         ApiUtil.Assert(frame.Width == 0, "Frame width overrides are not currently handled");
@@ -47,6 +52,7 @@ public class FlicPlayer
             {
                 case Palette8Chunk paletteChunk:
                     paletteChunk.GetEffectivePalette(Palette).CopyTo(Palette, 0);
+                    PaletteVersion++;
                     break;
                 case CopyChunk copy:
                     copy.PixelData.AsSpan().CopyTo(pixelData);
