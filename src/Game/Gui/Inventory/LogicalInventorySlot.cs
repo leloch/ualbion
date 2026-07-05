@@ -299,6 +299,19 @@ public class LogicalInventorySlot : UiElement
                 ContextMenuGroup.Actions));
         }
 
+        // The generic "Use" verb (torches, tools, quest items): offered when the item has a
+        // UseItem chain in the InventoryItems event set. Documents/scrolls/drinks keep their
+        // specialised verbs; anything chain-driven gets Use like the original.
+        if (_id.Id.Type == InventoryType.Player
+            && item.TypeId is not (ItemType.Document or ItemType.SpellScroll or ItemType.Drink)
+            && (TryResolve<IInventoryManager>()?.HasUseChain(item.Id) ?? false))
+        {
+            options.Add(new ContextMenuOption(
+                S(Base.SystemText.InvPopup_Use),
+                new UseItemEvent(_id),
+                ContextMenuGroup.Actions));
+        }
+
         if (item.TypeId == ItemType.HeadsUpDisplayItem && _id.Id.Type == InventoryType.Player)
         {
             options.Add(new ContextMenuOption(
@@ -308,7 +321,8 @@ public class LogicalInventorySlot : UiElement
         }
 
         // TODO: Disable based on spell context
-        if (item.Charges > 0 && _id.Id.Type == InventoryType.Player)
+        // Gate on the SLOT's remaining charges (per-instance state), not the asset template's.
+        if (!item.Spell.IsNone && slotInfo.Charges > 0 && _id.Id.Type == InventoryType.Player)
         {
             options.Add(new ContextMenuOption(
                 S(Base.SystemText.InvPopup_ActivateSpell),

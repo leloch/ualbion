@@ -297,6 +297,8 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
         lock (_syncRoot)
         {
             StopAmbient();
+            if (songId.IsNone) // AmbientEvent(None) = stop the bed (combat entry, game over)
+                return;
             _ambientPlayer = AttachChild(new AmbientSoundPlayer(songId));
         }
     }
