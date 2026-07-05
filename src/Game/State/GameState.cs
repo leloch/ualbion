@@ -141,6 +141,17 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyMTicksEvent>(OnModifyMTicks);
         On<TrapEvent>(OnTrap);
         On<RestEvent>(OnRest);
+        // clone_automap (0x10): copy one map's automap discovery bytes onto another — used
+        // when a map has pre/post-event variants so exploration carries across the swap.
+        On<CloneAutomapEvent>(e =>
+        {
+            if (_game == null || e.From.IsNone || e.To.IsNone)
+                return;
+            if (_game.Automaps.TryGetValue(new AutomapId(e.From.Id), out var bytes) && bytes != null)
+                _game.Automaps[new AutomapId(e.To.Id)] = (byte[])bytes.Clone();
+            else
+                Info($"[CloneAutomap] no discovery data for {e.From}, nothing to copy to {e.To}");
+        });
         OnAsync<PartyWaitEvent>(OnWait);
         On<HourElapsedEvent>(_ => ProcessHourElapsed());
         On<ResetFatigueEvent>(_ => { if (_game != null) _game.HoursSinceResting = 0; }); // Recuperation = magical full rest

@@ -143,7 +143,9 @@ public class Battle : GameComponent, IReadOnlyBattle
                 if (kvp.Value.TargetTile == e.TargetTile)
                 {
                     Info($"[Combat] {e.Actor} move to {e.TargetTile} refused (already claimed by {kvp.Key})");
-                    Raise(new SoundEffectEvent(new SampleId(442), 100, 0, 0, 0, SoundMode.GlobalOneShot));
+                    // SYSTEXTS 442 "nowhere to move" — a message, not a sample (_RE_COMBATAUDIO.md:
+                    // the original's 0x56cb2 refusal is a direct ShowSystemMessage).
+                    ShowCombatMessage(Base.SystemText.CombatMsg_NowhereToMove);
                     return;
                 }
             }
@@ -754,8 +756,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             {
                 if (ammoReserve <= 0)
                 {
-                    // Reserve exhausted: sound 454 + no further strikes (fcn.0004f4da).
-                    Raise(new SoundEffectEvent(new SampleId(454), 100, 0, 0, 0, SoundMode.GlobalOneShot));
+                    // Reserve exhausted: SYSTEXTS 454 + no further strikes (fcn.0004f4da @0x4f5a9 —
+                    // a message, not a sample; _RE_COMBATAUDIO.md).
+                    ShowCombatMessage(Base.SystemText.CombatMsg_XHasUsedUpHisAmmunition, attacker);
                     return;
                 }
                 ConsumeAmmo(attacker); // consumed BEFORE the to-hit roll — misses burn ammo
@@ -1282,9 +1285,10 @@ public class Battle : GameComponent, IReadOnlyBattle
 
         if (recipients.Count == 0 && !selfManagedArea)
         {
-            // Nothing in the area: fizzle (sound 698) and the action is not consumed —
+            // Nothing in the area: fizzle (SYSTEXTS 698 "the spell does not hit anybody" — a
+            // message, not a sample; fcn.0005fb21 @0x5fd08) and the action is not consumed —
             // RE 5B: zero continuations leave the combatant's action slot intact.
-            Raise(new SoundEffectEvent(new SampleId(698), 100, 0, 0, 0, SoundMode.GlobalOneShot));
+            ShowCombatMessage(Base.SystemText.Magic_XSpellDoesNotHitAnybody, caster);
             Info($"[Combat] {caster.SheetId} casts {spellId} but nothing is in the area (fizzle)");
             return;
         }
@@ -1459,9 +1463,9 @@ public class Battle : GameComponent, IReadOnlyBattle
         var recipients = EnumerateSpellRecipients(user, pending.Spell, spell, pending.TargetTile, out bool selfManagedArea);
         if (recipients.Count == 0 && !selfManagedArea)
         {
-            // Nothing in the area: fizzle (sound 698); no charge is consumed — matches the
-            // spell path's zero-continuation rule (RE 5B).
-            Raise(new SoundEffectEvent(new SampleId(698), 100, 0, 0, 0, SoundMode.GlobalOneShot));
+            // Nothing in the area: fizzle (SYSTEXTS 698 — a message, not a sample); no charge
+            // is consumed — matches the spell path's zero-continuation rule (RE 5B).
+            ShowCombatMessage(Base.SystemText.Magic_XSpellDoesNotHitAnybody, user);
             Info($"[Combat] {user.SheetId} uses item {pending.Item} ({pending.Spell}) but nothing is in the area (fizzle)");
             return;
         }

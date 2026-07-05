@@ -58,6 +58,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         On<ActivateItemSpellEvent>(OnActivateItemSpell);
         OnAsync<DrinkItemEvent>(OnDrinkItem);
         OnAsync<ReadItemEvent>(OnReadItem);
+        OnAsync<UseItemEvent>(OnUseItem);
         On<ReadSpellScrollEvent>(OnReadSpellScroll);
         On<ConsumeItemChargeEvent>(OnConsumeCharge);
         On<ConsumeAmmoEvent>(OnConsumeAmmo);
@@ -566,8 +567,28 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
             case InventoryAction.NoCoalesceFullStack: break; // No-op
         }
 
+        ApplyCurseOnEquip(slot);
         Update(slotId.Id);
         SetCursor();
+    }
+
+    // Equipping a cursed item traps it: the template's Cursed flag becomes the per-slot
+    // Cursed flag the take-guard (CanItemBeTaken) already checks, so it can't be removed
+    // until a Remove-curse service clears it. Previously only save-loaded curses stuck.
+    void ApplyCurseOnEquip(ItemSlot slot)
+    {
+        if (slot == null
+            || slot.Id.Id.Type != InventoryType.Player
+            || !slot.Id.Slot.IsBodyPart()
+            || slot.Item.Type != AssetType.Item)
+            return;
+
+        var item = _getItem(slot.Item);
+        if (item != null && (item.Flags & ItemFlags.Cursed) != 0 && (slot.Flags & ItemSlotFlags.Cursed) == 0)
+        {
+            slot.Flags |= ItemSlotFlags.Cursed;
+            Info($"[Inv] {slot.Item} is cursed and clings to {slot.Id.Id}!");
+        }
     }
 
     async AlbionTask OnDiscard(InventoryDiscardEvent e)
@@ -1043,6 +1064,38 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
             return AlbionTask.CompletedTask;
 
         return TriggerItemChain(item.Id);
+    }
+
+    // The generic "Use" verb: run the item's UseItem chain (torches, tools, quest items).
+    // The menu only offers Use when a chain exists, so this is never a silent dead click.
+    AlbionTask OnUseItem(UseItemEvent e)
+    {
+        var inv = _getInventory(e.SlotId.Id);
+        var slot = inv.GetSlot(e.SlotId.Slot);
+        if (slot.Item.Type != AssetType.Item)
+            return AlbionTask.CompletedTask;
+
+        var item = _getItem(slot.Item);
+        return item == null ? AlbionTask.CompletedTask : TriggerItemChain(item.Id);
+    }
+
+    /// <summary>True when the InventoryItems event set has a UseItem chain for the item —
+    /// gates the context menu's "Use" verb.</summary>
+    public bool HasUseChain(ItemId itemId)
+    {
+        var eventSet = Assets.LoadEventSet(Base.EventSet.InventoryItems);
+        if (eventSet == null)
+            return false;
+        foreach (var eventIndex in eventSet.Chains)
+        {
+            if (eventIndex >= eventSet.Events.Count) // 0xFFFF = unused chain slot
+                continue;
+            if (eventSet.Events[eventIndex].Event is ActionEvent action
+                && action.ActionType == ActionType.UseItem
+                && action.Argument == (AssetId)itemId)
+                return true;
+        }
+        return false;
     }
 
     void OnReadSpellScroll(ReadSpellScrollEvent e)

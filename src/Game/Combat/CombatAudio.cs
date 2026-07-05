@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UAlbion.Api.Eventing;
 using UAlbion.Formats.Assets.Save;
@@ -7,9 +8,9 @@ using UAlbion.Formats.MapEvents;
 namespace UAlbion.Game.Combat;
 
 /// <summary>
-/// Plays the RE'd combat sound effects (see _RE_NOTES.md "Combat SFX"):
-/// melee swings/hits/misses are SILENT in the original engine; the only per-combatant
-/// sound is the shared death scream (sample 268) — party deaths at 11000 Hz / vol 100,
+/// Plays the RE'd combat sound effects (superseding _RE_NOTES's "silent melee" claim —
+/// see _RE_COMBATAUDIO.md): swings/misses/absorbed show TEXT only, but every DAMAGING hit
+/// plays the shared thud (sample 268) — party victims at 11025 Hz / vol 100,
 /// monster deaths at 15000 Hz / vol 60 (pitch differs, not the sample). Heals play
 /// sample 38; each spell handler hardcodes its own sample sequence (table below,
 /// CONFIRMED from the per-spell handler disassembly). Deliberate deviation: the original
@@ -79,16 +80,20 @@ public class CombatAudio : Component
                 return;
             }
 
-            if (!e.Killed)
-                return; // melee swings/hits/misses are silent in the original
+            if (e.Amount <= 0)
+                return; // swings/misses/absorbed hits show text only (_RE_COMBATAUDIO.md)
 
-            // One shared death scream; party-side deaths play at normal pitch/volume,
-            // monster deaths higher-pitched and quieter (fcn.0004dec9).
+            // Sample 268 is the shared HIT thud, played on EVERY damaging hit — not a death
+            // scream (fcn.0004dec9 plays it before the LP check; death adds no extra sound).
+            // Party-side victims at vol 100 / 11025 Hz, monsters at vol 60 / 15000 Hz,
+            // both with the original's ±50 variation on volume/pitch.
             bool isPartyTile = e.TileIndex / SavedGame.CombatColumns >= SavedGame.CombatRowsForMobs;
+            var rng = TryResolve<IRandom>();
+            int jitter = rng == null ? 0 : rng.Generate(101) - 50; // -50..50, the "variation 50" knob
             if (isPartyTile)
-                Play(Base.Sample.DeathScream, 100, 0);
+                Play(Base.Sample.DeathScream, (byte)Math.Clamp(100 + jitter / 4, 1, 127), (ushort)(11025 + jitter * 25));
             else
-                Play(Base.Sample.DeathScream, 60, 15000);
+                Play(Base.Sample.DeathScream, (byte)Math.Clamp(60 + jitter / 4, 1, 127), (ushort)(15000 + jitter * 25));
         });
 
         On<CombatCastEvent>(e =>

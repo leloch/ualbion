@@ -59,14 +59,14 @@ public class CombatManager : GameComponent
 
         Raise(new PushSceneEvent(SceneId.Combat));
 
-        // Combat music: the original switches to the battle track for the duration of the
-        // fight and restores the map song afterwards. Track selection: tech-environment
-        // backgrounds use the tech battle theme, everything else the standard one.
-        // PLACEHOLDER: exact per-background selection pending _RE_COMBATAUDIO.md.
-        var mapSong = Resolve<IMapManager>().Current?.MapData?.SongId ?? SongId.None;
-        Raise(new SongEvent((SongId)(backgroundId == (SpriteId)(CombatBackgroundId)Base.CombatBackground.Toronto
-            ? Base.Song.TechCombatMusic
-            : Base.Song.CombatMusic)));
+        // Combat music (_RE_COMBATAUDIO.md, fcn.0004ac00): entry stops music AND the ambient
+        // bed, then plays the FIXED battle track Song 26 (CombatMusic2) — no terrain/background
+        // selection exists in the original. Exit restores both via SetMapMusic (0x4ae1a).
+        var mapData = Resolve<IMapManager>().Current?.MapData;
+        var mapSong = mapData?.SongId ?? SongId.None;
+        var mapAmbient = mapData?.AmbientSongId ?? SongId.None;
+        Raise(new AmbientEvent(SongId.None)); // stop the ambient bed
+        Raise(new SongEvent((SongId)Base.Song.CombatMusic2));
 
         var info = Assets.GetAssetInfo(backgroundId);
         if (info != null)
@@ -83,8 +83,11 @@ public class CombatManager : GameComponent
         {
             scene.Remove(battle);
             Raise(new PopSceneEvent());
+            // Restore music + ambient like the original's SetMapMusic on combat exit.
             if (!mapSong.IsNone)
-                Raise(new SongEvent(mapSong)); // restore the map's music
+                Raise(new SongEvent(mapSong));
+            if (!mapAmbient.IsNone)
+                Raise(new AmbientEvent(mapAmbient));
         };
     }
 
@@ -107,6 +110,9 @@ public class CombatManager : GameComponent
 
     async AlbionTask PartyWipedAsync()
     {
+        // Game-over music (fcn.00035541 plays Song 43 with ambient + samples stopped).
+        Raise(new AmbientEvent(SongId.None));
+        Raise(new SongEvent((SongId)Base.Song.HalfBrokenMidi)); // = the game-over track (Song 43)
         // Animation x/y/unk are unused for full-screen videos like GameOver — pass 0s.
         await RaiseA(new PlayAnimationEvent(Base.Video.GameOver, 0, 0, 0, 0, 0, 0));
         Raise(new PushSceneEvent(SceneId.MainMenu));
