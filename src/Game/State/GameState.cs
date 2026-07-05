@@ -141,6 +141,9 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyMTicksEvent>(OnModifyMTicks);
         On<TrapEvent>(OnTrap);
         On<RestEvent>(OnRest);
+        // pause (map opcode 0x1A, RE _RE_MISC7.md §C): block the chain for Length/60 seconds
+        // (the byte is 1/60 s system-timer ticks; 0 = wait for input, approximated as a beat).
+        OnAsync<PauseEvent>(e => RaiseA(new WallClockTimerEvent(e.Length == 0 ? 0.5f : e.Length / 60.0f)));
         // clone_automap (0x10): copy one map's automap discovery bytes onto another — used
         // when a map has pre/post-event variants so exploration carries across the swap.
         On<CloneAutomapEvent>(e =>
@@ -412,6 +415,48 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         if (_game == null) return;
         if (_game.HoursSinceResting < ushort.MaxValue) _game.HoursSinceResting++; // fatigue clock (rest resets it)
         _game.TickActiveSpells(); // shield/light entries decay hourly (fcn.000605ed)
+        BurnTorches();
+    }
+
+    // Torch burn (RE _RE_MISC7.md §D, fcn.00049584): once per hour, decrement the charge byte
+    // of every equipped AND backpack LightSource (type 0x16) on all members; 0xFF = infinite
+    // (skip); when a torch reaches 0 it is destroyed. Recompute dungeon light after.
+    void BurnTorches()
+    {
+        var assets = TryResolve<UAlbion.Formats.IAssetManager>();
+        if (assets == null) return;
+
+        bool anyBurnt = false;
+        foreach (var member in _party.StatusBarOrder)
+        {
+            var sheet = member == null ? null : GetSheet(member.Id.ToSheet()) as CharacterSheet;
+            var inv = sheet?.Inventory;
+            if (inv == null) continue;
+
+            foreach (var slot in inv.EnumerateAll())
+            {
+                if (slot == null || slot.Item.Type != AssetType.Item)
+                    continue;
+                var item = assets.LoadItem(slot.Item);
+                if (item?.TypeId != ItemType.LightSource)
+                    continue;
+                // 0xFF = eternal flame (RE quirk: never depletes). 0 = an unlit/untracked torch
+                // (the remake doesn't seed a lifetime on pickup) — leave it, don't destroy it.
+                if (slot.Charges is 0 or 0xFF)
+                    continue;
+
+                slot.Charges--;
+                anyBurnt = true;
+                if (slot.Charges == 0)
+                {
+                    Info($"[Torch] {slot.Item} burnt out for {member.Id}");
+                    slot.Clear();
+                }
+            }
+        }
+
+        if (anyBurnt)
+            Raise(new DungeonLightChangedEvent());
     }
 
     static bool SetFlag(SwitchOperation operation, bool value) =>
