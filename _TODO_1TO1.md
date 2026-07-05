@@ -255,6 +255,69 @@ All five confirmed against the actual code, not comments:
    gate resist boosted.
 6. **Full intro replay** after the RE sweep lands (regression vs `_PLAYTHROUGH.md`).
 
+## 9. THE 100% 1:1 GAP LIST — deep audit 2026-07-05 (four-agent sweep + hand verification)
+
+> Every claim below was verified against live code (several agent findings were stale and are
+> EXCLUDED: finale surrender works, PartySleeps fires on rest, monster status-spells land via
+> the ApplyCondition hook, save name-entry exists, day/night blending is gradual, all 64 spells
+> registered, all economy/services live).
+
+### Tier 1 — a returning player notices in the first hour
+1. **Audio: volume sliders are dead ends.** SetMusicVolume/SetFxVolume persist to settings but
+   `AudioManager` never reads `V.User.Audio.*` — no master gain anywhere (`AudioManager.cs:132,155,191,244`).
+2. **Audio: no combat music.** Nothing in `src/Game/Combat` raises a `SongEvent`; the original
+   switches to the battle track on combat start and restores the map song after.
+3. **Combat: no spell-cast animations.** The original builds a per-spell cast-anim script
+   (table 0x15db4c → builder 0x81f42, `_RE_5B.md:363`); the remake plays only the cast sample +
+   hit splash. Needs RE of the anim table + a BattleView animation layer.
+4. **Combat: "Advance party" is a stub** (`LogicalCombatTile.cs:146` fires a NopEvent). The
+   original moves the whole party a row forward (claim-mask rules apply).
+5. **Character screen page III is empty** (`InventoryMiscPage.cs:10-23`) — conditions, known
+   languages and temporary spells are headers over blank space.
+6. **No condition icons on status-bar portraits** — poison/exhausted/etc. are invisible on the
+   HUD (`StatusBarPortrait.cs` renders portrait + LP/SP only).
+
+### Tier 2 — noticeable in normal play
+7. **Inventory "Use" verb missing** (`LogicalInventorySlot.cs` comment lists it; `InvPopup_Use`
+   =607 exists; no menu option is ever added) — the original's generic use-item verb.
+8. **Cursed items don't trap on equip** — `ItemFlags.Cursed` (template) is never converted to
+   `ItemSlotFlags.Cursed` at equip time; only save-loaded curses stick (`InventoryManager.cs`).
+9. **Torches never burn out** — `ItemData.Charges` documents "torch lifetime (type 0x16)" but
+   nothing decrements LightSource charges over time (`DungeonLighting.cs` counts them forever).
+10. **Combat sound identity crisis** — `_RE_COMBAT.md` pseudocode plays melee sounds
+    (444 swing / 446+455 hit / 451-452 miss-absorbed / 449 crit / condition cues 762..773) while
+    `_RE_NOTES.md` says samples stop at 299 and melee is silent; `CombatAudio.cs` follows the
+    latter. Also `Battle.cs` raises SampleId 442/454/698 which per _RE_NOTES can't be samples.
+    **Needs a radare2 reconciliation pass** (which ids are SAMPLES vs SYSTEXT, what plays where).
+11. **Opcode 0x10 CloneAutomap is parse-only** — automap discovery isn't copied between map
+    variants (e.g. pre/post-event map swaps lose exploration).
+12. **Opcode 0x17 Wipe and 0x1A Pause are parse-only** — scripted screen-wipe transitions and
+    scripted pacing delays no-op (cutscene pacing/polish).
+13. **Automap: no goto-point text labels and no legend** (`AutomapDialog.cs:275-285` draws the
+    glyph only).
+14. **Intro/Credits sequencing** — View Intro plays only `ApproachToAlbion`; Credits plays the
+    `Endgame4` clip. The original intro chain (MagicDemonstration/ShipMalfunction/...) exists as
+    assets but isn't sequenced; there are no real credits.
+15. **Out-of-combat item-spell context is bare** (`OnActivateItemSpell` passes no
+    ApplyHeal/target hooks) — healing/light wands from the inventory can't affect anyone.
+    (The per-slot charge bug there is FIXED 2026-07-05.)
+
+### Tier 3 — polish / RE backlog / verification debt
+16. 8 QueryTypes still stubbed false (`Querier.cs:187-194`: Unk8/B/D/13/24/25/26/27) and ~6
+    ActionTypes undecoded (Pay 0x02, Unk9, UnkE, Unk17, Unk2D, SignalTarget 0x39) — RE backlog;
+    fire-rate in shipped chains unknown (shakeout hits no errors, they default false/skip).
+17. Cursor sprite doesn't change per verb mode (verb shown via InfoOverlay text instead);
+    Take/PathFinding have no overlay glyph.
+18. Rest/camp has no campfire scene visual (text-only) — CONFIRM the original actually shows
+    one before implementing.
+19. 3D random-teleport spinner doesn't exclude the current tile (`DungeonMap.cs:57`).
+20. Save persistence for mod-added sheets/automaps/chests (hardcoded id ranges in
+    `SavedGame.cs`) — modding axis, not base-game.
+21. NightPalettes hardcoded table (works for base data; config/asset plumbing pending).
+22. Audible verification of EVERYTHING (ambient beds, cast samples, OPL music) — no human has
+    listened yet; needs ears on a real machine.
+23. Stale doc comments: `SpellEffectRegistry.cs:8` still claims only heal-status implemented.
+
 ## 8. Known deliberate deviations (documented, NOT bugs — do not "fix")
 
 - Broken equipment stays equipped+Broken instead of moving to the loot list

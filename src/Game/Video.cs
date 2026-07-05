@@ -19,6 +19,7 @@ public class Video : GameComponent
     SimpleTexture<byte> _texture;
     TextureDirtyEvent _dirtyEvent;
     PaletteId _previousPaletteId;
+    int _lastPaletteVersion;
 
     event Action Complete;
 
@@ -52,6 +53,16 @@ public class Video : GameComponent
             _player.NextFrame();
             if (_player.Frame == 0)
                 CycleCompleted?.Invoke();
+
+            // Multi-scene FLICs (endgame montage etc.) carry palette chunks mid-stream; the
+            // palette manager copied the entries at load, so re-raise on change or every
+            // scene after the first renders with the previous scene's colours (garbled).
+            if (_player.PaletteVersion != _lastPaletteVersion)
+            {
+                _lastPaletteVersion = _player.PaletteVersion;
+                Raise(new LoadRawPaletteEvent($"P:V:{_id}", _player.Palette));
+            }
+
             Raise(_dirtyEvent);
         }
     }
