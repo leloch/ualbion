@@ -320,9 +320,10 @@ public class LogicalInventorySlot : UiElement
                 ContextMenuGroup.Actions));
         }
 
-        // TODO: Disable based on spell context
         // Gate on the SLOT's remaining charges (per-instance state), not the asset template's.
-        if (!item.Spell.IsNone && slotInfo.Charges > 0 && _id.Id.Type == InventoryType.Player)
+        // Stackable spell-items track uses in Amount (Charges stays 0), so honour either.
+        bool hasSpellUses = (item.Flags & ItemFlags.Stackable) != 0 ? slotInfo.Amount > 0 : slotInfo.Charges > 0;
+        if (!item.Spell.IsNone && hasSpellUses && _id.Id.Type == InventoryType.Player)
         {
             options.Add(new ContextMenuOption(
                 S(Base.SystemText.InvPopup_ActivateSpell),

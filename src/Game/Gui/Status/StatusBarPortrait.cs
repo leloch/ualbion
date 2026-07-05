@@ -41,7 +41,7 @@ public class StatusBarPortrait : UiElement
         _health = AttachChild(new StatusBarHealthBar(order, true));
         _mana = AttachChild(new StatusBarHealthBar(order, false));
 
-        On<PartyChangedEvent>(_ => LoadSprite());
+        On<PartyChangedEvent>(_ => { LoadSprite(); UpdateConditionEffect(); }); // refresh the overlay on swap/load too
         On<SlowClockEvent>(_ => UpdateConditionEffect());
         On<UiLeftClickEvent>(OnClick);
         On<UiRightClickEvent>(OnRightClick);
