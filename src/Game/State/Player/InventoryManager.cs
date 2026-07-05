@@ -61,6 +61,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         OnAsync<UseItemEvent>(OnUseItem);
         On<ReadSpellScrollEvent>(OnReadSpellScroll);
         On<ConsumeItemChargeEvent>(OnConsumeCharge);
+        On<ConsumeItemSlotChargeEvent>(OnConsumeSlotCharge);
         On<ConsumeAmmoEvent>(OnConsumeAmmo);
         On<BreakInventorySlotEvent>(OnBreakSlot);
         On<RepairInventorySlotEvent>(OnRepairSlot);
@@ -794,7 +795,7 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
     {
         var inv = _getInventory(e.SlotId.Id);
         var slot = inv.GetSlot(e.SlotId.Slot);
-        if (slot.Item.Type != AssetType.Item)
+        if (slot.Item.Type != AssetType.Item || e.SlotId.Id.Type != InventoryType.Player)
             return;
 
         var item = _getItem(slot.Item);
@@ -804,44 +805,42 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
         if (item == null || item.Spell.IsNone || (stackable ? slot.Amount <= 0 : slot.Charges <= 0))
             return;
 
-        // Dispatch to the spell-effect registry. Unimplemented spells fall through with
-        // Failed and we log the intended cast — the charge is still consumed so item upkeep
-        // is consistent with the original game's behaviour for unfulfilled item charges.
-        var context = new UAlbion.Game.Combat.SpellCastContext
-        {
-            // Item-cast doesn't have a real combatant context — caster/target are null when
-            // cast outside of combat (e.g. on an inventory menu). Effect implementations
-            // must tolerate null caster/target and use the spell metadata alone in that case.
-            SpellStrength = 0,
-            Random = max => max <= 0 ? 0 : Resolve<UAlbion.Game.IRandom>().Generate(max),
-            RaiseEvent = Raise,
-        };
-        var outcome = UAlbion.Game.Combat.SpellEffectRegistry.Cast(item.Spell, context);
-        switch (outcome)
-        {
-            case UAlbion.Game.Combat.SpellCastOutcome.Hit:
-                Info($"ActivateItemSpell: {item.Id} cast {item.Spell} successfully");
-                break;
-            case UAlbion.Game.Combat.SpellCastOutcome.Resisted:
-                Info($"ActivateItemSpell: {item.Id} cast {item.Spell} but it was resisted");
-                break;
-            default:
-                Info($"ActivateItemSpell: {item.Id} would cast {item.Spell} (no handler registered — charge consumed)");
-                break;
-        }
+        // Route through the field-cast machinery (PartyMagicMenu.CastInner) so the spell gets
+        // the real out-of-combat hooks (ApplyHeal → sheets, active-spell entries, cast SFX) —
+        // the old bare context meant a healing wand from the inventory couldn't heal anyone.
+        // The holder is the inventory's owner; party-targeting spells pick a member first.
+        var holder = new PartyMemberId(AssetType.PartyMember, e.SlotId.Id.Id);
+        var spell = Assets.LoadSpell(item.Spell);
+        bool needsTarget = spell != null
+            && (spell.Targets & (UAlbion.Formats.Assets.SpellTargets.Party | UAlbion.Formats.Assets.SpellTargets.DeadParty)) != 0;
 
-        // Consume from the SLOT, mirroring the combat path (OnConsumeCharge): stackables lose
-        // one from the stack; otherwise a charge, and a discharged vanish-flagged item is destroyed.
-        if (stackable)
+        if (needsTarget)
+            Raise(new Magic.PartyMagicMenu.ShowMagicTargetMenuEvent(holder, item.Spell, e.SlotId));
+        else
+            Raise(new Magic.CastPartyItemSpellEvent(holder, item.Spell, holder, e.SlotId));
+    }
+
+    // Wand/magic-item consumption applied to an exact slot (the field item-cast path):
+    // stackables lose one from the stack; otherwise a charge, and a discharged
+    // vanish-flagged item is destroyed — same rules as the combat ConsumeItemChargeEvent.
+    void OnConsumeSlotCharge(ConsumeItemSlotChargeEvent e)
+    {
+        var inv = _getInventory(e.SlotId.Id);
+        var slot = inv?.GetSlot(e.SlotId.Slot);
+        if (slot == null || slot.Item.Type != AssetType.Item)
+            return;
+
+        var item = _getItem(slot.Item);
+        if (item != null && (item.Flags & ItemFlags.Stackable) != 0)
         {
             slot.Amount--;
             if (slot.Amount == 0)
                 slot.Clear();
         }
-        else
+        else if (slot.Charges > 0)
         {
             slot.Charges--;
-            if (slot.Charges == 0 && (item.Flags & ItemFlags.Unk4) != 0)
+            if (slot.Charges == 0 && item != null && (item.Flags & ItemFlags.Unk4) != 0)
                 slot.Clear(); // vanishes when discharged (thrown weapons, some wands)
         }
         Update(e.SlotId.Id);

@@ -76,8 +76,14 @@ public class MainMenu : Dialog
     }
 
     // Replay a menu cinematic via the FLIC player (the buttons were previously dead). The
-    // menu is detached during playback and reattached after. ViewIntro = ApproachToAlbion;
-    // Credits has no dedicated enum entry, so it plays the final endgame FLIC (best available).
+    // menu is detached during playback and reattached after.
+    //
+    // Note on the "full intro chain / real credits" gap: the original's multi-part intro and
+    // end-credits are INTRO.SMK / CREDITS.SMK — Smacker videos that ship ONLY with the later
+    // CD release (see SR-Main/Albion-smk.c SMK_PlayIntro/SMK_PlayCredits). The floppy data
+    // UAlbion layers has none of them (FLICS0.XLD → the Base.Video enum, which has no Credits
+    // entry). So on this data set the arrival FLIC IS the intro, and the endgame clip is the
+    // closest available credits — this is the faithful maximum, not a stub.
     async AlbionTask PlayVideo(Base.Video video)
     {
         var exchange = Exchange;
