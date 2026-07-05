@@ -122,6 +122,9 @@ public class Battle : GameComponent, IReadOnlyBattle
             if (tile < 0) continue;
             int target = tile - SavedGame.CombatColumns; // one row toward the enemy
             if (target < 0) continue;
+            // Don't advance a member whose forward tile leaves the party rows — it would be
+            // rejected at execution with a spurious "move blocked" message. Front-liners stay.
+            if (target / SavedGame.CombatColumns < SavedGame.CombatRowsForMobs) continue;
             if (_tiles[target] != null && LifePoints(_tiles[target]) > 0) continue;
             // Direct call, not Raise — the exchange skips a sender's own subscriptions.
             OnQueueAction(new QueueCombatActionEvent(p.SheetId, CombatAction.Move, target));
