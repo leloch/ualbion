@@ -74,6 +74,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         OnAsync<BeginCombatRoundEvent>(BeginRoundAsync);
         OnAsync<ObserveCombatEvent>(Observe);
         On<QueueCombatActionEvent>(OnQueueAction);
+        On<CombatAdvancePartyEvent>(_ => AdvanceParty());
         On<CombatDamageEvent>(OnCombatDamage);
 
         _groupId = groupId;
@@ -109,6 +110,23 @@ public class Battle : GameComponent, IReadOnlyBattle
             await dlg.Task;
             Raise(new CombatDialog.ShowCombatDialogEvent(true));
         });
+
+    // "Advance party": queue a one-row-forward Move for every live party member whose forward
+    // tile is currently free. Routed through OnQueueAction so the claim mask applies (two
+    // members can never book the same destination). Front-most members are processed first.
+    void AdvanceParty()
+    {
+        foreach (var p in LiveParticipants(forParty: true).OrderBy(TileOf).ToList())
+        {
+            int tile = TileOf(p);
+            if (tile < 0) continue;
+            int target = tile - SavedGame.CombatColumns; // one row toward the enemy
+            if (target < 0) continue;
+            if (_tiles[target] != null && LifePoints(_tiles[target]) > 0) continue;
+            // Direct call, not Raise — the exchange skips a sender's own subscriptions.
+            OnQueueAction(new QueueCombatActionEvent(p.SheetId, CombatAction.Move, target));
+        }
+    }
 
     void OnQueueAction(QueueCombatActionEvent e)
     {

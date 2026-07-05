@@ -20,20 +20,29 @@ namespace UAlbion.Game.Gui.Status;
 
 public class StatusBarPortrait : UiElement
 {
+    // Any of these on a member flashes the portrait effect overlay (CoreGfx.CharEffect1-3),
+    // the original's at-a-glance "this character is afflicted" warning.
+    const UAlbion.Formats.Assets.Sheets.PlayerConditions VisibleConditions =
+        (UAlbion.Formats.Assets.Sheets.PlayerConditions)0xFFF;
+
     readonly UiSpriteElement _portrait;
+    readonly UiSpriteElement _conditionEffect;
     readonly StatusBarHealthBar _health;
     readonly StatusBarHealthBar _mana;
     readonly int _order;
     bool _isClickTimerPending;
+    int _effectFrame;
 
     public StatusBarPortrait(int order)
     {
         _order = order;
         _portrait = AttachChild(new UiSpriteElement(Base.Portrait.Tom));
+        _conditionEffect = AttachChild(new UiSpriteElement((SpriteId)Base.CoreGfx.CharEffect1) { IsActive = false });
         _health = AttachChild(new StatusBarHealthBar(order, true));
         _mana = AttachChild(new StatusBarHealthBar(order, false));
 
         On<PartyChangedEvent>(_ => LoadSprite());
+        On<SlowClockEvent>(_ => UpdateConditionEffect());
         On<UiLeftClickEvent>(OnClick);
         On<UiRightClickEvent>(OnRightClick);
         On<HoverEvent>(Hover);
@@ -133,6 +142,8 @@ public class StatusBarPortrait : UiElement
         }
 
         maxOrder = Math.Max(maxOrder, func(_portrait, portraitExtents, order, context));
+        if (_conditionEffect.IsActive)
+            maxOrder = Math.Max(maxOrder, func(_conditionEffect, portraitExtents, order + 1, context));
         maxOrder = Math.Max(maxOrder, func(_health, new Rectangle(
                 extents.X + 5,
                 extents.Y + extents.Height - 7,
@@ -159,6 +170,22 @@ public class StatusBarPortrait : UiElement
         _portrait.IsActive = portraitId.HasValue;
         if (portraitId.HasValue)
             _portrait.Id = portraitId.Value;
+    }
+
+    // Flash the CharEffect overlay over the portrait while the member has any adverse
+    // condition (poison, exhaustion, blindness, ...). The three CoreGfx frames cycle on
+    // the slow clock so it pulses rather than sitting statically over the face.
+    void UpdateConditionEffect()
+    {
+        var conditions = PartyMember?.Apparent?.Combat?.Conditions
+                         ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
+        bool afflicted = (conditions & VisibleConditions) != 0;
+        _conditionEffect.IsActive = afflicted && _portrait.IsActive;
+        if (!afflicted)
+            return;
+
+        _effectFrame = (_effectFrame + 1) % 3;
+        _conditionEffect.Id = (SpriteId)(Base.CoreGfx)((int)Base.CoreGfx.CharEffect1 + _effectFrame);
     }
 
     void OnClick(UiLeftClickEvent e)

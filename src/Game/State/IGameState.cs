@@ -44,6 +44,8 @@ public interface IGameState
     /// PersonalProtection). 0 when no entry is active. Decays hourly.
     /// </summary>
     int GetActiveSpellPct(PartyMemberId member, int type);
+    /// <summary>Remaining duration (game hours) of a member's active-spell entry (0 = inactive).</summary>
+    int GetActiveSpellHours(PartyMemberId member, int type);
     /// <summary>The Light spell's ambient percentage (ActiveSpells[0..1]); 0 when expired.</summary>
     int AmbientLightSpellPct { get; }
     bool IsChainDisabled(MapId mapId, ushort chain);

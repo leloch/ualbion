@@ -95,6 +95,14 @@ public class SavedGame
         return ActiveSpells[i] != 0 ? ActiveSpells[i + 1] : 0;
     }
 
+    /// <summary>Remaining duration (game hours) of an active-spell entry (0 = inactive).</summary>
+    public int GetActiveSpellHours(int slot, int type)
+    {
+        if (slot is < 0 or >= ActiveSpellSlots || type is < 0 or >= ActiveSpellTypes)
+            return 0;
+        return ActiveSpells[ActiveSpellIndex(slot, type)];
+    }
+
     /// <summary>Add an entry — only when EMPTY (fcn.000607da: active entries are not refreshed).</summary>
     public bool TryAddActiveSpell(int slot, int type, ushort hours, ushort pct)
     {

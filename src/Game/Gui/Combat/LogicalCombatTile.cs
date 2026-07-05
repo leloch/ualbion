@@ -144,7 +144,7 @@ public class LogicalCombatTile : UiElement
 
         options.Add(new ContextMenuOption(
             S(Base.SystemText.Combat_AdvanceParty),
-            new NopEvent(),
+            new CombatAdvancePartyEvent(), // queue a one-row-forward Move for the whole party
             ContextMenuGroup.Actions2));
 
         options.Add(new ContextMenuOption(

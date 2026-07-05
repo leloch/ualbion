@@ -59,6 +59,15 @@ public class CombatManager : GameComponent
 
         Raise(new PushSceneEvent(SceneId.Combat));
 
+        // Combat music: the original switches to the battle track for the duration of the
+        // fight and restores the map song afterwards. Track selection: tech-environment
+        // backgrounds use the tech battle theme, everything else the standard one.
+        // PLACEHOLDER: exact per-background selection pending _RE_COMBATAUDIO.md.
+        var mapSong = Resolve<IMapManager>().Current?.MapData?.SongId ?? SongId.None;
+        Raise(new SongEvent((SongId)(backgroundId == (SpriteId)(CombatBackgroundId)Base.CombatBackground.Toronto
+            ? Base.Song.TechCombatMusic
+            : Base.Song.CombatMusic)));
+
         var info = Assets.GetAssetInfo(backgroundId);
         if (info != null)
             Raise(new LoadPaletteEvent(info.PaletteId));
@@ -74,6 +83,8 @@ public class CombatManager : GameComponent
         {
             scene.Remove(battle);
             Raise(new PopSceneEvent());
+            if (!mapSong.IsNone)
+                Raise(new SongEvent(mapSong)); // restore the map's music
         };
     }
 

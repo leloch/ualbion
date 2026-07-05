@@ -21,7 +21,7 @@ namespace UAlbion.Game.Veldrid.Audio;
 
 public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioManager, IDisposable
 {
-    sealed record ActiveSound(AudioSource Source, object Id, int RestartProbability);
+    sealed record ActiveSound(AudioSource Source, object Id, int RestartProbability, float BaseVolume = 1.0f);
 
     const int DefaultSampleRate = 11025;
     public static readonly AssetIdAssetProperty<WaveLibraryId> WaveLibProperty = new("WaveLib", WaveLibraryId.None, x => x);
@@ -31,6 +31,7 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
     readonly Dictionary<(SongId, int), AudioBuffer> _waveLibCache = [];
     readonly List<ActiveSound> _activeSounds = [];
     readonly Dictionary<int, AudioSource> _ambientLoops = []; // keyed NPC ambient voices (RE 6)
+    readonly Dictionary<int, float> _ambientLoopBaseVolumes = []; // pre-gain volume, for live FX-slider rescale
     readonly ManualResetEvent _doneEvent = new(false);
     readonly AudioDevice _device;
     readonly Lock _syncRoot = new();
@@ -38,6 +39,10 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
     StreamingAudioSource _music;
     AlbionMusicGenerator _musicGenerator;
     AmbientSoundPlayer _ambientPlayer;
+    // Master gains from the options sliders (0..127 in the original's units). Applied as a
+    // multiplier on every source at creation, live-rescaled on slider change.
+    float _musicGain = 1.0f;
+    float _fxGain = 1.0f;
 
     public AudioManager(bool standalone)
     {
@@ -51,14 +56,44 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
         On<MoveAmbientLoopEvent>(MoveAmbientLoop);
         On<MuteEvent>(_ => StopAll());
         On<QuitEvent>(_ => _doneEvent.Set());
+        On<SetMusicVolumeEvent>(e => SetMusicGain(e.Value / 127.0f));
+        On<SetFxVolumeEvent>(e => SetFxGain(e.Value / 127.0f));
 
         _standalone = standalone;
         _device = new AudioDevice();
         _device.DistanceModel = DistanceModel.InverseDistance;
     }
 
+    void SetMusicGain(float gain)
+    {
+        _musicGain = Math.Clamp(gain, 0f, 1f);
+        lock (_syncRoot)
+        {
+            if (_music != null)
+                _music.Volume = _musicGain;
+        }
+    }
+
+    void SetFxGain(float gain)
+    {
+        _fxGain = Math.Clamp(gain, 0f, 1f);
+        lock (_syncRoot)
+        {
+            foreach (var sound in _activeSounds)
+                sound.Source.Volume = sound.BaseVolume * _fxGain;
+            foreach (var kvp in _ambientLoopBaseVolumes)
+                if (_ambientLoops.TryGetValue(kvp.Key, out var source))
+                    source.Volume = kvp.Value * _fxGain;
+        }
+    }
+
     protected override void Subscribed()
     {
+        // Pick up the persisted slider values (SettingsManager stores them; nothing applied
+        // them to the mixer before — the sliders were dead ends).
+        _musicGain = Math.Clamp(ReadVar(V.User.Audio.MusicVolume) / 127.0f, 0f, 1f);
+        _fxGain = Math.Clamp(ReadVar(V.User.Audio.FxVolume) / 127.0f, 0f, 1f);
+
         _doneEvent.Reset();
         Task.Run(AudioThread);
         base.Subscribed();
@@ -129,10 +164,11 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
             return;
 
         var source = _device.CreateSource(buffer);
-        source.Volume = e.Velocity == 0 ? 0.4f : 0.4f * (e.Velocity / 255.0f);
+        float baseVolume = e.Velocity == 0 ? 0.4f : 0.4f * (e.Velocity / 255.0f);
+        source.Volume = baseVolume * _fxGain;
         source.SourceRelative = true;
 
-        var active = new ActiveSound(source, (e.SongId, e.Instrument), 0);
+        var active = new ActiveSound(source, (e.SongId, e.Instrument), 0, baseVolume);
         active.Source.Play();
         lock (_syncRoot)
             _activeSounds.Add(active);
@@ -152,7 +188,8 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
         var tileSize = map?.TileSize ?? Vector3.One;
 
         var source = _device.CreateSource(buffer);
-        source.Volume = e.Volume == 0 ? 1.0f : e.Volume / 255.0f;
+        float baseVolume = e.Volume == 0 ? 1.0f : e.Volume / 255.0f;
+        source.Volume = baseVolume * _fxGain;
         source.Looping = e.Mode == SoundMode.LocalLoop;
         source.Position = tileSize * new Vector3(context.Source.X, context.Source.Y, 0.0f);
         source.SourceRelative = context.Source.AssetId.Type != AssetType.Map; // If we couldn't localise the sound then play it at (0,0) relative to the player.
@@ -188,7 +225,8 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
 
         var tileSize = Resolve<IMapManager>()?.Current?.TileSize ?? Vector3.One;
         var source = _device.CreateSource(buffer);
-        source.Volume = Math.Clamp(e.Volume, 0f, 1f);
+        float baseVolume = Math.Clamp(e.Volume, 0f, 1f);
+        source.Volume = baseVolume * _fxGain;
         source.Looping = e.Looping;
         source.SourceRelative = false; // localised at the NPC
         source.Position = tileSize * new Vector3(e.TileX, e.TileY, 0f);
@@ -200,13 +238,16 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
         if (e.Looping)
         {
             lock (_syncRoot)
+            {
                 _ambientLoops[e.Key] = source;
+                _ambientLoopBaseVolumes[e.Key] = baseVolume;
+            }
         }
         else
         {
             // One-shot (e.g. chase alert): track in _activeSounds so the update loop reaps it.
             lock (_syncRoot)
-                _activeSounds.Add(new ActiveSound(source, $"ambient1shot:{e.Key}", 0));
+                _activeSounds.Add(new ActiveSound(source, $"ambient1shot:{e.Key}", 0, baseVolume));
         }
     }
 
@@ -216,6 +257,7 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
         {
             if (_ambientLoops.Remove(key, out var source))
                 source.Stop();
+            _ambientLoopBaseVolumes.Remove(key);
         }
     }
 
@@ -241,7 +283,7 @@ public sealed class AudioManager : GameServiceComponent<IAudioManager>, IAudioMa
             _musicGenerator = AttachChild(new AlbionMusicGenerator(songId));
 
             _music = _device.CreateStreamingSource(_musicGenerator);
-            _music.Volume = 1.0f;
+            _music.Volume = _musicGain;
             _music.Looping = false; // Looping is the responsibility of the generator
             _music.SourceRelative = true;
             _music.Position = Vector3.Zero;
