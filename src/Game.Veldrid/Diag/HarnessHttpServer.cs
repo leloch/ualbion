@@ -251,6 +251,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
             case "GET /tilemap":         WriteJson(ctx, BuildTilemapDump()); break;
             case "GET /npcs":            WriteJson(ctx, BuildNpcsDump()); break;
+            case "GET /npctalk":         HandleNpcTalk(ctx); break;
             case "GET /log":             WriteJson(ctx, BuildLog(ctx)); break;
             case "GET /combat":          WriteJson(ctx, BuildCombatDump()); break;
             case "GET /inventory":       WriteJson(ctx, BuildInventoryDump()); break;
@@ -780,6 +781,29 @@ public sealed class HarnessHttpServer : Component, IDisposable
         }
         sb.Append("]}");
         return sb.ToString();
+    }
+
+    // GET /npctalk?n=N — talk to NPC slot N as if the player right-clicked it and chose
+    // TalkTo. Fires the SAME interaction the context menu builds (dialogue / event chain /
+    // map-text / party-companion recruitment EventSet), so the driver can talk to any NPC
+    // reliably (the synthetic /click/at is overridden by the real mouse and can't be aimed).
+    void HandleNpcTalk(HttpListenerContext ctx)
+    {
+        var state = TryResolve<IGameState>();
+        if (state?.Loaded != true) { TryWriteError(ctx, HttpStatusCode.Conflict, "no game loaded"); return; }
+        if (!int.TryParse(ctx.Request.QueryString["n"], out int n) || n < 0 || n >= state.Npcs.Count)
+        { TryWriteError(ctx, HttpStatusCode.BadRequest, "n out of range"); return; }
+
+        var npc = state.Npcs[n];
+        if (npc == null || npc.Id.IsNone) { TryWriteError(ctx, HttpStatusCode.NotFound, "npc slot empty"); return; }
+
+        var talk = UAlbion.Game.Entities.Map3D.SelectionHandler3D.BuildNpcInteraction(
+            npc, TryResolve<UAlbion.Formats.IAssetManager>());
+        if (talk == null)
+        { TryWriteError(ctx, HttpStatusCode.UnprocessableEntity, $"npc {npc.Id} has no interaction"); return; }
+
+        Raise(talk);
+        WriteJson(ctx, $"{{\"ok\":true,\"npc\":{JsonString(npc.Id.ToString())},\"raised\":{JsonString(talk.ToString())}}}");
     }
 
     // Recent on-screen text (combat narration / examine / hover / status). ?n=N limits the
