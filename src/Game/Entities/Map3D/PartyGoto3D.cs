@@ -121,6 +121,27 @@ public class PartyGoto3D : Component
 
         var dir = Vector2.Normalize(target - cur);
 
+        // Run the same one-step arbiter as manual movement (walls/margins/objects) so the
+        // glide can't clip a pylon the BFS path passes near.
+        var detector = TryResolve<ICollisionManager>();
+        if (detector != null)
+        {
+            float ts = TryResolve<IMapManager>()?.Current?.TileSize.X ?? 512f;
+            float margin = MathF.Max(ts / 4f, 50f) / ts;
+            float dx = dir.X * Speed * 0.05f, dz = dir.Y * Speed * 0.05f;
+            if (!Collision3DStep.IsAllowed(detector, cur.X, cur.Y, dx, dz, margin, 0))
+            {
+                // Try the axis-slide like the manual mover; if fully blocked, let the stuck
+                // watchdog abandon the path.
+                if (Collision3DStep.IsAllowed(detector, cur.X, cur.Y, dx, 0f, margin, 0))
+                    dir = new Vector2(MathF.Sign(dir.X), 0f);
+                else if (Collision3DStep.IsAllowed(detector, cur.X, cur.Y, 0f, dz, margin, 0))
+                    dir = new Vector2(0f, MathF.Sign(dir.Y));
+                else
+                    return;
+            }
+        }
+
         // Face the direction of travel (Movement3D.OnTurn yaw convention: N=0 looks along -Z,
         // so +Z = South, +X = East).
         var facing = MathF.Abs(dir.X) > MathF.Abs(dir.Y)

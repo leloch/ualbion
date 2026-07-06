@@ -43,6 +43,10 @@ public class Movement3D : Component
     bool _noclip;
     bool _overloadNotified;
     float _pendingSnapDegrees; // remaining degrees of an in-progress corner snap-turn (signed)
+    float _frameDt = 1f / 60f; // last frame's delta time — the collision step must test the
+                               // REAL per-frame delta (the original tests exactly one frame's
+                               // move), not the 0.05 s integration cap, or the wall standoff
+                               // inflates by up to a whole max-step.
     int _lastTileX = int.MinValue;
     int _lastTileY = int.MinValue;
 
@@ -55,6 +59,7 @@ public class Movement3D : Component
         On<PartyTurn3DEvent>(OnSnapTurn);
         On<PartyTurnEvent>(OnTurn);
         On<FastClockEvent>(OnTick);
+        On<UAlbion.Core.Events.EngineUpdateEvent>(e => _frameDt = Math.Clamp(e.DeltaSeconds, 0.001f, 0.05f));
         On<NoClipEvent>(_ =>
         {
             _noclip = !_noclip;
@@ -143,9 +148,15 @@ public class Movement3D : Component
     }
 
     /// <summary>
-    /// Axis-separated sub-tile collision: each world axis of the velocity is tested independently
-    /// against the tile the party's collision margin would enter, so motion into a wall is cancelled
-    /// on that axis only and the remainder slides along the wall (the original's wall-hugging).
+    /// The original's movement collision, ported 1:1 from _RE_COLLISION3D.md:
+    /// the mover is a POINT; the proposed endpoint's TILE must be class-passable
+    /// (fcn.0001eeb8, raw byte &amp; 0x08 for the party); the 8 neighbours of the destination
+    /// tile mark forbidden 3×3 margin zones (margin = MAX(tileSize/4, 50)) — entering a
+    /// forbidden zone is refused unless already hugging that same tile+zone, in which case
+    /// only components moving away from / parallel to the solid edge pass (the 9-case switch
+    /// @0x1ea7d); then the destination tile's object group is overlap-tested (fcn.0001f07e,
+    /// point-in-square, MapWidth/2, no margin). Axis fallback (dx,dz) → one axis → other
+    /// (fcn.0001e650) produces the wall slide.
     /// </summary>
     Vector3 FilterCollision(Vector3 worldVel)
     {
@@ -155,43 +166,46 @@ public class Movement3D : Component
 
         var pos = _camera.Position;
         var map = TryResolve<IMapManager>()?.Current;
-        float tsx = map?.TileSize.X ?? 512f, tsz = map?.TileSize.Z ?? 512f;
-        float px = pos.X / tsx, pz = pos.Z / tsz; // tile units
-        int curX = (int)MathF.Floor(px);
-        int curY = (int)MathF.Floor(pz);
+        float ts = map?.TileSize.X ?? 512f;
+        float px = pos.X / ts, pz = pos.Z / ts; // tile units
 
-        bool xBlocked = false, yBlocked = false;
-        int targetX = curX, targetY = curY;
+        const int PartyClass = 0; // word[0x153ccc]: only ever written 0
 
-        // Look-ahead = the resting wall margin OR the per-frame step, whichever is larger — NOT their
-        // sum. The old `radius + vel*0.05` ADDED the step to the margin, so the party stopped
-        // ~0.25 + speed*0.05 tiles from a wall (≈0.4-0.45 while walking) — the "invisible barrier,
-        // can't get close" the original doesn't have. MAX keeps the faithful 0.25-tile rest margin
-        // (RE 5D: MAX(tile/4,50)) at normal speed while still looking far enough ahead at sprint
-        // speed to not overshoot INTO a wall (the "clip one square in" symptom). The per-frame step
-        // is bounded by CameraMotion3D's MaxMoveStepSeconds (0.05s) so |vel|*0.05 is the true step.
-        if (worldVel.X != 0f)
+        // Remake-only escape hatch: if the current TILE is already solid (bad spawn, stale
+        // save) the original would wedge; let the player walk out instead.
+        if (detector.IsTileBlocked((int)MathF.Floor(px), (int)MathF.Floor(pz), PartyClass))
+            return worldVel;
+
+        // Proposed delta = this frame's actual move (velocity × real frame dt), like the
+        // original's one-step endpoint test.
+        float dx = worldVel.X * _frameDt;
+        float dz = worldVel.Z * _frameDt;
+        if (dx == 0f && dz == 0f)
+            return worldVel;
+
+        float marginTiles = MathF.Max(ts / 4f, 50f) / ts; // MAX(tileSize/4, 50) world units
+
+        bool StepAllowed(float sdx, float sdz)
+            => Collision3DStep.IsAllowed(detector, px, pz, sdx, sdz, marginTiles, PartyClass);
+
+        // fcn.0001e650: full move, then single axes — first axis picked by the original's
+        // raw signed dx > dz comparison (a Watcom quirk kept for fidelity).
+        if (StepAllowed(dx, dz))
+            return worldVel;
+
+        bool xFirst = dx > dz;
+        if (xFirst)
         {
-            float aheadX = MathF.Sign(worldVel.X) * MathF.Max(CollisionRadiusTiles, MathF.Abs(worldVel.X) * 0.05f);
-            targetX = (int)MathF.Floor(px + aheadX);
-            if (targetX != curX && detector.IsOccupied(curX, curY, targetX, curY))
-                xBlocked = true;
+            if (dx != 0f && StepAllowed(dx, 0f)) return new Vector3(worldVel.X, 0f, 0f);
+            if (dz != 0f && StepAllowed(0f, dz)) return new Vector3(0f, 0f, worldVel.Z);
         }
-        if (worldVel.Z != 0f)
+        else
         {
-            float aheadZ = MathF.Sign(worldVel.Z) * MathF.Max(CollisionRadiusTiles, MathF.Abs(worldVel.Z) * 0.05f);
-            targetY = (int)MathF.Floor(pz + aheadZ);
-            if (targetY != curY && detector.IsOccupied(curX, curY, curX, targetY))
-                yBlocked = true;
+            if (dz != 0f && StepAllowed(0f, dz)) return new Vector3(0f, 0f, worldVel.Z);
+            if (dx != 0f && StepAllowed(dx, 0f)) return new Vector3(worldVel.X, 0f, 0f);
         }
 
-        // Diagonal corner: both axes individually clear but the corner tile is solid → keep the Z
-        // component so we slide rather than stop dead.
-        if (!xBlocked && !yBlocked && targetX != curX && targetY != curY
-            && detector.IsOccupied(curX, curY, targetX, targetY))
-            xBlocked = true;
-
-        return new Vector3(xBlocked ? 0f : worldVel.X, 0f, yBlocked ? 0f : worldVel.Z);
+        return Vector3.Zero;
     }
 
     void OnTurn(PartyTurnEvent e)
