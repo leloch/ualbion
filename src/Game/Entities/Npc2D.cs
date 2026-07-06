@@ -244,6 +244,15 @@ public class Npc2D : Component
         if (_state.Id.Type == AssetType.MapTextIndex)
             return new TextEvent((ushort)_state.Id.Id, TextLocation.NoPortrait, SheetId.None);
 
+        // Party-companion NPC (Drirr, Sira, …): its id IS the recruitment EventSet — talking
+        // runs it from entry 0 (`action StartDialogue` → the join/leave flow).
+        if (_state.Id.Type == AssetType.EventSet)
+        {
+            var set = Resolve<UAlbion.Formats.IAssetManager>().LoadEventSet((EventSetId)_state.Id);
+            if (set != null && set.Events.Count > 0)
+                return new TriggerChainEvent(set, 0, new EventSource(_state.Id, TriggerType.TalkTo));
+        }
+
         return null;
     }
 
