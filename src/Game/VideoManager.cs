@@ -58,22 +58,34 @@ public class VideoManager : Component
     {
         // play <n>: let the current overlay anim run n full cycles before the script
         // continues — the original's pacing primitive for scripted sequences.
-        if (_currentAnim == null || e.Unknown <= 0)
+        // A dead anim (missing FLIC asset, stop_anim, map unload) must complete the wait
+        // immediately: pacing is cosmetic, and blocking would soft-lock the cutscene chain
+        // (this deadlocked the intro flight script when a cockpit FLIC failed to load).
+        if (_currentAnim == null || _currentAnim.IsDead || e.Unknown <= 0)
             return AlbionTask.CompletedTask;
 
         var source = new AlbionTaskCore("VideoManager.PlayCycles");
         int remaining = e.Unknown;
         var anim = _currentAnim;
+        bool done = false;
+
+        void Finish()
+        {
+            if (done) return;
+            done = true;
+            anim.CycleCompleted -= OnCycle;
+            source.Complete();
+        }
 
         void OnCycle()
         {
             if (--remaining > 0)
                 return;
-            anim.CycleCompleted -= OnCycle;
-            source.Complete();
+            Finish();
         }
 
         anim.CycleCompleted += OnCycle;
+        anim.OnEnded(Finish);
         return source.UntypedTask;
     }
 

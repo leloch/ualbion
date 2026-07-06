@@ -83,6 +83,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
     readonly HttpListener _listener;
     readonly ConcurrentQueue<PendingRequest> _queue = new();
     readonly ConcurrentQueue<HttpListenerContext> _pendingScreenshots = new();
+    long _lastPresentFrame; // last Pump frame at which PreSwapBuffersEvent fired (0 = never)
     readonly CancellationTokenSource _shutdownCts = new();
     long _frameCount;
     DateTime _lastFrameTime = DateTime.UtcNow;
@@ -178,6 +179,20 @@ public sealed class HarnessHttpServer : Component, IDisposable
         ReleaseExpiredHeldKeys();
         RaisePendingInputs();
 
+        // Screenshots are fulfilled on PreSwapBuffersEvent, which stops firing while the
+        // window is hidden/minimised (Engine._active = false pauses rendering). Without a
+        // backstop a pending screenshot then hangs the client FOREVER. If we haven't seen
+        // a present for ~2s of update frames, fail pending captures fast instead.
+        if (!_pendingScreenshots.IsEmpty && _frameCount - _lastPresentFrame > 120)
+        {
+            while (_pendingScreenshots.TryDequeue(out var shotCtx))
+            {
+                TryWriteError(shotCtx, HttpStatusCode.ServiceUnavailable,
+                    "rendering paused (window hidden/minimised?) — no frame presented for 2s; restore the game window and retry");
+                try { shotCtx.Response.Close(); } catch { /* client gone */ }
+            }
+        }
+
         // Drain at most 32 requests per frame so a burst can't starve the engine.
         int budget = 32;
         while (budget-- > 0 && _queue.TryDequeue(out var req))
@@ -230,6 +245,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /quest":           WriteJson(ctx, BuildQuestDump()); break;
             case "GET /conversation":    WriteJson(ctx, BuildConversationDump()); break;
             case "GET /clock":           WriteJson(ctx, BuildClockDump()); break;
+            case "GET /chains":          WriteJson(ctx, BuildChainsDump()); break;
             case "GET /zones":           WriteJson(ctx, BuildZonesDump(ctx)); break;
             case "POST /input":          HandleInput(ctx); break;
             case "GET /camera":          WriteJson(ctx, BuildCameraDump()); break;
@@ -1174,10 +1190,36 @@ public sealed class HarnessHttpServer : Component, IDisposable
             string evt = zone.Node.Event?.ToString() ?? "?";
             if (!first) sb.Append(',');
             first = false;
-            sb.Append($"{{\"x\":{x},\"y\":{y},\"trigger\":{JsonString(trig)},\"event\":{JsonString(evt)},\"chain\":{zone.EventIndex}}}");
+            sb.Append($"{{\"x\":{x},\"y\":{y},\"trigger\":{JsonString(trig)},\"event\":{JsonString(evt)},\"chain\":{zone.EventIndex}");
+            var tp = FindTeleportInChain(zone.Node);
+            if (tp != null)
+                sb.Append($",\"goesTo\":{JsonString(tp)}");
+            sb.Append('}');
         }
         sb.Append("]}");
         return sb.ToString();
+    }
+
+    // Walk a zone's event chain (both branches, cycle-safe, bounded) and report the first
+    // teleport/map-exit event found — this is how the playthrough driver discovers where a
+    // door/gate/staircase leads without firing it.
+    static string FindTeleportInChain(UAlbion.Api.Eventing.IEventNode start)
+    {
+        var seen = new HashSet<ushort>();
+        var queue = new Queue<UAlbion.Api.Eventing.IEventNode>();
+        queue.Enqueue(start);
+        int guard = 0;
+        while (queue.Count > 0 && guard++ < 64)
+        {
+            var node = queue.Dequeue();
+            if (node == null || !seen.Add(node.Id)) continue;
+            if (node.Event is UAlbion.Formats.MapEvents.TeleportEvent tp)
+                return $"{tp.MapId} {tp.X},{tp.Y}";
+            if (node.Next != null) queue.Enqueue(node.Next);
+            if (node is UAlbion.Api.Eventing.IBranchNode branch && branch.NextIfFalse != null)
+                queue.Enqueue(branch.NextIfFalse);
+        }
+        return null;
     }
 
     // GET /quest — quest-progress introspection: every set switch, every non-zero ticker, the
@@ -1256,6 +1298,32 @@ public sealed class HarnessHttpServer : Component, IDisposable
             $"\"loaded\":{((state?.Loaded ?? false).ToString().ToLowerInvariant())}," +
             $"\"time\":{JsonString(state?.Time.ToString())}" +
             "}";
+    }
+
+    // GET /chains — active event-chain contexts: source, status, current + last node. THE tool for
+    // diagnosing a soft-locked cutscene/chain (what event is it waiting on?).
+    string BuildChainsDump()
+    {
+        var events = TryResolve<UAlbion.Game.IEventManager>();
+        var sb = new StringBuilder();
+        sb.Append("{\"chains\":[");
+        bool first = true;
+        foreach (var c in events?.Contexts ?? (IReadOnlyList<UAlbion.Formats.MapEvents.EventContext>)[])
+        {
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append('{');
+            sb.Append($"\"id\":{JsonString(c.Id)},");
+            sb.Append($"\"source\":{JsonString(c.Source.ToString())},");
+            sb.Append($"\"set\":{JsonString(c.EventSet?.Id.ToString())},");
+            sb.Append($"\"entry\":{c.EntryPoint},");
+            sb.Append($"\"status\":{JsonString(c.Status.ToString())},");
+            sb.Append($"\"node\":{JsonString(c.Node?.ToString())},");
+            sb.Append($"\"lastNode\":{JsonString(c.LastNode?.ToString())}");
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
     }
 
     // GET /conversation — live dialogue state: NPC, current text, the numbered options (with text +
@@ -1784,6 +1852,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
 
     void FulfillScreenshots()
     {
+        _lastPresentFrame = _frameCount;
         while (_pendingScreenshots.TryDequeue(out var ctx))
         {
             try

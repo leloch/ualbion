@@ -311,10 +311,14 @@ public class Npc2D : Component
                 return;
             }
 
-            if (_state.Id.Type == AssetType.NpcSheet)
+            // Any non-monster chaser: fire the same interaction a TalkTo click would
+            // (dialogue, event chain, or map-text popup) — scripted fetch NPCs and
+            // chase-talk guards alike.
+            var talk = BuildInteractionEvent();
+            if (talk != null)
             {
                 _contactTriggered = true;
-                Raise(new StartDialogueEvent((NpcSheetId)(AssetId)_state.Id));
+                Raise(talk);
                 return;
             }
         }

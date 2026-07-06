@@ -67,11 +67,17 @@ public class FlicPlayer
         }
     }
 
+    /// <summary>Number of completed playback cycles (wraps). Watch for changes to detect
+    /// loop completion — ring-frame FLICs never revisit Frame 0 after the first pass, so
+    /// testing Frame == 0 misses every wrap.</summary>
+    public int Cycle { get; private set; }
+
     public void NextFrame()
     {
         Frame++;
         if (Frame >= _flic.Frames)
         {
+            Cycle++;
             Frame %= _flic.Frames;
             // if we have a ring frame, use it.
             if (Frame == 0 && _frames.Length > _flic.Frames)
