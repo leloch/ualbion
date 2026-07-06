@@ -115,13 +115,15 @@ public class Npc3D : GameComponent
                 }
                 else if (HasLineOfSight(px, py)) // 3D detection = Bresenham LOS, no distance cap (RE 5D fcn.00041c3c)
                 {
-                    // Step one tile toward the party, axis-major, respecting walls.
+                    // Step one tile toward the party, axis-major, respecting walls. Collision
+                    // class per the RE: NoClip NPCs are class 1 (pass 0x08 walls, blocked by
+                    // 0x10 fences); everything else class 0 like the party.
                     int nx = _state.X + Math.Sign(px - _state.X);
                     int ny = _state.Y + Math.Sign(py - _state.Y);
                     var detector = TryResolve<ICollisionManager>();
-                    if (nx != _state.X && (detector == null || !detector.IsOccupied(_state.X, _state.Y, nx, _state.Y)))
+                    if (nx != _state.X && (detector == null || !TileBlockedForNpc(detector, nx, _state.Y)))
                         _targetX = nx;
-                    else if (ny != _state.Y && (detector == null || !detector.IsOccupied(_state.X, _state.Y, _state.X, ny)))
+                    else if (ny != _state.Y && (detector == null || !TileBlockedForNpc(detector, _state.X, ny)))
                         _targetY = ny;
                 }
             }
@@ -145,7 +147,7 @@ public class Npc3D : GameComponent
                 if (nx >= 0 && ny >= 0 && nx < _mapWidth && ny < _mapHeight)
                 {
                     var detector = TryResolve<ICollisionManager>();
-                    if (detector == null || !detector.IsOccupied(_state.X, _state.Y, nx, ny))
+                    if (detector == null || !TileBlockedForNpc(detector, nx, ny))
                     {
                         _targetX = nx;
                         _targetY = ny;
@@ -178,6 +180,15 @@ public class Npc3D : GameComponent
     }
 
     bool AtTarget => (new Vector2(_targetX, _targetY) - _position).Length() <= 0.01f;
+
+    // NPC collision class (RE _RE_COLLISION3D.md): NoClip NPCs (MapNpc flag 0x40 → NpcState+5)
+    // are class 1 — they test collision bit 0x10 instead of the party's 0x08, letting them
+    // pass normal walls while dedicated fence records stop them. Others are class 0.
+    bool TileBlockedForNpc(ICollisionManager detector, int x, int y)
+    {
+        int cls = _state.NoClip ? 1 : 0;
+        return detector.IsTileBlocked(x, y, cls) || detector.HitsObjectAt(x + 0.5f, y + 0.5f, cls);
+    }
 
     /// <summary>
     /// 3D chase detection (RE 5D, fcn.00041c3c): a Bresenham line from the NPC to the

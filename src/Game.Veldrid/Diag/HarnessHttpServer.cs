@@ -943,23 +943,24 @@ public sealed class HarnessHttpServer : Component, IDisposable
         {
             var (_, wall) = lm.GetWall(x, y);
             var (floorIdx, floor) = lm.GetFloor(x, y);
-            bool isWall  = wall != null && (wall.Collision & 0x78) != 0;
+            // Party-perspective classification (RE _RE_COLLISION3D.md): the party is collision
+            // class 0 and tests exactly bit 0x08 — 0x10-only records are NPC fences the party
+            // walks through, so they classify as open here.
+            bool isWall  = wall != null && (wall.Collision & 0x08) != 0;
             bool isWater = floor != null && (floor.Unk1 & 0x08) != 0;
             bool occ = collider?.IsOccupied(x, y, x, y) ?? false;
 
             // Wall-sprite accounting: every tile that DRAWS a wall. A wall sprite that doesn't block
             // (and isn't IsOccupied via another layer) is something the player sees but walks through.
-            //   openArches = Collision==0 (intentional doorway/gate — correct to pass)
-            //   seeThru    = Collision!=0 but the directional-block mask 0x78 is clear AND nothing
-            //                else occupies the tile → a SOLID-looking wall you can walk through (bug
-            //                signature: collision bits set outside 0x78 that should block).
+            //   openArches = party-passable (bit 0x08 clear — includes 0x10 NPC fences)
+            //   seeThru    = would only fire if the collider disagrees with the 0x08 rule (bug canary)
             if (wall != null)
             {
                 wallSprites++;
                 int col = (int)wall.Collision;
                 wallCollisionHisto.TryGetValue(col, out var n); wallCollisionHisto[col] = n + 1;
-                if (col == 0) openArches++;
-                else if ((col & 0x78) == 0 && !occ)
+                if ((col & 0x08) == 0) openArches++;
+                else if (!occ)
                 {
                     seeThru++;
                     if (seeThruSamples.Count < 12) seeThruSamples.Add($"{x},{y} col=0x{col:x}");
@@ -979,7 +980,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
                     if ((info.Properties & UAlbion.Formats.Assets.Labyrinth.LabyrinthObjectFlags.FloorObject) != 0) continue;
                     int oc = (int)info.Collision;
                     objCollisionHisto.TryGetValue(oc, out var on); objCollisionHisto[oc] = on + 1;
-                    if (oc != 0 && (oc & 0x78) == 0 && !occ)
+                    if (oc != 0 && (oc & 0x08) == 0 && !occ)
                     {
                         seeThruObjs++;
                         if (seeThruObjSamples.Count < 12) seeThruObjSamples.Add($"{x},{y} obj#{sub.ObjectInfoNumber} col=0x{oc:x}");

@@ -12,6 +12,9 @@ public class Map3DTests
     {
         public HashSet<(int X, int Y)> Blocked { get; } = [];
         public bool IsOccupied(int fromX, int fromY, int toX, int toY) => Blocked.Contains((toX, toY));
+        public bool IsBlockedAt(float posX, float posZ, int collisionClass) => Blocked.Contains(((int)posX, (int)posZ));
+        public bool IsTileBlocked(int tileX, int tileY, int collisionClass) => Blocked.Contains((tileX, tileY));
+        public bool HitsObjectAt(float posX, float posZ, int collisionClass) => false;
         public void Register(IMovementCollider collider) { }
         public void Unregister(IMovementCollider collider) { }
     }
