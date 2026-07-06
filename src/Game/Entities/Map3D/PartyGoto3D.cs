@@ -24,6 +24,8 @@ public class PartyGoto3D : Component
 
     readonly List<(int X, int Y)> _path = new();
     int _stuckTicks;
+    int _repaths;
+    int _goalX = -1, _goalY = -1;
     Vector2 _lastPos;
 
     public PartyGoto3D()
@@ -36,6 +38,15 @@ public class PartyGoto3D : Component
     {
         _path.Clear();
         _stuckTicks = 0;
+        _repaths = 0;
+        _goalX = tx;
+        _goalY = ty;
+        Repath(tx, ty);
+    }
+
+    void Repath(int tx, int ty)
+    {
+        _path.Clear();
         var leader = TryResolve<IParty>()?.Leader;
         var detector = TryResolve<ICollisionManager>();
         var map = TryResolve<IMapManager>()?.Current;
@@ -49,26 +60,38 @@ public class PartyGoto3D : Component
             return;
 
         int Key(int x, int y) => y * w + x;
+
+        // Weighted (Dijkstra) route: geometry is impassable, but a tile occupied by an NPC
+        // BODY is passable at HIGH cost. So the path always completes, yet strongly prefers
+        // to detour around live NPC bodies — a chaser parked on the party's next tile gets
+        // routed around (via a body-free neighbour) instead of wedging the glide against its
+        // AABB, WITHOUT the all-or-nothing failure of a hard body-avoiding pass (one far
+        // wanderer on the only corridor would otherwise force the whole route back through
+        // the near blocker). The body may also move by the time the glide arrives.
+        const int BodyCost = 1000;
+        var dist = new Dictionary<int, int> { [Key(sx, sy)] = 0 };
         var prev = new Dictionary<int, int> { [Key(sx, sy)] = -1 };
-        var queue = new Queue<int>();
-        queue.Enqueue(Key(sx, sy));
+        var pq = new PriorityQueue<int, int>();
+        pq.Enqueue(Key(sx, sy), 0);
+        Span<int> ddx = [1, -1, 0, 0];
+        Span<int> ddy = [0, 0, 1, -1];
         bool found = false;
-        Span<int> dx = [1, -1, 0, 0];
-        Span<int> dy = [0, 0, 1, -1];
-        while (queue.Count > 0)
+        while (pq.TryDequeue(out int cur, out int curCost))
         {
-            int cur = queue.Dequeue();
+            if (curCost > dist[cur]) continue;
             int cx = cur % w, cy = cur / w;
             if (cx == tx && cy == ty) { found = true; break; }
             for (int i = 0; i < 4; i++)
             {
-                int nx = cx + dx[i], ny = cy + dy[i];
+                int nx = cx + ddx[i], ny = cy + ddy[i];
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-                int nk = Key(nx, ny);
-                if (prev.ContainsKey(nk)) continue;
                 if (detector.IsOccupied(cx, cy, nx, ny)) continue;
+                int step = (nx == tx && ny == ty) || !detector.HitsObjectAt(nx + 0.5f, ny + 0.5f, 0) ? 1 : BodyCost;
+                int nk = Key(nx, ny), nd = curCost + step;
+                if (dist.TryGetValue(nk, out int old) && old <= nd) continue;
+                dist[nk] = nd;
                 prev[nk] = cur;
-                queue.Enqueue(nk);
+                pq.Enqueue(nk, nd);
             }
         }
 
@@ -77,8 +100,9 @@ public class PartyGoto3D : Component
             Info($"[Goto3D] no path from ({sx},{sy}) to ({tx},{ty})");
             return;
         }
+        var route = prev;
 
-        for (int k = Key(tx, ty); k != Key(sx, sy); k = prev[k])
+        for (int k = Key(tx, ty); k != Key(sx, sy); k = route[k])
             _path.Insert(0, (k % w, k / w));
         Info($"[Goto3D] pathing ({sx},{sy}) -> ({tx},{ty}): {_path.Count} tiles");
     }
@@ -93,18 +117,27 @@ public class PartyGoto3D : Component
         var pos = leader.GetPosition();
         var cur = new Vector2(pos.X, pos.Z);
 
-        // Stuck watchdog: no progress for ~60 ticks (e.g. an NPC blocking) → abandon.
+        // Stuck watchdog: no progress for ~20 ticks (e.g. a chasing NPC body-blocking the
+        // next tile). RE-PATH first — the blocker (a wandering/chasing NPC) has usually
+        // moved, so a fresh BFS from the current tile routes around it. Only abandon after
+        // several failed re-paths (genuinely walled in), so a follower can't soft-lock a walk.
         if (Vector2.Distance(cur, _lastPos) < 0.002f)
         {
-            if (++_stuckTicks > 60)
+            if (++_stuckTicks > 20)
             {
+                _stuckTicks = 0;
+                if (_repaths++ < 4 && _goalX >= 0)
+                {
+                    Info($"[Goto3D] stuck, re-pathing (attempt {_repaths})");
+                    Repath(_goalX, _goalY);
+                    if (_path.Count > 0) { _lastPos = cur; return; }
+                }
                 Info("[Goto3D] stuck, abandoning path");
                 _path.Clear();
-                _stuckTicks = 0;
                 return;
             }
         }
-        else _stuckTicks = 0;
+        else { _stuckTicks = 0; _repaths = 0; }
         _lastPos = cur;
 
         var target = new Vector2(_path[0].X + 0.5f, _path[0].Y + 0.5f);

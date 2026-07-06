@@ -20,11 +20,32 @@ public class Video : GameComponent
     TextureDirtyEvent _dirtyEvent;
     PaletteId _previousPaletteId;
     int _lastPaletteVersion;
+    int _lastCycle;
 
     event Action Complete;
 
     /// <summary>Fires every time the animation wraps back to frame 0 (looping videos).</summary>
     public event Action CycleCompleted;
+
+    /// <summary>Fires once when the video stops existing for any reason — load failure or
+    /// removal (stop_anim / map unload / natural completion). Anything awaiting cycles
+    /// (the script `play n` pacing primitive) MUST also hook this, or a missing FLIC would
+    /// deadlock the whole cutscene chain.</summary>
+    event Action Ended;
+    bool _endedFired;
+
+    /// <summary>True once the video is unusable (failed to load or was removed).</summary>
+    public bool IsDead { get; private set; }
+
+    public Video OnEnded(Action continuation) { Ended += continuation; return this; }
+
+    void FireEnded()
+    {
+        IsDead = true;
+        if (_endedFired) return;
+        _endedFired = true;
+        Ended?.Invoke();
+    }
 
     /// <param name="uiPosition">When set, the video renders at this UI-pixel position
     /// (360×240 space) at its native size instead of fullscreen — used by the script
@@ -51,8 +72,11 @@ public class Video : GameComponent
         else
         {
             _player.NextFrame();
-            if (_player.Frame == 0)
+            if (_player.Cycle != _lastCycle) // Frame==0 misses wraps on ring-frame FLICs
+            {
+                _lastCycle = _player.Cycle;
                 CycleCompleted?.Invoke();
+            }
 
             // Multi-scene FLICs (endgame montage etc.) carry palette chunks mid-stream; the
             // palette manager copied the entries at load, so re-raise on change or every
@@ -81,7 +105,9 @@ public class Video : GameComponent
         var flic = Assets.LoadVideo(_id);
         if (flic == null)
         {
+            Warn($"[Video] {_id} failed to load — completing immediately (Ended fires so `play n` waiters don't deadlock)");
             Complete?.Invoke();
+            FireEnded();
             Remove();
             return;
         }
@@ -137,6 +163,7 @@ public class Video : GameComponent
     {
         base.Unsubscribed();
         Raise(new LoadPaletteEvent(_previousPaletteId));
+        FireEnded();
     }
 
     public Video OnComplete(Action continuation)

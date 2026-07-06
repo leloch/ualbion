@@ -33,6 +33,7 @@ public class Npc3D : GameComponent
     readonly List<(MapObject Object, Vector3 Offset)> _parts = [];
     Vector2 _position; // Tile units (continuous)
     bool _inContactCombat;
+    bool _contactTriggered;
 
     /// <summary>The live save-state record (position, object group) — read by the NPC
     /// body collider (e832 step 5: movers collide with live NPC bodies).</summary>
@@ -110,14 +111,32 @@ public class Npc3D : GameComponent
                 int dx = Math.Abs(px - _state.X);
                 int dy = Math.Abs(py - _state.Y);
 
-                // Contact: a chasing monster group that catches the party starts combat
-                // (the original's touch trigger). Victory removes the group via npc_off.
-                if (!_inContactCombat && Math.Max(dx, dy) <= 1 && _state.Id.Type == UAlbion.Config.AssetType.MonsterGroup)
+                // Contact triggers (same/adjacent tile), mirroring Npc2D.MovementChaseParty:
+                // a chasing MONSTER group starts combat (victory removes it via npc_off); any
+                // other chaser fires its talk interaction — dialogue, event chain or map-text
+                // popup (city guards etc). Re-arms once the party moves away, so a body-blocked
+                // talker doesn't wedge the player in a doorway with no way to trigger it.
+                bool inContact = Math.Max(dx, dy) <= 1;
+                if (!inContact)
+                    _contactTriggered = false;
+
+                if (inContact && !_inContactCombat && !_contactTriggered
+                    && _state.Id.Type == UAlbion.Config.AssetType.MonsterGroup)
                 {
                     _inContactCombat = true;
                     Raise(new UAlbion.Formats.MapEvents.EncounterEvent(
                         (UAlbion.Formats.Ids.MonsterGroupId)_state.Id,
                         UAlbion.Formats.Ids.CombatBackgroundId.None));
+                }
+                else if (inContact && !_contactTriggered
+                    && _state.Id.Type != UAlbion.Config.AssetType.MonsterGroup)
+                {
+                    var talk = SelectionHandler3D.BuildNpcInteraction(_state);
+                    if (talk != null)
+                    {
+                        _contactTriggered = true;
+                        Raise(talk);
+                    }
                 }
                 else if (HasLineOfSight(px, py)) // 3D detection = Bresenham LOS, no distance cap (RE 5D fcn.00041c3c)
                 {
