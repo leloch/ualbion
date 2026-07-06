@@ -104,6 +104,7 @@ GET  /quest                         → progress snapshot: set switches, non-zer
 GET  /conversation /combat /npcs /inventory /clock → subsystem introspection
 GET  /switch?id=Switch.X /ticker?id=Ticker.X → single story-flag values
 GET  /labyrinth /camera /tilemap /tile?x=&y= → 3D-render/collision diagnostics
+GET  /collide?x=&y=[&cls=0]         → point-collision probe (continuous tile units; walls + object/NPC-body AABBs)
 GET  /wallpixels?layer=N /floorpixels?layer=N → atlas pixel sampling
 POST /event/raw   body "load_game 7"→ fire any UAlbion event (text form)
 POST /event       { name, args }    → same, JSON form

@@ -34,6 +34,12 @@ public class Npc3D : GameComponent
     Vector2 _position; // Tile units (continuous)
     bool _inContactCombat;
 
+    /// <summary>The live save-state record (position, object group) — read by the NPC
+    /// body collider (e832 step 5: movers collide with live NPC bodies).</summary>
+    internal NpcState State => _state;
+    /// <summary>Continuous position in tile units (the visual glide position).</summary>
+    internal Vector2 Position => _position;
+
     public Npc3D(NpcState state, MapNpc mapData, TilemapRequest properties, int mapWidth, int mapHeight, byte npcNumber)
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
@@ -167,7 +173,23 @@ public class Npc3D : GameComponent
         else if (dist > 0.01f)
         {
             float step = Math.Min(TilesPerTick, dist);
-            _position += Vector2.Normalize(delta) * step;
+            var next = _position + Vector2.Normalize(delta) * step;
+
+            // e832 step 4 for the glide too: never walk INTO the party's body (chasers stop
+            // adjacent where contact combat fires; schedule NPCs wait until the player moves).
+            // Only refuse when the step gets CLOSER, so an NPC already overlapping can leave.
+            var pp = TryResolve<IParty>()?.Leader?.GetPosition();
+            if (pp != null)
+            {
+                var party = new Vector2(pp.Value.X, pp.Value.Z);
+                var body = _position + new Vector2(0.5f, 0.5f); // body centre vs tile-origin position
+                float curDist = (party - body).Length();
+                float nextDist = (party - (next + new Vector2(0.5f, 0.5f))).Length();
+                if (nextDist < 0.75f && nextDist < curDist)
+                    return;
+            }
+
+            _position = next;
         }
         else
         {
@@ -184,10 +206,23 @@ public class Npc3D : GameComponent
     // NPC collision class (RE _RE_COLLISION3D.md): NoClip NPCs (MapNpc flag 0x40 → NpcState+5)
     // are class 1 — they test collision bit 0x10 instead of the party's 0x08, letting them
     // pass normal walls while dedicated fence records stop them. Others are class 0.
+    // Also e832 step 4: NPC movers are blocked by the PARTY's body — an NPC never steps
+    // onto the party's tile (chasers stop adjacent, where contact combat triggers).
     bool TileBlockedForNpc(ICollisionManager detector, int x, int y)
     {
         int cls = _state.NoClip ? 1 : 0;
-        return detector.IsTileBlocked(x, y, cls) || detector.HitsObjectAt(x + 0.5f, y + 0.5f, cls);
+        if (detector.IsTileBlocked(x, y, cls) || detector.HitsObjectAt(x + 0.5f, y + 0.5f, cls))
+            return true;
+
+        var leader = TryResolve<IParty>()?.Leader;
+        if (leader != null)
+        {
+            var p = leader.GetPosition();
+            if (MathF.Abs(p.X - (x + 0.5f)) < 0.75f && MathF.Abs(p.Z - (y + 0.5f)) < 0.75f)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

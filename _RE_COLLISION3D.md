@@ -492,6 +492,13 @@ Remake-specific fix list implied by this doc:
 5. No `floorIndex == 0` block; off-map (and out-of-1..W/1..H) is solid; wall content ≥ 101 only.
 6. Party noclip flag (script/debug) bypasses EVERYTHING including bounds pt.2-5 (only the map-bounds
    check precedes it).
+7. **[DONE 2026-07-06]** e832 steps 4-5 (entity bodies): `NpcBodyCollider3D` collides movers with
+   every live NPC's object-group AABBs (the "corrected port" frame of §6: box centre = NPC
+   continuous position × tileSize + subobj.xz, half = MapWidth/2, class-gated, 1-tile pre-cull);
+   `Npc3D` blocks NPC steps AND the schedule glide from moving into the party's body (step 4,
+   0.75-tile approach gate, closer-only so an overlapped NPC can leave). Live-verified on Jirinaar:
+   party stops at the stationary gate-guard's box edge (z=55.393 vs edge 55.42) and can walk around
+   it; probe endpoint `GET /collide?x=&y=[&cls=]` samples the exact point-collision the movers use.
 
 ---
 
