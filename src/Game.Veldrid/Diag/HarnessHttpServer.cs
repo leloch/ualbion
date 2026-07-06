@@ -223,6 +223,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /labyrinth":       WriteJson(ctx, BuildLabyrinthDump()); break;
             case "GET /collisionscan":   WriteJson(ctx, BuildCollisionScan()); break;
             case "GET /tile":            WriteJson(ctx, BuildTileInspect(ctx)); break;
+            case "GET /collide":         WriteJson(ctx, BuildCollideProbe(ctx)); break;
             case "GET /findtiles":       WriteJson(ctx, BuildFindTiles(ctx)); break;
             case "GET /switch":          WriteJson(ctx, BuildSwitchQuery(ctx)); break;
             case "GET /ticker":          WriteJson(ctx, BuildTickerQuery(ctx)); break;
@@ -1072,6 +1073,24 @@ public sealed class HarnessHttpServer : Component, IDisposable
         sb.Append($"\"occ\":{{\"n\":{occN.ToString().ToLowerInvariant()},\"e\":{occE.ToString().ToLowerInvariant()},\"s\":{occS.ToString().ToLowerInvariant()},\"w\":{occW.ToString().ToLowerInvariant()}}}");
         sb.Append('}');
         return sb.ToString();
+    }
+
+    // GET /collide?x=&y=[&cls=0] — point collision probe at a CONTINUOUS position (tile units):
+    // runs the same ICollisionManager primitives the movers use (tile block + object/NPC-body
+    // AABBs), so tests can assert "this exact point is solid" — e.g. an NPC's live body.
+    string BuildCollideProbe(HttpListenerContext ctx)
+    {
+        var collider = TryResolve<UAlbion.Game.ICollisionManager>();
+        if (collider == null) return "{\"error\":\"no collision manager\"}";
+        if (!float.TryParse(ctx.Request.QueryString["x"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var px)
+            || !float.TryParse(ctx.Request.QueryString["y"], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pz))
+            return "{\"error\":\"x/y required (continuous tile units)\"}";
+        int cls = int.TryParse(ctx.Request.QueryString["cls"], out var c) ? c : 0;
+
+        bool tile = collider.IsTileBlocked((int)Math.Floor(px), (int)Math.Floor(pz), cls);
+        bool body = collider.HitsObjectAt(px, pz, cls);
+        return $"{{\"x\":{px.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"y\":{pz.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"cls\":{cls},"
+             + $"\"tileBlocked\":{(tile ? "true" : "false")},\"objectOrBody\":{(body ? "true" : "false")},\"blocked\":{(tile || body ? "true" : "false")}}}";
     }
 
     // GET /findtiles?kind=water|wall|open|floor0|object[&max=N] — coords of tiles matching a kind, so

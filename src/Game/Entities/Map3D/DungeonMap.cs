@@ -175,6 +175,7 @@ public class DungeonMap : GameComponent, IMap
 
         AttachChild(new ScriptManager());
         AttachChild(new Collider3D(_logicalMap));
+        AttachChild(new NpcBodyCollider3D(_npc3ds, _labyrinthData)); // e832 step 5: NPC bodies block movers
         AttachChild(new Movement3D(_camera));
         AttachChild(new PartyGoto3D()); // party_goto: harness organic-walk (BFS over the collision grid)
 
