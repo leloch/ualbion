@@ -75,8 +75,12 @@ removed-NPC index.
   cadence scheduler). **Audible output UNVERIFIED here** (no audio device in tests/
   harness) — needs a listening pass on a real machine.
 - ~~Animated 3D meshes~~ N/A (RE 6: original has no mesh path) — closed.
-- 5D leftovers (low/cosmetic): MapNpc flag 0x40 = collision class 1 / NoClip is a
-  collision-class selector (RE says non-behavioral for the remaining bits).
+- ~~5D leftovers~~ DONE: MapNpc flag 0x40 = collision class 1 (NoClip) is implemented as a
+  collision-class selector (`Collider3D.ClassBit`, `Npc3D.TileBlockedForNpc`); remaining
+  flag bits confirmed non-behavioral. Full 3D collision RE'd + rewritten 1:1
+  (`_RE_COLLISION3D.md`, commits d24040aa + 5539b0a3): class-bit tile rule, margin zones,
+  object AABBs, axis-fallback slide, AND e832 steps 4-5 entity bodies (NpcBodyCollider3D:
+  party↔NPC-body + NPC↔party/NPC-body). Probe endpoint `GET /collide?x=&y=[&cls=]`.
 
 ## 4. Implementation possible NOW (no RE needed)
 
