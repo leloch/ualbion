@@ -287,7 +287,7 @@ public sealed class SelectionHandler3D : GameComponent
 
     /// <summary>Mirror of Npc2D.BuildInteractionEvent for 3D-map NPC states. Also used by
     /// Npc3D contact-talk (a chasing talker that catches the party fires this, like 2D).</summary>
-    internal static IEvent BuildNpcInteraction(NpcState npc, UAlbion.Formats.IAssetManager assets = null)
+    public static IEvent BuildNpcInteraction(NpcState npc, UAlbion.Formats.IAssetManager assets = null)
     {
         IEvent result = null;
         if (npc.EventIndex != EventNode.UnusedEventId && npc.EventSet != null)
