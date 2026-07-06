@@ -131,7 +131,7 @@ public class Npc3D : GameComponent
                 else if (inContact && !_contactTriggered
                     && _state.Id.Type != UAlbion.Config.AssetType.MonsterGroup)
                 {
-                    var talk = SelectionHandler3D.BuildNpcInteraction(_state);
+                    var talk = SelectionHandler3D.BuildNpcInteraction(_state, TryResolve<UAlbion.Formats.IAssetManager>());
                     if (talk != null)
                     {
                         _contactTriggered = true;

@@ -18,7 +18,10 @@ public class NpcState : IMovementState
         var startOffset = s.Offset;
 
         s.Begin("Npc" + i);
-        ushort id = (byte)npc.Id.ToDisk(c.mapping);
+        // Mirror of the read-side +980 offset below (party-companion NPCs store the index).
+        ushort id = npc.Id.Type == AssetType.EventSet && npc.Type == NpcType.Party && npc.Id.Id >= MapNpc.PartyNpcEventSetOffset
+            ? (ushort)(npc.Id.Id - MapNpc.PartyNpcEventSetOffset)
+            : (byte)npc.Id.ToDisk(c.mapping);
         id = s.UInt16(nameof(Id), id); // 0
 
         // The on-disk field is a raw u16 gfx index; the TYPE (ObjectGroup for 3D, Npc{Large,Small}Gfx
@@ -106,9 +109,13 @@ public class NpcState : IMovementState
         npc.Unk66 = s.UInt16(nameof(Unk66), npc.Unk66);
         NpcMoveState.Serdes(npc.NpcMoveState, s);
 
-        // TODO
+        // Party-companion NPCs store the party-member index; their on-talk EventSet is
+        // 980 + index (see MapNpc.PartyNpcEventSetOffset). Without this the id resolved to
+        // the wrong low EventSet and recruit-by-talking was inert.
         var assetType = MapNpc.AssetTypeForNpcType(npc.Type, (npc.Flags & NpcFlags.SimpleMsg) != 0);
-        npc.Id = AssetId.FromDisk(assetType, id, c.mapping);
+        // id 0 = empty slot (party index 0 is Tom, never a map NPC) — leave unoffset.
+        int resolvedId = assetType == AssetType.EventSet && id != 0 ? id + MapNpc.PartyNpcEventSetOffset : id;
+        npc.Id = AssetId.FromDisk(assetType, resolvedId, c.mapping);
 
         ApiUtil.Assert(s.Offset == startOffset + 0x80);
         s.End();

@@ -11,6 +11,9 @@ public class MapNpc // 0xA = 10 bytes
 {
     public const int SizeOnDisk = 10;
     public const int WaypointCount = 0x480;
+    // Party-companion NPCs store party-member index N on disk; their on-talk EventSet is
+    // 980 + N (EventSet.Tom = 981, Drirr = 983, Mellthas = 985, …).
+    public const int PartyNpcEventSetOffset = 980;
     public static MapNpc Unused => new() { Waypoints = [new NpcWaypoint(0, 0)] };
 
     MapNpcFlags _raw;
@@ -73,7 +76,11 @@ public class MapNpc // 0xA = 10 bytes
         var offset = s.Offset;
         var npc = existing ?? new MapNpc();
 
-        byte id = (byte)npc.Id.ToDisk(mapping);
+        // Mirror of the read-side +980 offset below: a party-companion NPC keeps the
+        // party-member index (EventSet id − 980) on disk, not the raw EventSet id.
+        byte id = npc.Id.Type == AssetType.EventSet && npc.Type == NpcType.Party && npc.Id.Id >= PartyNpcEventSetOffset
+            ? (byte)(npc.Id.Id - PartyNpcEventSetOffset)
+            : (byte)npc.Id.ToDisk(mapping);
         id = s.UInt8(nameof(Id), id);
         npc.Sound = s.UInt8(nameof(Sound), npc.Sound);
 
@@ -97,7 +104,14 @@ public class MapNpc // 0xA = 10 bytes
         npc.Triggers = s.EnumU16(nameof(Triggers), npc.Triggers);
 
         var assetType = AssetTypeForNpcType(npc.Type, (npc.Flags & MapNpcFlags.SimpleMsg) != 0);
-        npc.Id = AssetId.FromDisk(assetType, id, mapping);
+        // Party-companion NPCs (Drirr, Sira, Mellthas, …) store the party-member index on
+        // disk but their on-talk behaviour is the recruitment EventSet at 980 + index
+        // (EventSet.Drirr = 983 = 980 + 3). Without this offset the id resolved to the
+        // wrong low EventSet (e.g. SpellsUnused) and recruitment-by-talking did nothing.
+        // id 0 = empty slot (party index 0 is Tom, the player — never a map NPC), so leave
+        // it unoffset to preserve the unused-slot filter; real companions are index ≥ 1.
+        int resolvedId = assetType == AssetType.EventSet && id != 0 ? id + PartyNpcEventSetOffset : id;
+        npc.Id = AssetId.FromDisk(assetType, resolvedId, mapping);
 
         s.End();
         var actualSize = s.Offset - offset;

@@ -237,7 +237,7 @@ public sealed class SelectionHandler3D : GameComponent
                 if (npc.X != _lastTileX || npc.Y != _lastTileY)
                     continue;
 
-                var talkEvent = BuildNpcInteraction(npc);
+                var talkEvent = BuildNpcInteraction(npc, TryResolve<UAlbion.Formats.IAssetManager>());
                 if (talkEvent != null)
                 {
                     options.Add(new ContextMenuOption(
@@ -287,7 +287,7 @@ public sealed class SelectionHandler3D : GameComponent
 
     /// <summary>Mirror of Npc2D.BuildInteractionEvent for 3D-map NPC states. Also used by
     /// Npc3D contact-talk (a chasing talker that catches the party fires this, like 2D).</summary>
-    internal static IEvent BuildNpcInteraction(NpcState npc)
+    internal static IEvent BuildNpcInteraction(NpcState npc, UAlbion.Formats.IAssetManager assets = null)
     {
         IEvent result = null;
         if (npc.EventIndex != EventNode.UnusedEventId && npc.EventSet != null)
@@ -299,6 +299,13 @@ public sealed class SelectionHandler3D : GameComponent
             result = new StartDialogueEvent(npc.Id);
         else if (npc.Id.Type == UAlbion.Config.AssetType.MapTextIndex)
             result = new TextEvent((ushort)npc.Id.Id, TextLocation.NoPortrait, SheetId.None);
+        else if (npc.Id.Type == UAlbion.Config.AssetType.EventSet && assets != null)
+        {
+            // Party-companion NPC: its id is the recruitment EventSet (run from entry 0).
+            var set = assets.LoadEventSet((UAlbion.Formats.Ids.EventSetId)npc.Id);
+            if (set != null && set.Events.Count > 0)
+                result = new TriggerChainEvent(set, 0, new EventSource(npc.Id, TriggerType.TalkTo));
+        }
         return result;
     }
 }
