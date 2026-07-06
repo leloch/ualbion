@@ -843,4 +843,24 @@ public class AssetLoadTests : IDisposable
         Assert.Equal(new AssetId(AssetType.Gold), AssetId.Parse("Gold.0"));
         Assert.Equal(new AssetId(AssetType.Rations), AssetId.Parse("Rations.0"));
     }
+
+    [Fact]
+    public void PartyCompanionNpcResolvesToRecruitmentEventSet()
+    {
+        // Drirr's home NPC on the House of the Winds (slot 12) is a party companion
+        // (NpcType.Party). Its on-disk id is the party-member index; the on-talk behaviour
+        // is the recruitment EventSet at 980 + index. Regression guard for the missing +980
+        // offset that made recruitment impossible (id resolved to EventSet.SpellsUnused).
+        var map = (MapData2D)Test(assets => assets.LoadMap(Map.HouseOfTheWinds));
+        var drirr = map.Npcs[12];
+        Assert.Equal(NpcType.Party, drirr.Type);
+        Assert.Equal(AssetId.From(EventSet.Drirr), drirr.Id); // 983 = 980 + 3, not EventSet.SpellsUnused (3)
+        Assert.Equal(AssetType.EventSet, drirr.Id.Type);
+
+        // The recruitment EventSet exists and starts with the dialogue action (entry 0),
+        // so the talk interaction (TriggerChainEvent at entry 0) has something to run.
+        var set = Test(assets => assets.LoadEventSet(EventSet.Drirr));
+        Assert.NotNull(set);
+        Assert.True(set.Events.Count > 0);
+    }
 }
