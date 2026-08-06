@@ -27,9 +27,23 @@ public class CombatManager : GameComponent
         On<EncounterEvent>(e => BeginCombat(e.GroupId, e.BackgroundId));
         OnAsync<EndCombatEvent>(OnCombatEnded);
         OnAsync<GameCompleteEvent>(_ => PlayEndgameAsync());
+        // A load / new game / scenario warp mid-combat must tear the battle down — the old
+        // battle otherwise survives with stale sheet references and eats every combat event.
+        On<LoadGameEvent>(_ => AbortActiveBattle());
+        On<NewGameEvent>(_ => AbortActiveBattle());
+        On<SyntheticScenarioEvent>(_ => AbortActiveBattle());
     }
 
     Battle _currentBattle;
+
+    void AbortActiveBattle()
+    {
+        if (_currentBattle == null)
+            return;
+        Info("[Combat] aborting live battle (load/new game supersedes it)");
+        _currentBattle.AbortForLoad();
+        _currentBattle = null;
+    }
 
     void BeginCombat(MonsterGroupId groupId, SpriteId backgroundId)
     {

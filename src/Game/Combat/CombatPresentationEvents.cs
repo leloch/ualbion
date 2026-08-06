@@ -53,6 +53,7 @@ public record CombatSoulRiseEvent(int TileIndex) : EventRecord, IVerboseEvent;
 /// destination tile is free (the combat menu's "Advance party"). Claim-mask rules apply —
 /// members whose forward tile is occupied or already claimed keep their previous order.
 /// </summary>
+[UAlbion.Api.Eventing.Event("combat_advance_party", "Queue a one-row-forward Move for the whole party (the combat menu's Advance option)")]
 public record CombatAdvancePartyEvent : EventRecord;
 
 /// <summary>

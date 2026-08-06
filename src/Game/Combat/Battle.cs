@@ -360,6 +360,22 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     bool _combatEnded;
 
+    /// <summary>
+    /// Immediate teardown when a save is loaded / new game starts while a battle is live
+    /// (only reachable via harness/debug — the original has no in-combat load). No XP,
+    /// loot or condition processing: the incoming game state supersedes the battle, we
+    /// just need the scene popped and the component tree released. Without this the old
+    /// battle (and its stale sheet references) survived the load and swallowed all
+    /// subsequent combat commands.
+    /// </summary>
+    public void AbortForLoad()
+    {
+        if (_combatEnded)
+            return;
+        _combatEnded = true;
+        Complete?.Invoke();
+    }
+
     void HandleCombatEnd(CombatResult result)
     {
         if (_combatEnded) // Guard against double-handling (external raise + direct call)
@@ -774,11 +790,16 @@ public class Battle : GameComponent, IReadOnlyBattle
         }
     }
 
-    static bool IsAdjacent(ICombatParticipant a, ICombatParticipant b)
+    bool IsAdjacent(ICombatParticipant a, ICombatParticipant b)
     {
+        // Adjacency must use the live battle GRID: combat moves update _tiles only —
+        // CombatPosition stays frozen at the initial placement, so using it here rejected
+        // (or wrongly accepted) melee targets as soon as either side had moved.
         if (a == null || b == null) return false;
-        int dx = Math.Abs(a.CombatPosition % SavedGame.CombatColumns - b.CombatPosition % SavedGame.CombatColumns);
-        int dy = Math.Abs(a.CombatPosition / SavedGame.CombatColumns - b.CombatPosition / SavedGame.CombatColumns);
+        int ta = TileOf(a), tb = TileOf(b);
+        if (ta < 0 || tb < 0) return false;
+        int dx = Math.Abs(ta % SavedGame.CombatColumns - tb % SavedGame.CombatColumns);
+        int dy = Math.Abs(ta / SavedGame.CombatColumns - tb / SavedGame.CombatColumns);
         return Math.Max(dx, dy) == 1 || (dx == 0 && dy == 0);
     }
 
@@ -1036,7 +1057,13 @@ public class Battle : GameComponent, IReadOnlyBattle
         if (weapon.AmmoType == UAlbion.Formats.Assets.Inv.AmmunitionType.Intrinsic)
             return true;
 
-        foreach (var eq in p.Effective.Inventory.EnumerateBodyParts())
+        // Matching ammo can be in the BACKPACK, not just an equipped slot — Albion has no
+        // dedicated ammo body-slot, arrows/bolts live in the pack and the bow draws from
+        // them (RE 5A: "backpack stacks refill the equipped slot, so the backpack depletes
+        // first"). Must scan the whole inventory exactly like CountAmmo — the old
+        // body-parts-only check reported a bow+pack-arrows loadout as unusable, silently
+        // downgrading every ranged attacker to a melee approach move.
+        foreach (var eq in p.Effective.Inventory.EnumerateAll())
         {
             if (eq == null || eq.Item.Type != AssetType.Item || (eq.Flags & UAlbion.Formats.Assets.Inv.ItemSlotFlags.Broken) != 0)
                 continue;
@@ -1391,6 +1418,13 @@ public class Battle : GameComponent, IReadOnlyBattle
             return;
         strengths.TryGetValue(spellId, out var current);
         strengths[spellId] = CombatFormulas.GrowMastery(current, talent);
+
+        // The effective sheet holds a DeepClone of Magic and only refreshes on
+        // InventoryChangedEvent (PartyMember.InventoryChanged → UpdateSheet; SheetChangedEvent
+        // has no subscribers). Without this the next cast reads the STALE mastery — M stuck at
+        // its battle-start value no matter how much the caster practises.
+        Raise(new UAlbion.Game.Events.Inventory.InventoryChangedEvent(
+            new UAlbion.Formats.Assets.Inv.InventoryId(sheet.Id)));
     }
 
     /// <summary>
@@ -1475,6 +1509,15 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// </summary>
     void UseQueuedItem(ICombatParticipant user, QueueCombatActionEvent pending)
     {
+        // The combat UI resolves the item's spell before queueing; a harness/script queue
+        // may pass only the item — resolve its spell here so both paths behave the same.
+        if (pending.Spell.IsNone && !pending.Item.IsNone)
+        {
+            var itemSpell = Assets.LoadItem(pending.Item)?.Spell ?? default;
+            if (!itemSpell.IsNone)
+                pending = pending with { Spell = itemSpell };
+        }
+
         if (user == null || pending.Spell.IsNone)
             return;
 
@@ -1957,4 +2000,14 @@ public class Battle : GameComponent, IReadOnlyBattle
         => tileIndex < 0 || tileIndex >= _tiles.Length ? null : _tiles[tileIndex];
 
     public int GetLifePoints(ICombatParticipant participant) => LifePoints(participant);
+
+    /// <summary>Diagnostic accessor: live SP (monster casts deduct from the _liveSp shadow,
+    /// not the frozen sheet — dumping Effective.Magic.SpellPoints.Current shows the
+    /// pre-battle value forever).</summary>
+    public int GetSpellPoints(ICombatParticipant participant) => SpellPoints(participant);
+
+    /// <summary>Diagnostic accessor: merged conditions (monster debuffs live in the battle's
+    /// condition shadow, not the sheet — dumping Effective.Combat.Conditions shows None for
+    /// every monster no matter what landed on it).</summary>
+    public UAlbion.Formats.Assets.Sheets.PlayerConditions GetConditions(ICombatParticipant participant) => Conditions(participant);
 }

@@ -70,6 +70,12 @@ public class Npc2D : Component
             _inContactCombat = false;
             if (e.Result == Combat.CombatResult.Victory)
                 Raise(new NpcOffEvent(_npcNumber));
+            else
+                // Fled/retreated with the chaser still adjacent: without re-arming, the very
+                // next tick re-raises the encounter — an inescapable combat loop. Latch the
+                // contact trigger; it resets once the party breaks contact (MovementChaseParty),
+                // so the chaser must genuinely catch the party again.
+                _contactTriggered = true;
         });
         OnDirectCall<ShowMapMenuEvent>(OnRightClick);
         OnDirectCall<NpcJumpEvent>(OnJump);
