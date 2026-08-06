@@ -106,7 +106,14 @@ public class PartyInventory : Component
         var party = Resolve<IParty>();
         var inventoryManager = Resolve<IInventoryManager>();
         var slot = new ItemSlot(new InventorySlotId(new InventoryId(InventoryType.Temporary, 0), 0));
-        slot.Set(itemId, amount);
+        // Items CREATED by events (chest finds, change_used_item products, scripts) carry the
+        // ITEMLIST template's initial charges — a lit torch arrives with its 3-hour lifetime,
+        // a wand with its full charge count. Without this they arrive at 0 charges: torches
+        // never burnt out and looted wands couldn't cast.
+        byte charges = 0;
+        if (itemId.Type == UAlbion.Config.AssetType.Item)
+            charges = TryResolve<UAlbion.Formats.IAssetManager>()?.LoadItem(itemId)?.Charges ?? 0;
+        slot.Set(itemId, amount, 0, charges);
 
         foreach (var member in party.WalkOrder)
         {

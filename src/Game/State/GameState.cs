@@ -43,7 +43,8 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     public DateTime Time => SavedGame.Epoch + (_game?.ElapsedTime ?? TimeSpan.Zero);
     public int HoursSinceResting => _game?.HoursSinceResting ?? 0;
     public IParty Party => _party;
-    public ICharacterSheet GetSheet(SheetId id) => _game.Sheets.TryGetValue(id, out var sheet) ? sheet : null;
+    // Null-safe pre-load: UI events (portrait menus etc.) can fire before any game is loaded.
+    public ICharacterSheet GetSheet(SheetId id) => _game != null && _game.Sheets.TryGetValue(id, out var sheet) ? sheet : null;
     public short GetTicker(TickerId id) => _game.Tickers.TryGetValue(id, out var value) ? value : (short)0;
     public bool GetSwitch(SwitchId id) => _game.GetSwitch(id);
     public IPlayer GetPlayerForCombatPosition(int position) => 
@@ -197,6 +198,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         AttachChild(new InventoryManager(GetWriteableInventory, GetItem));
         _sheetApplier = AttachChild(new SheetApplier());
         AttachChild(new StatusConditionTicker());
+        AttachChild(new LeaderIncapacityWatcher());
         AttachChild(new UAlbion.Game.Audio.AmbientSoundManager());
 
         // Populate the spell-effect registry. Currently only Dji-Kas heal-status spells (16..19)
@@ -400,11 +402,14 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         {
             var before = Time;
             _game.ElapsedTime += TimeSpan.FromHours(1);
-            Raise(HourElapsedEvent.Instance);
             // STATE-01: EventExchange.Raise skips the sender's OWN subscriptions, so GameState's
             // per-hour handler (fatigue + spell-duration decay) never ran for bulk-advanced hours.
-            // Invoke it directly here; the Raise above still drives the other components.
+            // Invoke it directly, and BEFORE the Raise: in the natural GameClock path the parent's
+            // handler runs before child subscribers (StatusConditionTicker), so the fatigue counter
+            // must already be incremented when the ticker reads it — raising first made the 48h
+            // exhaustion check permanently one hour late on bulk advances.
             ProcessHourElapsed();
+            Raise(HourElapsedEvent.Instance);
             if (Time.Date != before.Date)
                 Raise(DayElapsedEvent.Instance);
         }
@@ -433,6 +438,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             var inv = sheet?.Inventory;
             if (inv == null) continue;
 
+            bool memberChanged = false;
             foreach (var slot in inv.EnumerateAll())
             {
                 if (slot == null || slot.Item.Type != AssetType.Item)
@@ -441,18 +447,24 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
                 if (item?.TypeId != ItemType.LightSource)
                     continue;
                 // 0xFF = eternal flame (RE quirk: never depletes). 0 = an unlit/untracked torch
-                // (the remake doesn't seed a lifetime on pickup) — leave it, don't destroy it.
+                // (a pre-fix save may still carry one) — leave it, don't destroy it.
                 if (slot.Charges is 0 or 0xFF)
                     continue;
 
                 slot.Charges--;
                 anyBurnt = true;
+                memberChanged = true;
                 if (slot.Charges == 0)
                 {
                     Info($"[Torch] {slot.Item} burnt out for {member.Id}");
                     slot.Clear();
                 }
             }
+
+            // The UI / Effective sheets / harness dumps rebuild on InventoryChangedEvent —
+            // without it a burnt-out torch kept showing in the inventory indefinitely.
+            if (memberChanged)
+                Raise(new UAlbion.Game.Events.Inventory.InventoryChangedEvent(new UAlbion.Formats.Assets.Inv.InventoryId(member.Id)));
         }
 
         if (anyBurnt)
@@ -676,10 +688,26 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
 
     AlbionTask LoadGame(ushort id)
     {
-        _game = Assets.LoadSavedGame(IdToPath(id));
-        if (_game == null)
+        // A corrupt / truncated save must not take the whole game down (serdes throws on
+        // short reads). Fail the LOAD, keep the current game state untouched, surface the
+        // error — the player just stays where they were.
+        SavedGame loaded;
+        try
+        {
+            loaded = Assets.LoadSavedGame(IdToPath(id));
+        }
+        catch (Exception ex)
+        {
+            // No dedicated SYSTEXTS entry exists for this (the original never guarded it);
+            // the log line is the surface. The current game state is left untouched.
+            Error($"Failed to load save {id}: corrupt or unreadable save file ({ex.Message})");
+            return AlbionTask.CompletedTask;
+        }
+
+        if (loaded == null)
             return AlbionTask.CompletedTask;
 
+        _game = loaded;
         LoadDiscoveredWords(IdToPath(id));
         return InitialiseGame();
     }
@@ -780,6 +808,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         // rest a flat 8 hours (msg 605); otherwise rest till dawn, landing on 07:00
         // (msg 604). An explicit hour count (inn) is used as-is.
         int hours = e.Hours;
+        bool tillDawn = false;
         if (!explicitHours)
         {
             int hour = Time.Hour;
@@ -791,6 +820,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             else
             {
                 hours = hour < 4 ? 7 - hour : 31 - hour;
+                tillDawn = true; // lands ON 07:00 — the whole-hour advance alone keeps the minute offset
                 Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Rest_ThePartyRestsTillDawn)));
             }
         }
@@ -818,8 +848,14 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
             }
             OnDataChange(new DataChangeEvent(target, ChangeProperty.Food, NumericOperation.SubtractAmount, 2));
 
-            int lpGain = (sheet.Combat?.LifePoints?.Max ?? 0) / 2 + (sheet.Attributes?.Stamina?.Current ?? 0) / 15;
-            int spGain = (sheet.Magic?.SpellPoints?.Max ?? 0) / 2 + (sheet.Attributes?.MagicTalent?.Current ?? 0) / 15;
+            // RestoreSlot fcn.00068d2f (pct=50): LP += max(1, MaxLP*pct/100) + Stamina/15;
+            // the SP line only runs `if spellcaster` (spell-class byte != 0) — same gate as
+            // level-up SP (_RE_COMBAT.md:1978). Clamping makes the gate invisible for MaxSP=0
+            // members, but keep it byte-exact.
+            int lpGain = Math.Max(1, (sheet.Combat?.LifePoints?.Max ?? 0) / 2) + (sheet.Attributes?.Stamina?.Current ?? 0) / 15;
+            int spGain = sheet.Magic?.SpellClasses != 0 && sheet.Magic?.SpellPoints != null
+                ? Math.Max(1, sheet.Magic.SpellPoints.Max / 2) + (sheet.Attributes?.MagicTalent?.Current ?? 0) / 15
+                : 0;
 
             if (lpGain > 0)
                 OnDataChange(new DataChangeEvent(target, ChangeProperty.Health, NumericOperation.AddAmount, (ushort)Math.Min(ushort.MaxValue, lpGain)));
@@ -835,6 +871,14 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         _game.HoursSinceResting = 0;
         OnModifyHours(new ModifyHoursEvent(NumericOperation.AddAmount, (ushort)hours));
         _game.HoursSinceResting = 0;
+
+        // Till-dawn rests land ON 07:00 (msg 604, executor 0x68b05) — drop the sub-hour
+        // remainder after the whole-hour advance, else the party wakes at 07:MM.
+        if (tillDawn)
+        {
+            var t = _game.ElapsedTime;
+            _game.ElapsedTime = new TimeSpan(t.Days, t.Hours, 0, 0);
+        }
 
         // PartySleeps (action 0x3D): the original fires each active party member's PartySleeps
         // chain on every rest — e.g. Sira2 (NPC 984) heals Sira+Mellthas, runs do_script
