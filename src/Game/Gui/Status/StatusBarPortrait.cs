@@ -172,20 +172,38 @@ public class StatusBarPortrait : UiElement
             _portrait.Id = portraitId.Value;
     }
 
-    // Flash the CharEffect overlay over the portrait while the member has any adverse
-    // condition (poison, exhaustion, blindness, ...). The three CoreGfx frames cycle on
-    // the slow clock so it pulses rather than sitting statically over the face.
+    // Portrait status effect. The three CharEffect sprites are DISTINCT status images
+    // (damage burst / dead face / burst variant), not frames of one animation — cycling
+    // them for any affliction produced a garish burst→deadface→burst slideshow over the
+    // portraits (user-reported). Vanilla shows the dead face STATICALLY while a member is
+    // down; other afflictions get a brief warning pulse, not a constant slideshow.
+    // PLACEHOLDER: RE the original status-bar draw for the exact per-condition sprite/timing.
     void UpdateConditionEffect()
     {
         var conditions = PartyMember?.Apparent?.Combat?.Conditions
                          ?? UAlbion.Formats.Assets.Sheets.PlayerConditions.None;
         bool afflicted = (conditions & VisibleConditions) != 0;
-        _conditionEffect.IsActive = afflicted && _portrait.IsActive;
-        if (!afflicted)
+        if (!afflicted || !_portrait.IsActive)
+        {
+            _conditionEffect.IsActive = false;
             return;
+        }
 
-        _effectFrame = (_effectFrame + 1) % 3;
-        _conditionEffect.Id = (SpriteId)(Base.CoreGfx)((int)Base.CoreGfx.CharEffect1 + _effectFrame);
+        if ((conditions & UAlbion.Formats.Assets.Sheets.PlayerConditions.Unconscious) != 0)
+        {
+            // Down: the dead-face replaces the portrait statically.
+            _conditionEffect.IsActive = true;
+            _conditionEffect.Id = (SpriteId)Base.CoreGfx.CharEffect3;
+            return;
+        }
+
+        // Conscious afflictions (drunk, poisoned, blind, ...) get NO portrait effect —
+        // the vanilla status bar only replaces the face when a member is down; other
+        // conditions are read on the character sheet. (An earlier "warning pulse" flashed
+        // the damage-burst sprite over drunk characters — user-reported as wrong.)
+        // PLACEHOLDER: if RE of the original status-bar draw shows a per-condition
+        // effect, restore it with the correct sprite + timing.
+        _conditionEffect.IsActive = false;
     }
 
     void OnClick(UiLeftClickEvent e)
