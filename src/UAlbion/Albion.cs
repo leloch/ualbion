@@ -122,7 +122,9 @@ static class Albion
                 .Add(new MonsterEye()))
 
             .Add(new MenuScene() // backdrop + menu UI (classic vs modern) are managed inside MenuScene
-                .Add(new StatusBar())
+                // No StatusBar: the vanilla title screen has no party bar, but a quit-to-menu
+                // still has party state loaded, so an attached bar rendered portraits (and
+                // their condition overlays) over the menu.
                 .Add(new DialogManager())
                 .Add(new PaletteManager()))
 
@@ -193,6 +195,7 @@ static class Albion
             new InventoryScreenManager(),
             new UAlbion.Game.Gui.Menus.ExtrasMenuManager(),
             new CombatManager(),
+            new UAlbion.Game.Diag.DiagnosticsManager(), // harness-only diagnostic events
             //new DiagWindow()
             //    .Add(new SpriteInstanceDataDebugBehaviour())
             //    .Add(new FormatTextEventBehaviour()),
