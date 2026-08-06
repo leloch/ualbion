@@ -79,7 +79,10 @@ public class PlaceActionManager : GameComponent
         // into the firing event set's text set.
         var context = Context as EventContext;
         var textSet = context?.EventSet?.StringSetId ?? StringSetId.None;
-        _pendingSuccessText = e.Unk4 != 0 && !textSet.IsNone ? new StringId(textSet, e.Unk4) : null;
+        // 0xFF = "per-service default dialog" (RE _RE_COMBAT.md +4/Unk4 note) — the Do*
+        // handlers already show their own defaults, so no custom success text. Formatting
+        // 255 as a literal string index produced "!MISSING STRING EventText.X:255!".
+        _pendingSuccessText = e.Unk4 != 0 && e.Unk4 != 0xFF && !textSet.IsNone ? new StringId(textSet, e.Unk4) : null;
 
         // Unk2 = intro/greeting text shown when the service starts (RE 5D: every
         // handler does `if (Unk2 != 0xFF) ShowDialog(text[Unk2])`).
@@ -91,11 +94,25 @@ public class PlaceActionManager : GameComponent
 
         if (e.Unk3 != 0 && !textSet.IsNone)
         {
-            bool confirmed = await RaiseQueryA(new YesNoPromptEvent(new StringId(textSet, e.Unk3)));
-            if (!confirmed)
+            // Unk3 = price-confirm text; 0xFF = the default confirm (RE: "That costs %d.%d
+            // gold", a dialog-table string UAlbion hasn't mapped). Use the closest system
+            // text per service (Sleep -> "Rest for 8 hours?"); other services skip the
+            // custom confirm rather than show a missing-string box.
+            // PLACEHOLDER: map the original's default price-confirm dialog string.
+            StringId? confirmText = e.Unk3 != 0xFF
+                ? new StringId(textSet, e.Unk3)
+                : e.Type == PlaceActionType.SleepInRoom
+                    ? new StringId(Base.SystemText.MapPopup_ReallyRest)
+                    : null;
+
+            if (confirmText != null)
             {
-                _pendingSuccessText = null;
-                return;
+                bool confirmed = await RaiseQueryA(new YesNoPromptEvent(confirmText.Value));
+                if (!confirmed)
+                {
+                    _pendingSuccessText = null;
+                    return;
+                }
             }
         }
 
@@ -354,8 +371,11 @@ public class PlaceActionManager : GameComponent
             if (known != null && known.Contains(spellId))
                 continue;
             int price = e.GoldPerLevel * spell.LevelRequirement;
+            string spellName = spell.Name.IsNone
+                ? spellId.ToString().Split('.')[^1]
+                : Assets.LoadStringSafe(spell.Name);
             options.Add(new ContextMenuOption(
-                new LiteralText($"{spellId.ToString().Split('.')[^1]} ({(decimal)price / 10:0.#} gold)"),
+                new LiteralText($"{spellName} ({(decimal)price / 10:0.#} gold)"),
                 new ServiceLearnSpellEvent(e.MemberId, e.School, n, (ushort)price),
                 ContextMenuGroup.Actions));
         }

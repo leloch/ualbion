@@ -262,6 +262,12 @@ public class PartyMagicMenu : GameComponent
             {
                 strengths.TryGetValue(spellId, out var current);
                 strengths[spellId] = Combat.CombatFormulas.GrowMastery(current, talent);
+
+                // The effective sheet clones Magic and only refreshes on InventoryChangedEvent
+                // (SheetChangedEvent has no subscribers) — raise it or combat casts keep
+                // reading the pre-growth mastery (M never rises from field practice).
+                Raise(new UAlbion.Game.Events.Inventory.InventoryChangedEvent(
+                    new UAlbion.Formats.Assets.Inv.InventoryId(baseSheet.Id)));
             }
         }
 
