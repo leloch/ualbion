@@ -96,7 +96,7 @@ public class TextFormatter : GameServiceComponent<ITextFormatter>, ITextFormatte
                     // (or a null arg), mirroring the hardened {DAMG} case above — was an
                     // unchecked args[argNumber].ToString() that threw on too-few/ null args.
                     yield return (Token.Text, argNumber < args.Length
-                        ? args[argNumber++]?.ToString() ?? "?"
+                        ? FormatParameterArg(assets, args[argNumber++])
                         : "?");
                     break;
 
@@ -104,6 +104,16 @@ public class TextFormatter : GameServiceComponent<ITextFormatter>, ITextFormatte
             }
         }
     }
+
+    // %s args can be rich objects (the "X is broken!" message passes the ItemData):
+    // render their display name like the original, not the debug ToString().
+    string FormatParameterArg(IAssetManager assets, object arg) => arg switch
+    {
+        null => "?",
+        ItemData item => assets.LoadStringSafe(item.Name),
+        ICharacterSheet sheet => sheet.GetName(ReadVar(V.User.Gameplay.Language)),
+        _ => arg.ToString(),
+    };
 
     static IEnumerable<(Token, object)> SubstituteSex(object active)
     {

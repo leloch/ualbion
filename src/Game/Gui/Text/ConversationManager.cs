@@ -140,6 +140,24 @@ public class ConversationManager : GameServiceComponent<IConversationManager>, I
             return AlbionTask.CompletedTask;
         }
 
+        // Language barrier (SYSTEXTS 540): the leader must share a language with the NPC or
+        // the talk is refused. Story scripts grant Iskai via ChangeLanguageEvent during the
+        // Hunter-Clan recovery, so the organic path is never blocked — this gates going off
+        // the path (e.g. straight to an Iskai without the recovery beat). Sheets with NO
+        // language flags (special/story NPCs like the mute Mellthas) stay talkable — their
+        // event sets handle their own presentation, and blocking them would break recruits.
+        var leaderSheet = TryResolve<IGameState>()?.GetSheet(left.ToSheet());
+        if (leaderSheet != null
+            && right.Languages != 0
+            && (leaderSheet.Languages & right.Languages) == 0)
+        {
+            var tf = TryResolve<ITextFormatter>();
+            if (tf != null)
+                Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.MapPopup_ThisPersonSpeaksALanguageLeaderDoesntUnderstand)));
+            Info($"Refusing dialogue with {right.Id}: no shared language (leader {leaderSheet.Languages}, npc {right.Languages})");
+            return AlbionTask.CompletedTask;
+        }
+
         return WithFrozenClock((this, left, right), async static tuple =>
         {
             var (x, left, right) = tuple;
