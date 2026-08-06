@@ -60,6 +60,11 @@ public class Npc3D : GameComponent
             _inContactCombat = false;
             if (e.Result == Combat.CombatResult.Victory)
                 Raise(new UAlbion.Formats.ScriptEvents.NpcOffEvent(_npcNumber));
+            else
+                // Same re-arm as Npc2D: a fled fight with the chaser still adjacent must not
+                // re-raise the encounter on the next tick (inescapable loop) — the trigger
+                // resets once the party breaks contact.
+                _contactTriggered = true;
         });
     }
 
