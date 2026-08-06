@@ -92,3 +92,7 @@ _re_tmp_*
 _sweep/
 _smoke_logs/
 data/exported/
+
+# Local multi-session coordination notes (port/save-slot registry for concurrent
+# harness sessions on one machine) — machine-specific, not project documentation.
+_SESSIONS.md

@@ -82,7 +82,9 @@ public class EventPartParsers
     static T ParseEnum<T>(string s)
     {
         if (!Enum.TryParse(typeof(T), s, true, out var result))
-            throw new FormatException("No value supplied for required parameter");
+            throw new FormatException(s == null
+                ? $"No value supplied for required {typeof(T).Name} parameter"
+                : $"'{s}' is not a valid {typeof(T).Name} value");
 
         return (T)result;
     }

@@ -70,7 +70,10 @@ Combat is fully drivable: `load_game 2` → `begin_combat_round` (one round per 
 Spells/services: `cast_spell`, `magic_menu`, `place_action ...`, `svc_heal ...`.
 
 ### Save-file map (which save is what — for harness testing)
-- **Save 2** = Drinno, auto-starts a Warniak contact fight on load (good for combat).
+> **Live registry: `_SESSIONS.md`** (this list went stale once already — save 2 was
+> overwritten 2026-06-15).
+- **Save 1** = Drinno3 (3D dungeon), 5-member lvl-13 party — **the combat testbed**.
+- **Save 2** = TorontoBegin, solo Tom lvl 3 (no longer the Drinno fight!).
 - **Save 3** = Jirinaar (3D city), no auto-combat — **use this for non-combat tests** (NPCs,
   services, automap, teleporter). Its goto-markers are already discovered.
 - 2D maps among the saves: Nakiridaani (200), Winion (132), JirinaarTownHall (113),
