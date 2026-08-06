@@ -254,7 +254,8 @@ public sealed class HarnessHttpServer : Component, IDisposable
             case "GET /npctalk":         HandleNpcTalk(ctx); break;
             case "GET /log":             WriteJson(ctx, BuildLog(ctx)); break;
             case "GET /combat":          WriteJson(ctx, BuildCombatDump()); break;
-            case "GET /inventory":       WriteJson(ctx, BuildInventoryDump()); break;
+            case "GET /inventory":       WriteJson(ctx, BuildInventoryDump(ctx)); break;
+            case "GET /sheet":           WriteJson(ctx, BuildSheetDump(ctx)); break;
             case "GET /sprites":         WriteJson(ctx, BuildSpritesDump(ctx)); break;
             case "GET /pick":            WriteJson(ctx, BuildPickDump(ctx)); break;
             case "POST /key":            HandleKey(ctx); break;
@@ -868,6 +869,17 @@ public sealed class HarnessHttpServer : Component, IDisposable
         if (battle == null) return "{\"active\":false}";
 
         string language = ReadVar(V.User.Gameplay.Language);
+
+        // Live tile lookup: combat moves update the battle GRID, not the participant's
+        // CombatPosition property — dumping p.CombatPosition shows stale pre-move tiles.
+        var liveTile = new Dictionary<UAlbion.Game.State.ICombatParticipant, int>();
+        for (int t = 0; t < UAlbion.Formats.Assets.Save.SavedGame.CombatRows * UAlbion.Formats.Assets.Save.SavedGame.CombatColumns; t++)
+        {
+            var occupant = battle.GetTile(t);
+            if (occupant != null)
+                liveTile[occupant] = t;
+        }
+
         var sb = new StringBuilder();
         sb.Append("{\"active\":true,\"combatants\":[");
         bool first = true;
@@ -882,15 +894,16 @@ public sealed class HarnessHttpServer : Component, IDisposable
             var eff = p.Effective;
             int hp = battle.GetLifePoints(p);
             bool isMonster = p.SheetId.Type == UAlbion.Config.AssetType.MonsterSheet;
+            int tile = liveTile.TryGetValue(p, out var lt) ? lt : p.CombatPosition;
             sb.Append('{');
             sb.Append($"\"sheet\":{JsonString(p.SheetId.ToString())},");
             sb.Append($"\"name\":{JsonString(eff?.GetName(language))},");
             sb.Append($"\"team\":{JsonString(isMonster ? "monster" : "party")},");
-            sb.Append($"\"tileX\":{p.X},\"tileY\":{p.Y},\"tile\":{p.CombatPosition},");
+            sb.Append($"\"tileX\":{tile % UAlbion.Formats.Assets.Save.SavedGame.CombatColumns},\"tileY\":{tile / UAlbion.Formats.Assets.Save.SavedGame.CombatColumns},\"tile\":{tile},");
             sb.Append($"\"hp\":{hp},");
             sb.Append($"\"hpMax\":{eff?.Combat?.LifePoints?.Max ?? 0},");
-            sb.Append($"\"sp\":{eff?.Magic?.SpellPoints?.Current ?? 0},");
-            sb.Append($"\"conditions\":{JsonString(eff?.Combat?.Conditions.ToString())},");
+            sb.Append($"\"sp\":{battle.GetSpellPoints(p)},"); // live SP shadow, not the frozen sheet
+            sb.Append($"\"conditions\":{JsonString(battle.GetConditions(p).ToString())},"); // shadow-aware: monster debuffs never reach the sheet
             sb.Append($"\"alive\":{(hp > 0 ? "true" : "false")}");
             sb.Append('}');
         }
@@ -1479,11 +1492,40 @@ public sealed class HarnessHttpServer : Component, IDisposable
 
     // Party inventories: per member, pooled gold/rations and non-empty backpack slots. Lets the
     // merchant economy (B5 buy/sell) be verified — read gold + item counts before/after a trade.
-    string BuildInventoryDump()
+    string BuildInventoryDump(HttpListenerContext ctx)
     {
-        var party = TryResolve<IParty>();
         var state = TryResolve<IGameState>();
-        if (party == null || state == null) return "{\"members\":[]}";
+        if (state == null) return "{\"members\":[]}";
+
+        // ?id=Chest.12 / Merchant.3 / PartyMember.Tom → dump that single inventory with
+        // full slot detail (slot index/name, charges, enchantment, flags) so tests can
+        // assert equips, curses, torch burn-down and chest loot without screenshots.
+        var idArg = ctx.Request.QueryString["id"];
+        if (!string.IsNullOrEmpty(idArg))
+        {
+            try
+            {
+                var invId = UAlbion.Formats.Assets.Inv.InventoryId.Parse(idArg);
+                var inv = state.GetInventory(invId);
+                if (inv == null) return $"{{\"id\":{JsonString(idArg)},\"found\":false}}";
+                var single = new StringBuilder();
+                single.Append($"{{\"id\":{JsonString(invId.ToString())},\"found\":true,");
+                single.Append($"\"gold\":{inv.Gold?.Amount ?? 0},\"rations\":{inv.Rations?.Amount ?? 0},");
+                AppendSlotDetail(single, inv);
+                single.Append('}');
+                return single.ToString();
+            }
+            // A diagnostic query for a bad id (e.g. an inventory type GetInventory rejects,
+            // like CombatLoot) must return a clean error, not throw — an escaped exception
+            // sets the global _lastError and poisons every later /healthz assertion.
+            catch (Exception ex) when (ex is FormatException or InvalidOperationException or ArgumentException)
+            {
+                return $"{{\"id\":{JsonString(idArg)},\"found\":false,\"error\":{JsonString(ex.Message)}}}";
+            }
+        }
+
+        var party = TryResolve<IParty>();
+        if (party == null) return "{\"members\":[]}";
 
         var sb = new StringBuilder();
         sb.Append("{\"totalGold\":").Append(party.TotalGold).Append(",\"members\":[");
@@ -1499,16 +1541,88 @@ public sealed class HarnessHttpServer : Component, IDisposable
             sb.Append($"\"id\":{JsonString(pm.Id.ToString())},");
             sb.Append($"\"gold\":{inv.Gold?.Amount ?? 0},");
             sb.Append($"\"rations\":{inv.Rations?.Amount ?? 0},");
-            sb.Append("\"items\":[");
-            bool firstI = true;
-            foreach (var slot in inv.EnumerateAll())
-            {
-                if (slot == null || slot.Item.IsNone || slot.Item.Type != UAlbion.Config.AssetType.Item) continue;
-                if (!firstI) sb.Append(',');
-                firstI = false;
-                sb.Append($"{{\"item\":{JsonString(slot.Item.ToString())},\"amount\":{slot.Amount}}}");
-            }
-            sb.Append("]}");
+            AppendSlotDetail(sb, inv);
+            sb.Append('}');
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    static void AppendSlotDetail(StringBuilder sb, UAlbion.Formats.Assets.Inv.IInventory inv)
+    {
+        sb.Append("\"items\":[");
+        bool firstI = true;
+        for (int i = 0; i < inv.Slots.Count; i++)
+        {
+            var slot = inv.Slots[i];
+            if (slot == null || slot.Item.IsNone || slot.Item.Type != UAlbion.Config.AssetType.Item) continue;
+            if (!firstI) sb.Append(',');
+            firstI = false;
+            var slotId = (UAlbion.Formats.Assets.Inv.ItemSlotId)i;
+            var slotName = i < (int)UAlbion.Formats.Assets.Inv.ItemSlotId.Gold ? i.ToString(CultureInfo.InvariantCulture) : slotId.ToString();
+            sb.Append($"{{\"slot\":\"{slotName}\",\"item\":{JsonString(slot.Item.ToString())},\"amount\":{slot.Amount}");
+            if (slot.Charges != 0) sb.Append($",\"charges\":{slot.Charges}");
+            if (slot.Enchantment != 0) sb.Append($",\"enchantment\":{slot.Enchantment}");
+            if (slot.Flags != 0) sb.Append($",\"flags\":{JsonString(slot.Flags.ToString())}");
+            sb.Append('}');
+        }
+        sb.Append(']');
+    }
+
+    // GET /sheet?id=PartySheet.Tom (or PartyMember.Tom / NpcSheet.X / MonsterSheet.X) →
+    // level/XP/TP, LP/SP, conditions, languages, attributes, skills, known spells.
+    string BuildSheetDump(HttpListenerContext ctx)
+    {
+        var state = TryResolve<IGameState>();
+        var idArg = ctx.Request.QueryString["id"];
+        if (state == null || string.IsNullOrEmpty(idArg)) return "{\"error\":\"usage: /sheet?id=PartySheet.Tom\"}";
+
+        UAlbion.Formats.Ids.SheetId sheetId;
+        try
+        {
+            var assetId = UAlbion.Config.AssetId.Parse(idArg);
+            sheetId = assetId.Type == UAlbion.Config.AssetType.PartyMember
+                ? ((UAlbion.Formats.Ids.PartyMemberId)assetId).ToSheet()
+                : new UAlbion.Formats.Ids.SheetId(assetId);
+        }
+        catch (FormatException ex) { return $"{{\"error\":{JsonString(ex.Message)}}}"; }
+
+        if (state.GetSheet(sheetId) is not UAlbion.Formats.Assets.Sheets.CharacterSheet sheet)
+            return $"{{\"id\":{JsonString(sheetId.ToString())},\"found\":false}}";
+
+        var sb = new StringBuilder();
+        sb.Append($"{{\"id\":{JsonString(sheetId.ToString())},\"found\":true,");
+        sb.Append($"\"name\":{JsonString(sheet.GetName(UAlbion.Base.Language.English))},");
+        sb.Append($"\"level\":{sheet.Level},\"xp\":{sheet.Combat.ExperiencePoints},\"tp\":{sheet.Combat.TrainingPoints},");
+        sb.Append($"\"lp\":{sheet.Combat.LifePoints.Current},\"lpMax\":{sheet.Combat.LifePoints.Max},");
+        sb.Append($"\"sp\":{sheet.Magic.SpellPoints.Current},\"spMax\":{sheet.Magic.SpellPoints.Max},");
+        sb.Append($"\"conditions\":{JsonString(sheet.Combat.Conditions.ToString())},");
+        sb.Append($"\"languages\":{JsonString(sheet.Languages.ToString())},");
+        sb.Append($"\"age\":{sheet.Age.Current},");
+        void Attr(string name, UAlbion.Formats.Assets.Sheets.CharacterAttribute a, bool comma = true)
+            => sb.Append($"\"{name}\":{{\"current\":{a.Current},\"max\":{a.Max}{(a.Boost > 0 ? $",\"boost\":{a.Boost}" : "")}{(a.Backup > 0 ? $",\"backup\":{a.Backup}" : "")}}}{(comma ? "," : "")}");
+        sb.Append("\"attributes\":{");
+        Attr("strength", sheet.Attributes.Strength);
+        Attr("intelligence", sheet.Attributes.Intelligence);
+        Attr("dexterity", sheet.Attributes.Dexterity);
+        Attr("speed", sheet.Attributes.Speed);
+        Attr("stamina", sheet.Attributes.Stamina);
+        Attr("luck", sheet.Attributes.Luck);
+        Attr("magicResistance", sheet.Attributes.MagicResistance);
+        Attr("magicTalent", sheet.Attributes.MagicTalent, false);
+        sb.Append("},\"skills\":{");
+        Attr("closeCombat", sheet.Skills.CloseCombat);
+        Attr("rangedCombat", sheet.Skills.RangedCombat);
+        Attr("criticalChance", sheet.Skills.CriticalChance);
+        Attr("lockPicking", sheet.Skills.LockPicking, false);
+        sb.Append("},\"knownSpells\":[");
+        bool first = true;
+        foreach (var spell in sheet.Magic.KnownSpells)
+        {
+            if (!first) sb.Append(',');
+            first = false;
+            sheet.Magic.SpellStrengths.TryGetValue(spell, out var strength);
+            sb.Append($"{{\"spell\":{JsonString(spell.ToString())},\"strength\":{strength}}}");
         }
         sb.Append("]}");
         return sb.ToString();
@@ -1818,8 +1932,11 @@ public sealed class HarnessHttpServer : Component, IDisposable
         // Button ignores clicks unless it believes the cursor is over it (IsHovered).
         if (button.Equals("right", StringComparison.OrdinalIgnoreCase))
         {
+            // Button fires its RightClick action on the RELEASE (and only while still
+            // hovered), so the release must come before the blur.
             component.Receive(new UAlbion.Core.Events.HoverEvent(), this);
             component.Receive(new UiRightClickEvent(), this);
+            component.Receive(new UiRightReleaseEvent(), this);
             component.Receive(new UAlbion.Core.Events.BlurEvent(), this);
         }
         else

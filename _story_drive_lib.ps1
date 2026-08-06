@@ -45,3 +45,5 @@ function Zones([string]$extra = '?near=1') { Invoke-RestMethod "$Base/zones$extr
 function Goto([int]$x, [int]$y) { E "party_goto $x $y" }                        # organic walk (A* 2D / BFS 3D)
 function Interact([string]$type, [int]$x, [int]$y) { E "trigger_tile $type $x $y" } # Examine/Manipulate/Take/TalkTo/UseItem
 function TileInfo([int]$x, [int]$y) { Invoke-RestMethod "$Base/tile?x=$x&y=$y" -TimeoutSec 10 }
+
+function NpcTalk([int]$n) { Invoke-RestMethod "$Base/npctalk?n=$n" -TimeoutSec 10 }

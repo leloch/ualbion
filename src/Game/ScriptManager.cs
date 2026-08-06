@@ -1,9 +1,12 @@
 ﻿using UAlbion.Api.Eventing;
+using UAlbion.Config;
 using UAlbion.Formats.Assets;
+using UAlbion.Formats.Assets.Inv;
 using UAlbion.Formats.Assets.Maps;
 using UAlbion.Formats.Ids;
 using UAlbion.Formats.MapEvents;
 using UAlbion.Game.Events;
+using UAlbion.Game.State;
 
 namespace UAlbion.Game;
 
@@ -41,8 +44,12 @@ public class ScriptManager : GameComponent
     void Dump(DumpScriptEvent dumpScriptEvent)
     {
         var events = Assets.LoadScript(dumpScriptEvent.ScriptId);
+        int i = 0;
         foreach (var e in events)
+        {
             Info(e.ToString());
+            TraceLog.Emit("script_event", ("script", dumpScriptEvent.ScriptId), ("n", i++), ("event", e?.ToString() ?? ""));
+        }
     }
 }
 
