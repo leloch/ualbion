@@ -26,7 +26,30 @@ public sealed class EventChainManager : ServiceComponent<IEventManager>, IEventM
     public EventChainManager()
     {
         OnAsync<TriggerChainEvent>(Trigger);
+        // A load / new game / scenario warp supersedes every live chain — without this the
+        // old contexts (conversations waiting on clicks, PartySleeps scripts mid-run, etc.)
+        // survive the load, keep showing in /chains, and can fire their remaining events
+        // into the NEW game state if their awaited task ever completes (same bug class as
+        // the stale-battle-survives-load fix in CombatManager).
+        On<LoadGameEvent>(_ => AbortAllForLoad());
+        On<NewGameEvent>(_ => AbortAllForLoad());
+        On<SyntheticScenarioEvent>(_ => AbortAllForLoad());
         Context = new EventContext(new EventSource(AssetId.None, 0), null);
+    }
+
+    void AbortAllForLoad()
+    {
+        if (_contexts.Count == 0)
+            return;
+        Info($"[ECM] aborting {_contexts.Count} live event context(s) — load/new game supersedes them");
+        foreach (var context in _contexts)
+        {
+            // Null the node so a suspended Resume loop exits immediately (running no further
+            // events) if its awaited task is ever completed by a stale component.
+            context.Node = null;
+            context.Status = EventContextStatus.Complete;
+        }
+        _contexts.Clear();
     }
 
     public void AddBreakpoint(Breakpoint bp) => _breakpoints.Add(bp);

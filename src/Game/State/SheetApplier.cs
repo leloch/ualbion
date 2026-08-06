@@ -161,8 +161,16 @@ public class SheetApplier : Component
         {
             case NumericOperation.AddAmount:
             case NumericOperation.AddPercentage:
-                invManager.TryGiveItems(inventoryId, new ItemSlot(default) { Item = itemEvent.ItemId, Amount = amount }, amount);
+            {
+                // Seed the template charge count (same fix as PartyInventory.GiveToParty):
+                // a bare ItemSlot arrives with 0 charges, so event-granted wands/rings
+                // could never cast until manually recharged.
+                byte charges = 0;
+                if (itemEvent.ItemId.Type == AssetType.Item)
+                    charges = TryResolve<IAssetManager>()?.LoadItem(itemEvent.ItemId)?.Charges ?? 0;
+                invManager.TryGiveItems(inventoryId, new ItemSlot(default) { Item = itemEvent.ItemId, Amount = amount, Charges = charges }, amount);
                 break;
+            }
             case NumericOperation.SubtractAmount:
             case NumericOperation.SubtractPercentage:
                 invManager.TryTakeItems(inventoryId, null, itemEvent.ItemId, amount);
@@ -411,8 +419,12 @@ public class SheetApplier : Component
 
         // MaxSP per level = INT/30 + SpellPointsPerLevel (RE ApplyLevelUp: MaxSP =
         // level·(EffStat(INT)/30 + w[0xE6]); additive-per-level here is equivalent). The
-        // INT/30 term was previously omitted. Casters only (SpellPoints attribute present).
-        if (sheet.Magic?.SpellPoints != null)
+        // INT/30 term was previously omitted. CASTERS ONLY — the original gates on
+        // `if (IsSpellcaster)` = spell-class byte (sheet+4) != 0 (_RE_COMBAT.md:1926, 1390).
+        // A non-null SpellPoints attribute is NOT that gate (every sheet allocates one):
+        // without the SpellClasses check the INT/30 term gave Tom the Pilot (INT 50, no
+        // magic) +1 SP per level-up.
+        if (sheet.Magic?.SpellPoints != null && sheet.Magic.SpellClasses != 0)
         {
             int intBonus = (sheet.Attributes?.Intelligence?.Current ?? 0) / 30;
             int spGain = sheet.SpellPointsPerLevel + intBonus;

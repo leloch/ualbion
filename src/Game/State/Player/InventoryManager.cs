@@ -1166,10 +1166,13 @@ public class InventoryManager : GameServiceComponent<IInventoryManager>, IInvent
             if (action.ActionType != ActionType.UseItem || action.Argument != (AssetId)itemId)
                 continue;
 
+            // The source must carry the ITEM id (not the event-set id): change_used_item and
+            // query used_item read Source.AssetId as "the tool being applied" — with the set
+            // id there, the torch's Torch→TorchBurning transformation silently no-opped.
             var triggerEvent = new TriggerChainEvent(
                 eventSet,
                 eventIndex,
-                new EventSource(eventSet.Id, TriggerType.Action));
+                new EventSource((AssetId)itemId, TriggerType.Action));
 
             await RaiseA(triggerEvent);
             return;
