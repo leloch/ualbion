@@ -204,7 +204,7 @@ per `_RE_ASK_SURRENDER.md`. The surrender win-condition therefore **can** fire, 
 final-boss encounter.
 
 ### Evidence (CONFIRMED — parsed the real game data)
-Parsed `F:\Dev\albion\ualbion\ALBION\CD\XLDLIBS\MONCHAR0.XLD` directly (XLD0I container:
+Parsed `<game-data>/CD/XLDLIBS/MONCHAR0.XLD` directly (XLD0I container:
 magic "XLD0I" + pad + u16 count(=59) + 59×int32 lengths, then concatenated 1214-byte records).
 Read byte +0x0C (`UnkownC`) of every record. Non-zero values and their distribution:
 

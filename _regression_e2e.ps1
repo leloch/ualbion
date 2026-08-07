@@ -1,5 +1,5 @@
 # _regression_e2e.ps1 — automated e2e regression gate for every empirically-found-and-fixed
-# defect from the 2026-07-10 coverage campaign (see _COVERAGE_MATRIX.md, passes 1-6).
+# defect found while driving the game end-to-end, so each fix stays fixed.
 # Each check re-verifies a specific fix through the HTTP harness so a regression is caught
 # by CI-style tooling instead of waiting to be re-discovered by hand.
 # Usage: .\_regression_e2e.ps1 [-Port 7878] [-NoLaunch]

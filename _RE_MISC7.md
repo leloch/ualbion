@@ -1,7 +1,7 @@
 # _RE_MISC7.md — misc small unknowns batch (queries, actions, map opcodes, torch burn, camp scene)
 
 Date: 2026-07-05. Tool: radare2 project `albion_aaa` (MAIN.EXE, DOS LE).
-Task: _TODO_1TO1.md §9 items 9 (torch burn), 11/12 (CloneAutomap/Wipe/Pause), 16 (queries+actions), 18 (campfire scene).
+Task: torch burn, CloneAutomap/Wipe/Pause, decoded queries + actions, campfire scene.
 
 ## 0. Known facts (from prior RE docs — starting points)
 
@@ -358,7 +358,7 @@ anywhere in it):
 7. `AdvanceClock(hours)` (fcn.000439b3).
 8. Palette **fade-in** (fcn.0009251d again), present, fcn.00077c9e, fcn.00075589.
 
-**Verdict for _TODO_1TO1 item 18: there is NO campfire scene/picture in the original.**
+**Verdict: there is NO campfire scene/picture in the original.**
 The remake's text-only rest is already faithful; the only missing visuals are the palette
 fade-out/in and blanked viewport around the clock advance. (CAMP pictures in the assets are
 used by the intro/cutscene sequences, not the rest command.)

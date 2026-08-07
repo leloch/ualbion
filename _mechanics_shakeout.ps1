@@ -1,10 +1,10 @@
 # _mechanics_shakeout.ps1 — live-drives every game mechanic/interface surface through the
-# HTTP harness with real assertions. Companion ledger: _COVERAGE_MATRIX.md.
+# HTTP harness with real assertions.
 # Usage: .\_mechanics_shakeout.ps1 [-Phase A|B|C|D|E|F|all] [-Port 7879] [-NoLaunch]
 # Each check: fire events -> assert observable state -> lastError must stay null.
 param(
     [string]$Phase = 'all',
-    [int]$Port = 8123,   # unique to the mechanics shakeout — see _SESSIONS.md port registry
+    [int]$Port = 8123,   # distinct port so this can run alongside another harness instance
     [switch]$NoLaunch
 )
 
@@ -73,7 +73,7 @@ function ItemTotal($inv, [string]$item) {
 }
 
 # Click the kind=Button element whose bounds enclose a UiText matching $label.
-# (CLAUDE.md: clicking the child UiText itself does nothing.)
+# (clicking the child UiText itself does nothing - the Button owns the click.)
 function ClickLabelled([string]$label) {
     $els = (G '/ui').elements
     $btn = $els | Where-Object { $_.kind -eq 'Button' -and $_.label -match $label } | Select-Object -First 1
@@ -635,7 +635,7 @@ if ($Phase -in 'G','all') {
         spells = (G '/sheet?id=PartySheet.Sira').knownSpells.Count
     }
 
-    # Save to scratch slot 90 and reload (slots 90-98 reserved for tests, _SESSIONS.md)
+    # Save to scratch slot 90 and reload (slots 90-98 are reserved for tests)
     E 'save_game 90 MechShakeout' | Out-Null
     Start-Sleep 3
     E 'load_game 3' | Out-Null

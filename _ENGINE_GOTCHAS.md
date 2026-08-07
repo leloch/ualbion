@@ -23,7 +23,7 @@ used the amount ops — so **every condition cure in the game did nothing** (hea
 spells, the NPC Cure service, sleep decay) until 2026-06-12. When you add a switch on
 `NumericOperation`/`ChangeProperty`, audit every caller's choice of operation, and make
 amount-ops on a single flag collapse to set/clear. (`SheetApplier.cs` ChangeItem subtract
-is the one branch still unhandled — unreachable in base data, see `_TODO_1TO1.md`.)
+is the one branch still unhandled — unreachable in base data.)
 
 ## Game state / sheets
 
@@ -109,7 +109,7 @@ non-flag tokens (CommandLineOptions does this now). Don't trust `Start-Process` 
 quoting.
 
 ### Ghidra cannot read this DOS LE binary — use radare2
-Ghidra 12.1 fails on the LE format. radare2 at `F:\Dev\albion\radare2-6.1.4-w64\bin`,
+Ghidra 12.1 fails on the LE format. radare2 at `the local radare2 install`,
 project `albion_aaa`. Invoke from PowerShell to dodge bash quoting:
 `& '...\radare2.exe' -p albion_aaa -q -c '<cmd>'`.
 

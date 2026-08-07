@@ -5,7 +5,7 @@ namespace UAlbion.Game.Combat;
 
 /// <summary>
 /// Global registry of <see cref="ISpellEffect"/> handlers, keyed by <see cref="SpellId"/>.
-/// Until per-spell logic is reverse-engineered (Phase 3.3-3.6 in _HANDOFF.md), unregistered
+/// Until per-spell logic is reverse-engineered, unregistered
 /// spells fall through with <see cref="SpellCastOutcome.Failed"/>.
 /// </summary>
 public static class SpellEffectRegistry

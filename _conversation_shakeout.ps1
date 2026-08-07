@@ -4,9 +4,10 @@
 # unresolved-token text (a literal '{' = an unrendered formatter token, e.g. the old {NAME} bug),
 # missing options, and any engine error logged during the exchange. Deeper than the chain shakeout:
 # it drives the real dialogue UI + option selection, not just chain firing.
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $base = 'http://localhost:7878'
-$exe  = 'F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0\UAlbion.exe'
-$wd   = 'F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0'
+$exe  = (Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0\UAlbion.exe')
+$wd   = (Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0')
 
 function Start-Game {
     Get-Process UAlbion* -ErrorAction SilentlyContinue | Stop-Process -Force

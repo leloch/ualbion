@@ -1,11 +1,13 @@
 # Verify #43 minimap: off (default/vanilla) vs on, on a 3D map.
-param([int]$Port = 7878, [int]$Save = 7, [string]$OutDir = "F:\Dev\albion\_shots")
+param([int]$Port = 7878, [int]$Save = 7, [string]$OutDir)
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+if (-not $OutDir) { $OutDir = Join-Path $repoRoot '_shots' }
 $ErrorActionPreference = 'Stop'
 $BaseUri = "http://localhost:$Port"
 function Post($p,$b,$t='application/json'){ try { Invoke-RestMethod -Uri "$BaseUri$p" -Method POST -Body $b -ContentType $t -TimeoutSec 15 } catch { $null } }
 function Shot($name){ try { $c=New-Object System.Net.Http.HttpClient; $c.Timeout=[TimeSpan]::FromSeconds(20); $sc=New-Object System.Net.Http.StringContent('',[Text.Encoding]::UTF8,'application/json'); $r=$c.PostAsync("$BaseUri/screenshot",$sc).Result; $b=$r.Content.ReadAsByteArrayAsync().Result; [IO.File]::WriteAllBytes((Join-Path $OutDir $name),$b); Write-Host "  saved $name"; $c.Dispose() } catch { Write-Host "  shot failed $_" } }
 
-$exe = "F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0\UAlbion.exe"
+$exe = "$repoRoot\build\UAlbion\bin\Release\net9.0\UAlbion.exe"
 $proc = Start-Process -FilePath $exe -ArgumentList '-d3d','--harness-http',$Port -PassThru -WorkingDirectory (Split-Path $exe)
 Start-Sleep -Seconds 6
 

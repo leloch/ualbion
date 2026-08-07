@@ -1,9 +1,10 @@
 # Cross-save 3D collision-consistency sweep.
 # Loads each of the 13 saves (crash-free load_game path), and on every 3D map runs
 # /collisionscan, asserting blockMismatch==0 and recording water/wall/open counts.
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $base = 'http://localhost:7878'
-$exe  = 'F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0\UAlbion.exe'
-$wd   = 'F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0'
+$exe  = (Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0\UAlbion.exe')
+$wd   = (Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0')
 
 function Start-Game {
     Get-Process UAlbion* -ErrorAction SilentlyContinue | Stop-Process -Force

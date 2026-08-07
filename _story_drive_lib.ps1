@@ -1,17 +1,18 @@
 # Story-drive helper library. Dot-source from an interactive playthrough script:
-#   . F:\Dev\albion\ualbion\_story_drive_lib.ps1
+#   . .\_story_drive_lib.ps1
 # Provides thin wrappers over the HTTP harness for beat-by-beat story driving.
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $script:Base = 'http://localhost:7878'
-$script:ShotDir = 'F:\Dev\albion\_shots\story'
+$script:ShotDir = "$repoRoot\_shots\story"
 if (-not (Test-Path $script:ShotDir)) { New-Item -ItemType Directory -Force $script:ShotDir | Out-Null }
 
 function Start-Albion {
     param([string]$ExtraArgs = '')
     Get-Process UAlbion* -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 500
-    $args = @('-d3d','--mute','--harness-http','7878','--trace','F:\Dev\albion\_shots\story\trace.log')
-    Start-Process -FilePath 'F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0\UAlbion.exe' `
-        -ArgumentList $args -WorkingDirectory 'F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0'
+    $args = @('-d3d','--mute','--harness-http','7878','--trace',"$repoRoot\_shots\story\trace.log")
+    Start-Process -FilePath (Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0\UAlbion.exe') `
+        -ArgumentList $args -WorkingDirectory (Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0')
     for ($i=0; $i -lt 40; $i++) {
         Start-Sleep -Milliseconds 700
         try { if ((Invoke-RestMethod "$Base/healthz" -TimeoutSec 2).ok) { return $true } } catch {}

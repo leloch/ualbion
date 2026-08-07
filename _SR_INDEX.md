@@ -1,6 +1,6 @@
 # SR (Static Recompilation) Repository — Index
 
-> Maintained at `F:\Dev\albion\SR\`. M-HT's project that statically recompiles the
+> Maintained at `the local SR checkout`. M-HT's project that statically recompiles the
 > original 1996 Albion DOS EXE into native binaries for modern OSes.
 
 ## Critical caveat — game logic source is NOT in this repo
@@ -12,7 +12,7 @@ hand-written C wrappers for DOS APIs / sound / graphics / file I/O). The actual
 
 To get the lifted source we need one of:
 
-1. Run M-HT's `SR.exe` lifter on `F:\Dev\albion\Albion\MAIN.EXE` to produce
+1. Run M-HT's `SR.exe` lifter on `<game-install>\MAIN.EXE` to produce
    `Albion-main.asm`. SR.exe itself doesn't appear in this checkout — would need
    to download / build it.
 2. **Use a standalone disassembler on `MAIN.EXE`**:
@@ -27,7 +27,7 @@ To get the lifted source we need one of:
 
 ## Plan implication
 
-Phases 2 / 3 / 4 (combat math / magic effects / AI) of `_SESSION_STATUS.md`
+Phases 2 / 3 / 4 (combat math / magic effects / AI)
 **cannot rely on grepping SR source for the answer**. They need:
 - A disassembler set up against `MAIN.EXE`, OR
 - Behaviour observation against the running original game (e.g. SR-Main.exe
@@ -114,4 +114,4 @@ NPC update loop) is the practical entry point.
 
 - This file = Phase 0.1 deliverable.
 - See `_RE_NOTES.md` (Phase 0.2) for the field-by-field decoding tracker.
-- See `_SESSION_STATUS.md` for overall project progress.
+- See the README for overall project status.

@@ -1,8 +1,9 @@
 # Loads every save with --startuponly using direct invocation (Start-Process mangles args).
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $saves = @(1,2,3,4,5,6,7,8,9,10,11,12,100)
-$exe   = 'F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0\UAlbion.exe'
+$exe   = (Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0\UAlbion.exe')
 $exeDir = Split-Path $exe
-$logDir = 'F:\Dev\albion\ualbion\_smoke_logs'
+$logDir = "$repoRoot\_smoke_logs"
 if (Test-Path $logDir) { Remove-Item $logDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -33,6 +34,6 @@ try {
 finally { Pop-Location }
 
 $results | Format-Table -AutoSize -Wrap
-$results | Export-Csv -NoTypeInformation 'F:\Dev\albion\ualbion\_smoke_summary.csv'
+$results | Export-Csv -NoTypeInformation "$repoRoot\_smoke_summary.csv"
 $cleanCount = ($results | Where-Object { $_.Clean }).Count
 "Clean: $cleanCount / $($results.Count)"

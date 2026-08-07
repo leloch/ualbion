@@ -1,9 +1,10 @@
 # Sweep EVERY map: new_game into it, and on 3D maps run /collisionscan, flagging any map with
 # see-through walls or see-through objects (solid-looking geometry the 0x78 block mask misses =
 # walk-through-wall data bug) or a blockMismatch. Relaunches periodically to stay fresh.
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $base='http://localhost:7878'
-$exe='F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0\UAlbion.exe'
-$wd ='F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0'
+$exe=(Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0\UAlbion.exe')
+$wd =(Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0')
 
 function Start-Game {
     Get-Process UAlbion* -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -15,7 +16,7 @@ function Start-Game {
 function Alive { try { return (Invoke-RestMethod "$base/healthz" -TimeoutSec 3).ok } catch { return $false } }
 
 # Map names (id-bearing enum members) from Base/Map.cs
-$maps = Select-String -Path 'F:\Dev\albion\ualbion\src\Base\Map.cs' -Pattern '^\s+([A-Za-z0-9_]+)\s*=\s*\d+' |
+$maps = Select-String -Path "$repoRoot\src\Base\Map.cs" -Pattern '^\s+([A-Za-z0-9_]+)\s*=\s*\d+' |
     ForEach-Object { $_.Matches[0].Groups[1].Value } | Where-Object { $_ -notmatch '^Unk\d' }
 
 if (-not (Start-Game)) { "FAILED launch"; exit 1 }

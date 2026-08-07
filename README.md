@@ -39,10 +39,9 @@ Implemented (most mechanics reverse-engineered from MAIN.EXE for 1:1 behaviour â
 - Video playback, NPC movement/schedules, map event scripting
 - Exporting assets; mod layer system (e.g. an HD asset override mod)
 
-Remaining gaps are tracked in **`_TODO_1TO1.md`** (the work ledger) â€” at this point mostly
-polish and modding-convenience items; the mechanics, combat, magic and the story content
-pipeline are implemented and verified (all 166 story maps load and run their event chains
-cleanly).
+Remaining gaps are mostly polish and modding-convenience items; the mechanics, combat, magic
+and the story content pipeline are implemented and verified (all 166 story maps load and run
+their event chains cleanly).
 
 Planned improvements / changes from the original gameplay:
 - Add hotkeys to streamline the interface, reduce the amount of right clicking required etc (largely done: quicksave/quickload, window scaling, conversation number keys + Escape)

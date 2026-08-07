@@ -10,7 +10,7 @@ namespace UAlbion.Formats.MapEvents;
 // these share the exact layout of the decoded Unk queries (QueryUnk21Event). Before this, any of
 // them appearing in real map data threw FormatException in QueryEvent.Serdes => the whole MAP
 // failed to load. They now round-trip byte-faithfully; the runtime Querier has no handler so the
-// branch evaluates to its default (false) until the semantics are RE'd. (_TODO_100PCT.md Phase 0.)
+// branch evaluates to its default (false) until the semantics are RE'd.
 
 public sealed class QueryUnk8Event : QueryEvent
 {

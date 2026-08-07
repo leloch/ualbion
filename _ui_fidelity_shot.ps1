@@ -1,5 +1,7 @@
 # Screenshot-verify #46 (underlined headers) + #27 (double-thick button frames) on the inventory.
-param([int]$Port = 7878, [int]$Save = 7, [string]$OutDir = "F:\Dev\albion\_shots")
+param([int]$Port = 7878, [int]$Save = 7, [string]$OutDir)
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+if (-not $OutDir) { $OutDir = Join-Path $repoRoot '_shots' }
 $ErrorActionPreference = 'Stop'
 $BaseUri = "http://localhost:$Port"
 New-Item -ItemType Directory -Force $OutDir | Out-Null
@@ -23,7 +25,7 @@ function Shot($name) {
     } catch { Write-Host "shot $name failed: $_" -ForegroundColor Yellow }
 }
 
-$exe = "F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0\UAlbion.exe"
+$exe = "$repoRoot\build\UAlbion\bin\Release\net9.0\UAlbion.exe"
 $proc = Start-Process -FilePath $exe -ArgumentList '-d3d', '--harness-http', $Port -PassThru -WorkingDirectory (Split-Path $exe)
 Write-Host "Launched PID=$($proc.Id)"
 Start-Sleep -Seconds 6

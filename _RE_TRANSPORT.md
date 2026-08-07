@@ -125,7 +125,7 @@ not yet surfaced as a typed field.
 
 ## 4. IS IT ON THE CRITICAL PATH?  (CONFIRMED)
 
-- `grep create_transport` and `grep CreateTransport` over **F:\Dev\albion\ualbion\mods\**
+- `grep create_transport` and `grep CreateTransport` over **mods/**
   → **ZERO hits.** No converted Albion map uses the CreateTransport (0x13) event.
 - In UAlbion source, CreateTransportEvent is parsed (MapEvent.cs:70, MapEventType 0x13) but
   has **no handler component anywhere** — it is decoded and dropped.

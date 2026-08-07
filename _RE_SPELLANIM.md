@@ -1,4 +1,4 @@
-# RE: Combat spell-cast animations (gap T1.3, _TODO_1TO1.md §9)
+# RE: Combat spell-cast animations
 
 > How MAIN.EXE visualises spell casts in combat, RE'd for a 1:1 remake implementation.
 > All radare2 against `albion_aaa` (2026-07-05). CONFIRMED unless marked INFERRED.

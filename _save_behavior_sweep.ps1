@@ -3,9 +3,10 @@
 #   - party actually moves when driven, and is bounded by collision (doesn't run the full distance)
 #   - NPCs present
 # Flags: frozen clock with no active chain (stuck world), party can't move, or party runs unbounded.
+$repoRoot = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $base='http://localhost:7878'
-$exe='F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0\UAlbion.exe'
-$wd ='F:\Dev\albion\ualbion\build\UAlbion\bin\Release\net9.0'
+$exe=(Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0\UAlbion.exe')
+$wd =(Join-Path $repoRoot 'build\UAlbion\bin\Release\net9.0')
 function Start-Game { Get-Process UAlbion* -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Milliseconds 400
   Start-Process -FilePath $exe -ArgumentList '-d3d','--harness-http','7878','--mute' -WorkingDirectory $wd
   for ($i=0;$i -lt 40;$i++){ try { if((Invoke-RestMethod "$base/healthz" -TimeoutSec 2).ok){return $true} } catch {}; Start-Sleep -Milliseconds 700 }; return $false }

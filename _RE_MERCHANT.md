@@ -2,7 +2,7 @@
 
 > Goal: decode the per-shop buy%/sell% multiplier, exact buy/sell price formulas,
 > merchant purse, stock model, and the unsellable-item gate. Tool: radare2
-> (`F:\Dev\albion\radare2-6.1.4-w64\bin\radare2.exe -p albion_aaa`). DOS LE binary.
+> (`radare2 -p albion_aaa`). DOS LE binary.
 > The SR repo does NOT contain lifted game logic (only platform glue) — so all
 > findings are from radare2 disassembly + cross-reference to UAlbion's decoded data.
 
@@ -170,8 +170,8 @@ tests a CHARACTER state bit at char+0x31c bit 24 → msg 0x244; that is char-sta
 
 ## METHOD LOG
 
-- SR repo (`F:\Dev\albion\SR\`) confirmed to contain ONLY platform glue (per `_SR_INDEX.md`);
-  lifted game logic is not committed → all RE done in radare2 against `F:/Dev/albion/Albion/MAIN.EXE`.
+- SR repo (`the local SR checkout`) confirmed to contain ONLY platform glue (per `_SR_INDEX.md`);
+  lifted game logic is not committed → all RE done in radare2 against `<game-install>/MAIN.EXE`.
 - radare2 search gotcha: with project `albion_aaa`, `/x` returns nothing unless you set
   `e search.in=io.maps.x` AND seek into code first (`s 0x10000; /x ...`); the data map is at 0x10000000.
 - Found item resolver via `fcn.0004a521` (imul 0x28 / base [0x15e5c8]) → established Value@+0x20.

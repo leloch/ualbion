@@ -1,6 +1,6 @@
 # RE: Combat Audio (MAIN.EXE) — settling the 443/762 "sound vs text" contradiction
 
-**Task:** _TODO_1TO1.md §9 T2.b / doc-drift item 10. Determine which combat "sound" ids are
+**Task:** determine which combat "sound" ids are
 SAMPLES (real audio) vs SYSTEXTS (message-window text), decode combat-music selection, and
 produce a fix list for `CombatAudio.cs` / `Battle.cs`.
 

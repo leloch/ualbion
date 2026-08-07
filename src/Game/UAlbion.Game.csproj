@@ -19,9 +19,6 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Resources\*.png" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Core\UAlbion.Core.csproj" />
     <ProjectReference Include="..\Formats\UAlbion.Formats.csproj" />
   </ItemGroup>

@@ -1,4 +1,4 @@
-﻿using UAlbion.Config;
+using UAlbion.Config;
 using UAlbion.Formats.Assets.Sheets;
 using UAlbion.Formats.Ids;
 using UAlbion.Game.Combat;
@@ -8,7 +8,7 @@ using Xunit;
 namespace UAlbion.Game.Tests;
 
 // All tests that touch the static SpellEffectRegistry must share this collection so xUnit
-// serialises them â€” otherwise interleaved Clear/Register calls race across test classes.
+// serialises them — otherwise interleaved Clear/Register calls race across test classes.
 [Collection("SpellEffectRegistry")]
 public class DjiKasSpellsTests
 {
@@ -67,7 +67,7 @@ public class DjiKasSpellsTests
     public void Frost_Line_Uses_The_REd_K_Constants()
     {
         // RE'd per-spell K constants: Splinter 27, Crystal 18, Avalanche 27. Splinter and
-        // Avalanche share K â€” the higher tiers differ in targeting (single vs row/all),
+        // Avalanche share K — the higher tiers differ in targeting (single vs row/all),
         // not in per-target damage.
         SpellEffectRegistry.Clear();
         DjiKasSpells.RegisterAll();
