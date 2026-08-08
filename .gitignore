@@ -50,49 +50,26 @@ mods/Unpacked/Assets/*
 !mods/UATest/
 mods/UATest/Saves/*.json
 
-# RE-session working files (not for commit; notes themselves are kept)
-_r2_*
-_ghidra*
-DumpFunctions.java
+# Local working directories: disassembler projects and publish output.
+_ghidra/
 _publish/
-_publish_*.log
-_build_*.log
-_load*.log
-_run.log
-_run*.log
-_dump_*.log
-_extract_constants.ps1
-_gen_re_notes.ps1
-_test_*.log
-_test_*.txt
-_trace*.log
-_todo_all.txt
-_smoke_logs/
-_smoke_summary.csv
-_smoke_run*.log
-_harness_trace.log
-_*.png
-_explore_*.log
-_explore_*.tsv
-_*.png
-_launch*.log
-
-# Catch-all for root harness/RE working artifacts. NOTE: the kept docs are _*.md
-# (_RE_*, _ENGINE_GOTCHAS, _RE_INDEX, _SR_INDEX) and the scripts are _*.ps1
-# (_smoke_all_saves, _harness_drive, ...) — those are NOT matched here.
-# Everything else prefixed "_" is a disposable working artifact: logs, tsv/csv, json/txt
-# dumps (e.g. _commitmsg.txt, _dump_out.log, harness traces). No tracked file has a
-# basename starting with "_" except the kept .md/.ps1, so these broad globs are safe.
-_*.log
-_*.tsv
-_*.csv
-_*.json
-_*.txt
-_re_tmp_*
-_sweep/
-_smoke_logs/
 data/exported/
 
-# Local multi-session coordination notes (port/save-slot registry for concurrent
-# harness sessions on one machine) — machine-specific, not project documentation.
-_SESSIONS.md
+# Local reverse-engineering helpers (disassembler-specific, not part of the build).
+DumpFunctions.java
+_ghidra_dump_functions.py
+_extract_constants.ps1
+_gen_re_notes.ps1
+
+# Output written by the harness and diagnostic scripts. The scripts themselves
+# (_*.ps1) and the reverse-engineering notes (_*.md) are tracked.
+_shots/
+_smoke_logs/
+_sweep/
+_r2_*
+_*.log
+_*.png
+_*.csv
+_*.tsv
+_*.txt
+_*.json
