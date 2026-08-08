@@ -15,7 +15,7 @@ public enum NumericOperation : byte
 }
 
 // The original engine has TWO numeric-op appliers with different percentage semantics
-// (RE'd in _RE_DATA01.md):
+// (RE'd in docs/re/RE_DATA01.md):
 // - fcn.0003e2f1 for BOUNDED stats (attribute/skill/health/mana): percentage ops take a
 //   percentage OF THE MAX, result clamped to [0, max]. That is Apply/Apply16 below with an
 //   explicit max.

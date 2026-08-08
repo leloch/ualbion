@@ -36,7 +36,7 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
             var used = ctx.UsedItemOverride ?? ctx.Source.AssetId; // change_used_item override, else the UseItem source
             return used == (AssetId)q.ItemId;
         });
-        // change_used_item (RE _RE_OPCODES_FLAGS.md, handler 0x3bed3): the original CONSUMES one
+        // change_used_item (RE docs/re/RE_OPCODES_FLAGS.md, handler 0x3bed3): the original CONSUMES one
         // of the tool the player just applied and GIVES one of the event's ItemId — an inventory
         // transformation (consume tool → receive product), guarded so the give only happens if the
         // consume succeeded. (We also keep the query-override so a later query used_item==X matches.)
@@ -180,7 +180,7 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
             TryResolve<IMapManager>()?.Current?.MapData,
             Resolve<IAssetManager>()));
 
-        // Query subtypes decoded in RE batch 7 (_RE_MISC7.md §A, dispatcher 0x3ca53).
+        // Query subtypes decoded in RE batch 7 (docs/re/RE_MISC7.md §A, dispatcher 0x3ca53).
 
         // 0x0B = MAP LIGHT-ENVIRONMENT: Compare(mapFlags & 3, op, arg) — 0 always-light,
         // 1 dungeon-lighting, 2 day/night. (fcn @0x3cdbb)
@@ -236,7 +236,7 @@ public class Querier : Component // : ServiceComponent<IQuerier>, IQuerier
 
         // Still not implemented (need the chain's trigger context, which the current dispatch
         // doesn't thread through): 0x08 IsWordKnown(arg), 0x0D triggering-word match,
-        // 0x24 triggering-item ItemType==arg. Default false = take the false branch. (_RE_MISC7 §A)
+        // 0x24 triggering-item ItemType==arg. Default false = take the false branch. (docs/re/RE_MISC7 §A)
         OnQuery<QueryUnk8Event, bool>(_ => false);
         OnQuery<QueryUnkDEvent, bool>(_ => false);
         OnQuery<QueryUnk24Event, bool>(_ => false);

@@ -6,7 +6,7 @@ using UAlbion.Game.Entities.Map2D;
 namespace UAlbion.Game.Entities.Map3D;
 
 /// <summary>
-/// Faithful 3D collision primitives (RE _RE_COLLISION3D.md, address-stamped from MAIN.EXE):
+/// Faithful 3D collision primitives (RE docs/re/RE_COLLISION3D.md, address-stamped from MAIN.EXE):
 ///
 /// - TILE passability (fcn.0001eeb8): the wall/floor/ceiling record's raw collision byte is
 ///   tested against ONE bit selected by the mover's collision class — `raw &amp; (0x08 &lt;&lt; class)`.

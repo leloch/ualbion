@@ -64,7 +64,7 @@ public sealed class BuffSpellEffect : ISpellEffect
 
 /// <summary>
 /// Drains HP from the target and heals the caster by the same amount (Steal Life).
-/// RE'd magnitude (_RE_COMBAT.md "Punch-list RE" item 1): drains
+/// RE'd magnitude (docs/re/RE_COMBAT.md "Punch-list RE" item 1): drains
 /// max(1, M*30/100) percent of the TARGET's max LP.
 /// </summary>
 public sealed class StealLifeEffect : ISpellEffect

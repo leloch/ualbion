@@ -3,7 +3,7 @@ namespace UAlbion.Game.Combat;
 /// <summary>
 /// Per-round combat action kinds. Values match the action_kind field at offset 0x4E of the
 /// original engine's in-memory Combatant struct (decoded from MAIN.EXE — see
-/// <c>_RE_COMBAT.md</c>: action vtable at 0x13e196 dispatches on these).
+/// <c>docs/re/RE_COMBAT.md</c>: action vtable at 0x13e196 dispatches on these).
 /// </summary>
 public enum CombatAction : ushort
 {

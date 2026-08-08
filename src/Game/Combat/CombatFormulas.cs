@@ -92,7 +92,7 @@ public static class CombatFormulas
 
     /// <summary>
     /// The final-boss surrender win-condition (RE: monster behaviour-strategy row 8 col2,
-    /// fcn.0x51a2e — see _RE_ASK_SURRENDER.md). The end-game AI is intentionally unkillable;
+    /// fcn.0x51a2e — see docs/re/RE_ASK_SURRENDER.md). The end-game AI is intentionally unkillable;
     /// instead, after a surrender-capable monster's strike that deals damage, it "asks for
     /// surrender" once the party's conscious count drops to the threshold, which the original
     /// signals via combat outcome 4. threshold = max(1, partySize - 2); surrender fires when

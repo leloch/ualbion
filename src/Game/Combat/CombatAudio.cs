@@ -8,8 +8,8 @@ using UAlbion.Formats.MapEvents;
 namespace UAlbion.Game.Combat;
 
 /// <summary>
-/// Plays the RE'd combat sound effects (superseding _RE_NOTES's "silent melee" claim —
-/// see _RE_COMBATAUDIO.md): swings/misses/absorbed show TEXT only, but every DAMAGING hit
+/// Plays the RE'd combat sound effects (superseding docs/re/RE_NOTES's "silent melee" claim —
+/// see docs/re/RE_COMBATAUDIO.md): swings/misses/absorbed show TEXT only, but every DAMAGING hit
 /// plays the shared thud (sample 268) — party victims at 11025 Hz / vol 100,
 /// monster deaths at 15000 Hz / vol 60 (pitch differs, not the sample). Heals play
 /// sample 38; each spell handler hardcodes its own sample sequence (table below,
@@ -81,7 +81,7 @@ public class CombatAudio : Component
             }
 
             if (e.Amount <= 0)
-                return; // swings/misses/absorbed hits show text only (_RE_COMBATAUDIO.md)
+                return; // swings/misses/absorbed hits show text only (docs/re/RE_COMBATAUDIO.md)
 
             // Sample 268 is the shared HIT thud, played on EVERY damaging hit — not a death
             // scream (fcn.0004dec9 plays it before the LP check; death adds no extra sound).

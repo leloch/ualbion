@@ -142,7 +142,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyMTicksEvent>(OnModifyMTicks);
         On<TrapEvent>(OnTrap);
         On<RestEvent>(OnRest);
-        // pause (map opcode 0x1A, RE _RE_MISC7.md §C): block the chain for Length/60 seconds
+        // pause (map opcode 0x1A, RE docs/re/RE_MISC7.md §C): block the chain for Length/60 seconds
         // (the byte is 1/60 s system-timer ticks; 0 = wait for input, approximated as a beat).
         OnAsync<PauseEvent>(e => RaiseA(new WallClockTimerEvent(e.Length == 0 ? 0.5f : e.Length / 60.0f)));
         // clone_automap (0x10): copy one map's automap discovery bytes onto another — used
@@ -175,7 +175,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         On<ModifyNpcOffEvent>(e => _game.SetNpcDisabled(e.Map, e.NpcNum, SetFlag(e.Operation, _game.IsNpcDisabled(e.Map, e.NpcNum))));
         On<NpcOffEvent>(e => _game.SetNpcDisabled(MapId.None, e.NpcNum, true));
         On<NpcOnEvent>(e => _game.SetNpcDisabled(MapId.None, e.NpcNum, false));
-        // execute (RE _RE_OPCODES_FLAGS.md, 0x3b78f): enable/disable the active NPC — Unk1!=0
+        // execute (RE docs/re/RE_OPCODES_FLAGS.md, 0x3b78f): enable/disable the active NPC — Unk1!=0
         // enables, ==0 disables. Best-effort: resolve the NPC index from the event source's
         // AssetId (the chain's NPC). Direct call (not Raise) since Raise skips our own handler.
         On<ExecuteEvent>(OnExecute);
@@ -205,7 +205,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         // are implemented — every other spell still falls through to the registry's "Failed"
         // default which makes the caster spend AP without an effect (matches the original
         // engine's no-op behaviour better than crashing). Add new schools here as they're
-        // reverse-engineered (see _RE_COMBAT.md → Phase 3.x).
+        // reverse-engineered (see docs/re/RE_COMBAT.md → Phase 3.x).
         UAlbion.Game.Combat.SpellEffectRegistry.Clear();
         UAlbion.Game.Combat.Spells.DjiKasSpells.RegisterAll();
         UAlbion.Game.Combat.Spells.DjiKantosSpells.RegisterAll();
@@ -237,7 +237,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         _game.Tickers[e.TickerId] = (byte)e.Operation.Apply(curValue, e.Amount, 0, 255);
     }
 
-    // World trap tile (RE _RE_OPCODES_WORLD.md, handler 0x3aa35). Per affected member: a gender
+    // World trap tile (RE docs/re/RE_OPCODES_WORLD.md, handler 0x3aa35). Per affected member: a gender
     // filter (Unk2 bitmask), a Luck save that avoids the trap entirely, then on failure inflict
     // condition Unk1 (bit index, >=12 = none) and RandomVary(Unk6) LP damage. Unconscious skipped.
     void OnExecute(ExecuteEvent e)
@@ -423,7 +423,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
         BurnTorches();
     }
 
-    // Torch burn (RE _RE_MISC7.md §D, fcn.00049584): once per hour, decrement the charge byte
+    // Torch burn (RE docs/re/RE_MISC7.md §D, fcn.00049584): once per hour, decrement the charge byte
     // of every equipped AND backpack LightSource (type 0x16) on all members; 0xFF = infinite
     // (skip); when a torch reaches 0 it is destroyed. Recompute dungeon light after.
     void BurnTorches()
@@ -713,7 +713,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
     }
 
     // Discovered conversation words are runtime-only in the original (the savegame has no field for
-    // them — confirmed by RE in _RE_WORD_SAVE.md). To keep word-gated quests from breaking across a
+    // them — confirmed by RE in docs/re/RE_WORD_SAVE.md). To keep word-gated quests from breaking across a
     // save/reload (the revival goal), we persist them in a SIDECAR file next to the save — a
     // deliberate QoL deviation with ZERO risk to the vanilla save format / round-trip (the 13 stock
     // saves simply have no sidecar). One numeric WordId per line.
@@ -773,7 +773,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
 
         var tf = Resolve<ITextFormatter>();
 
-        // RE'd rest gating (_RE_COMBAT.md "Placeholder formulas" item 3): ALL the gates
+        // RE'd rest gating (docs/re/RE_COMBAT.md "Placeholder formulas" item 3): ALL the gates
         // live in the map-menu popup builder (0x2204e), not the executor — map RestMode
         // (mapFlags & 0xC), active hostile monsters ("too dangerous", 601) and the
         // 3-hour fatigue check ("nobody is tired", 603) only apply to the map-menu rest
@@ -850,7 +850,7 @@ public class GameState : GameServiceComponent<IGameState>, IGameState
 
             // RestoreSlot fcn.00068d2f (pct=50): LP += max(1, MaxLP*pct/100) + Stamina/15;
             // the SP line only runs `if spellcaster` (spell-class byte != 0) — same gate as
-            // level-up SP (_RE_COMBAT.md:1978). Clamping makes the gate invisible for MaxSP=0
+            // level-up SP (docs/re/RE_COMBAT.md:1978). Clamping makes the gate invisible for MaxSP=0
             // members, but keep it byte-exact.
             int lpGain = Math.Max(1, (sheet.Combat?.LifePoints?.Max ?? 0) / 2) + (sheet.Attributes?.Stamina?.Current ?? 0) / 15;
             int spGain = sheet.Magic?.SpellClasses != 0 && sheet.Magic?.SpellPoints != null

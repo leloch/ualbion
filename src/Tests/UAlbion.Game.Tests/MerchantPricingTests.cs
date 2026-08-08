@@ -3,7 +3,7 @@ using Xunit;
 
 namespace UAlbion.Game.Tests;
 
-/// <summary>Merchant pricing off item Value (gold-tenths). RE (_RE_MERCHANT.md): buy and sell use
+/// <summary>Merchant pricing off item Value (gold-tenths). RE (docs/re/RE_MERCHANT.md): buy and sell use
 /// the SAME per-shop percent and formula price = max(1, Value * percent / 100).</summary>
 public class MerchantPricingTests
 {

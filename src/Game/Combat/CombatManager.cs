@@ -73,7 +73,7 @@ public class CombatManager : GameComponent
 
         Raise(new PushSceneEvent(SceneId.Combat));
 
-        // Combat music (_RE_COMBATAUDIO.md, fcn.0004ac00): entry stops music AND the ambient
+        // Combat music (docs/re/RE_COMBATAUDIO.md, fcn.0004ac00): entry stops music AND the ambient
         // bed, then plays the FIXED battle track Song 26 (CombatMusic2) — no terrain/background
         // selection exists in the original. Exit restores both via SetMapMusic (0x4ae1a).
         var mapData = Resolve<IMapManager>().Current?.MapData;
@@ -114,7 +114,7 @@ public class CombatManager : GameComponent
         if (e.Result == CombatResult.PartyKilled)
             return PartyWipedAsync();
         // The final boss "asks for surrender" once the party is mostly downed (combat outcome 4,
-        // _RE_ASK_SURRENDER.md) — that IS the win. Drive the canonical endgame terminal. The boss
+        // docs/re/RE_ASK_SURRENDER.md) — that IS the win. Drive the canonical endgame terminal. The boss
         // map's continuation chain still runs (it pops back to the map), but the surrender outcome
         // is the engine-side signal that the game is won, so we sequence the ending here. (B3.)
         if (e.Result == CombatResult.Surrender)

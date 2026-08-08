@@ -44,7 +44,7 @@ public class ScreenFadeManager : Component
         OnAsync<FadeFromWhiteEvent>(_ => StartFade(CommonColor.White, 0.0f));
         On<FillScreenEvent>(e => Fill(MapColor(e.Color)));
         On<FillScreen0Event>(_ => Fill(CommonColor.Black1));
-        // wipe (map opcode 0x17, RE _RE_MISC7.md §C): value 0 = instant redraw (no-op here),
+        // wipe (map opcode 0x17, RE docs/re/RE_MISC7.md §C): value 0 = instant redraw (no-op here),
         // 1 = blank the viewport (hold black), 2-5 = a ~10-step palette fade. We approximate
         // 2-5 with a fade-to-then-from-black, and 1 with a held black fill.
         OnAsync<WipeEvent>(OnWipe);

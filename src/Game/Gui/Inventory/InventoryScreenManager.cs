@@ -14,7 +14,7 @@ namespace UAlbion.Game.Gui.Inventory;
 public class InventoryScreenManager : Component
 {
     AlbionTaskCore<bool> _source;
-    bool _lockIsTrapped; // the current chest/door has a false-branch (trap) chain — RE _RE_CHEST_TRAP.md
+    bool _lockIsTrapped; // the current chest/door has a false-branch (trap) chain — RE docs/re/RE_CHEST_TRAP.md
     IEvent _modeEvent = new InventoryOpenEvent(PartyMemberId.None); // Should never be null.
     InventoryPage _page;
     PartyMemberId _activeCharacter;
@@ -72,7 +72,7 @@ public class InventoryScreenManager : Component
     }
 
     // A chest/door is "trapped" iff its event node has a false branch — the per-chest trap chain
-    // (RE'd _RE_CHEST_TRAP.md: there is no trap byte; the NextIfFalse link IS the arm signal). The
+    // (RE'd docs/re/RE_CHEST_TRAP.md: there is no trap byte; the NextIfFalse link IS the arm signal). The
     // chain interpreter parks this node on the context while the open query is awaited, so it's
     // readable here. Returning false from the query (triggeredTrap) routes the chain down that
     // false branch, exactly as the original fires the trap.
@@ -154,7 +154,7 @@ public class InventoryScreenManager : Component
         _source = null;
         ((EventContext)Context).LastEventResult = unlocked;
         // triggeredTrap=false → query returns true → chain takes the Next branch (normal). A sprung
-        // trap returns false → the chain takes NextIfFalse (the trap chain). RE _RE_CHEST_TRAP.md.
+        // trap returns false → the chain takes NextIfFalse (the trap chain). RE docs/re/RE_CHEST_TRAP.md.
         source?.SetResult(!triggeredTrap);
     }
 }

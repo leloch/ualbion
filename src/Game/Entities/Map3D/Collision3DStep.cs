@@ -3,7 +3,7 @@ using System;
 namespace UAlbion.Game.Entities.Map3D;
 
 /// <summary>
-/// The original's one-step movement arbiter (fcn.0001e832), ported from _RE_COLLISION3D.md.
+/// The original's one-step movement arbiter (fcn.0001e832), ported from docs/re/RE_COLLISION3D.md.
 /// Positions/deltas in fractional TILE units; margin in tile fractions
 /// (= MAX(tileSize/4, 50) world units / tileSize).
 ///

@@ -50,26 +50,8 @@ mods/Unpacked/Assets/*
 !mods/UATest/
 mods/UATest/Saves/*.json
 
-# Local working directories: disassembler projects and publish output.
-_ghidra/
-_publish/
-data/exported/
-
-# Local reverse-engineering helpers (disassembler-specific, not part of the build).
+# Local scratch: disassembler projects, publish output, notes and helper scripts,
+# and anything the diagnostic tooling writes. Nothing prefixed "_" is tracked.
+_*
 DumpFunctions.java
-_ghidra_dump_functions.py
-_extract_constants.ps1
-_gen_re_notes.ps1
-
-# Output written by the harness and diagnostic scripts. The scripts themselves
-# (_*.ps1) and the reverse-engineering notes (_*.md) are tracked.
-_shots/
-_smoke_logs/
-_sweep/
-_r2_*
-_*.log
-_*.png
-_*.csv
-_*.tsv
-_*.txt
-_*.json
+data/exported/

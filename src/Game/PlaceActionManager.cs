@@ -79,7 +79,7 @@ public class PlaceActionManager : GameComponent
         // into the firing event set's text set.
         var context = Context as EventContext;
         var textSet = context?.EventSet?.StringSetId ?? StringSetId.None;
-        // 0xFF = "per-service default dialog" (RE _RE_COMBAT.md +4/Unk4 note) — the Do*
+        // 0xFF = "per-service default dialog" (RE docs/re/RE_COMBAT.md +4/Unk4 note) — the Do*
         // handlers already show their own defaults, so no custom success text. Formatting
         // 255 as a literal string index produced "!MISSING STRING EventText.X:255!".
         _pendingSuccessText = e.Unk4 != 0 && e.Unk4 != 0xFF && !textSet.IsNone ? new StringId(textSet, e.Unk4) : null;
@@ -132,7 +132,7 @@ public class PlaceActionManager : GameComponent
             case PlaceActionType.ScrollMerchant:
                 // ScrollMerchant shares the Merchant handler verbatim in the original
                 // (identical function pointer); wares = the merchant inventory in Unk8. Unk6 is
-                // the per-shop buy/sell percent (RE _RE_MERCHANT.md), same as Repair/Identify use.
+                // the per-shop buy/sell percent (RE docs/re/RE_MERCHANT.md), same as Repair/Identify use.
                 Raise(new MerchantEvent(new MerchantId(AssetType.Merchant, e.Unk8), PartyMemberId.None, e.Unk6));
                 break;
             default:

@@ -10,7 +10,7 @@ namespace UAlbion.Game.Diag;
 /// <summary>
 /// Fabricate a genuinely TRAPPED chest and open it. No shipped map arms a chest trap (every
 /// base-game chest's false branch is "end"), so this is the only way to exercise the RE'd trap
-/// path (<c>_RE_CHEST_TRAP.md</c>: the chest node's NextIfFalse link IS the arm signal).
+/// path (<c>docs/re/RE_CHEST_TRAP.md</c>: the chest node's NextIfFalse link IS the arm signal).
 /// A subsequent failed lockpick with a low-Dexterity leader springs the trap down that branch.
 /// </summary>
 [Event("debug_trapped_chest", "Harness: open a fabricated trapped chest to exercise the trap path")]

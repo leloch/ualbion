@@ -64,7 +64,7 @@ public class InventoryLockPane : UiElement
         if (hand.Item == _lockEvent.Key)
         {
             Raise(new HoverTextEvent(tf.Format(Base.SystemText.Lock_LeaderOpenedTheLock)));
-            // RE _RE_5C.md §2.2 (0x5a92a): a matching key is consumed ONLY if it carries the
+            // RE docs/re/RE_5C.md §2.2 (0x5a92a): a matching key is consumed ONLY if it carries the
             // "vanish when used up" flag (ITEMLIST +0x1B & 0x10 = ItemFlags.Unk4) — one-use quest
             // keys; ordinary reusable keys return to the hand as before.
             var keyItem = Assets.LoadItem(hand.Item);
@@ -137,7 +137,7 @@ public class InventoryLockPane : UiElement
             Raise(new DescriptionTextEvent(tf.Format(Base.SystemText.Lock_LeaderCannotPickThisLock)));
             // A failed SKILL pick springs the trap on a trapped lock (the manager rolls Dexterity to
             // evade and, on failure, fires the chest/door's trap chain). Untrapped locks ignore this
-            // and allow unlimited free retries. RE: _RE_CHEST_TRAP.md.
+            // and allow unlimited free retries. RE: docs/re/RE_CHEST_TRAP.md.
             Raise(new LockPickFailedEvent());
         }
     }

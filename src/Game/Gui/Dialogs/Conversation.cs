@@ -416,7 +416,7 @@ public class Conversation : GameComponent
             if (set.Events[x].Event is not ActionEvent action)
                 continue;
 
-            // Wildcards (RE _RE_STORY_ACTIONS.md): Block 255 = "any" (the field comment notes it),
+            // Wildcards (RE docs/re/RE_STORY_ACTIONS.md): Block 255 = "any" (the field comment notes it),
             // and Argument with raw id 32000 (0x7D00) = "any". The matcher previously required exact
             // block+argument, so wildcard chains (e.g. the Tom endgame fallback) never fired.
             const int ArgumentWildcard = 32000;

@@ -41,7 +41,7 @@ public sealed class SpellCastContext
     /// The RE'd mastery multiplier M = max(1, (mastery + 50) / 100) where mastery is the
     /// per-spell 0..10000 value (MagicSkills.SpellStrengths; sheet offset
     /// 0x140 + school*60 + (n-1)*2). Every spell magnitude in the original is
-    /// max(1, M*K/100) for a per-spell constant K — see _RE_COMBAT.md "Punch-list RE"
+    /// max(1, M*K/100) for a per-spell constant K — see docs/re/RE_COMBAT.md "Punch-list RE"
     /// item 1 (cast core fcn.0005fdf7). 100 = full mastery.
     /// </summary>
     public int MasteryMultiplier { get; init; } = 1;

@@ -23,7 +23,7 @@ namespace UAlbion.Game.Entities.Map3D;
 /// </summary>
 public class Movement3D : Component
 {
-    // Feel constants — ratios RE'd from MAIN.EXE (_RE_SMOOTH_MOVE.md): per-key scalars
+    // Feel constants — ratios RE'd from MAIN.EXE (docs/re/RE_SMOOTH_MOVE.md): per-key scalars
     // forward 166 : back 100 : strafe 67 (so forward is fastest, strafe slowest), and turn
     // keyboard 40 vs mouse 60 (mouse 1.5×). Absolute tile/sec speed picked to feel right; the
     // ratios are what's faithful. Translation is integrated × dt by CameraMotion3D (frame-rate
@@ -148,7 +148,7 @@ public class Movement3D : Component
     }
 
     /// <summary>
-    /// The original's movement collision, ported 1:1 from _RE_COLLISION3D.md:
+    /// The original's movement collision, ported 1:1 from docs/re/RE_COLLISION3D.md:
     /// the mover is a POINT; the proposed endpoint's TILE must be class-passable
     /// (fcn.0001eeb8, raw byte &amp; 0x08 for the party); the 8 neighbours of the destination
     /// tile mark forbidden 3×3 margin zones (margin = MAX(tileSize/4, 50)) — entering a

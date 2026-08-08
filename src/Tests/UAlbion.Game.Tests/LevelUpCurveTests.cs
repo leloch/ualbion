@@ -7,7 +7,7 @@ namespace UAlbion.Game.Tests;
 public class LevelUpCurveTests
 {
     // RE'd curve: XP to reach N+1 = max(1, floor(1.25*N^2) + N - 14) * classMul.
-    // Pilot classMul = 25, Technician = 40 (see _RE_COMBAT.md "Placeholder formulas").
+    // Pilot classMul = 25, Technician = 40 (see docs/re/RE_COMBAT.md "Placeholder formulas").
     [Theory]
     [InlineData(0, PlayerClass.Pilot, 25)]        // max(1, 0+0-14)=1 → 25
     [InlineData(1, PlayerClass.Pilot, 25)]        // max(1, 1+1-14)=1 → 25

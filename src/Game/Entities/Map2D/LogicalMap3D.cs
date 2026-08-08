@@ -75,7 +75,7 @@ public class LogicalMap3D : LogicalMap
         // original engine's `dec eax` at fcn.0001eeb8 @0x1efe6). The old [tileIndex] read was an
         // off-by-one that returned the NEXT record — which is why water (value 3 → record 2 = Water,
         // Unk1=8) was read as record 3 (a walkable floor) and the party walked over it. Texture
-        // rendering is unaffected (it uses a separate DefineFloor(i+1 ← record i) loop). _RE_COLLISION_DATA.md.
+        // rendering is unaffected (it uses a separate DefineFloor(i+1 ← record i) loop). docs/re/RE_COLLISION_DATA.md.
         var tile = tileIndex > 0 && tileIndex - 1 < _labyrinth.FloorAndCeilings.Count
             ? _labyrinth.FloorAndCeilings[tileIndex - 1]
             : null;

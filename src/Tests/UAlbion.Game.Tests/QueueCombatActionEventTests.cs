@@ -40,7 +40,7 @@ public class QueueCombatActionEventTests
     [Fact]
     public void CombatAction_Values_Match_Original_Engine_Action_Kinds()
     {
-        // Per _RE_COMBAT.md / MAIN.EXE: action_kind at combatant +0x4E uses these values.
+        // Per docs/re/RE_COMBAT.md / MAIN.EXE: action_kind at combatant +0x4E uses these values.
         Assert.Equal(0, (ushort)CombatAction.None);
         Assert.Equal(1, (ushort)CombatAction.Melee);
         Assert.Equal(2, (ushort)CombatAction.CastSchool5);

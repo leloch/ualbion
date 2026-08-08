@@ -5,7 +5,7 @@ namespace UAlbion.Game.Combat.Spells;
 /// <summary>
 /// Bulk registration for the Dji-Kas spell school (the Iskai mage class, spell ids 1..30).
 /// Effect magnitudes are first-pass: original formulas live in MAIN.EXE's deferred-action
-/// dispatcher (see <c>_RE_COMBAT.md</c> → Phase 3.x) and will be tuned once the per-school
+/// dispatcher (see <c>docs/re/RE_COMBAT.md</c> → Phase 3.x) and will be tuned once the per-school
 /// caster-info blocks at <c>0x13e1be / 0x13e1d6</c> are fully decoded.
 /// </summary>
 public static class DjiKasSpells

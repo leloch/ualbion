@@ -7,7 +7,7 @@ namespace UAlbion.Game.Combat;
 
 /// <summary>
 /// Monster combat AI, reverse-engineered from MAIN.EXE (combat.c / comobs.c).
-/// See <c>_RE_COMBAT.md</c> for the disassembly notes that justify these formulas.
+/// See <c>docs/re/RE_COMBAT.md</c> for the disassembly notes that justify these formulas.
 /// </summary>
 public static class MonsterAi
 {
@@ -123,7 +123,7 @@ public static class MonsterAi
 
     /// <summary>
     /// Normal-monster action-availability bitmask at Combatant offset +0x06 — semantics
-    /// CONFIRMED by RE (_RE_COMBAT.md "Punch-list RE" item 4): combat setup gives every
+    /// CONFIRMED by RE (docs/re/RE_COMBAT.md "Punch-list RE" item 4): combat setup gives every
     /// monster Melee|Ranged (0x06) and adds Magic (0x01) iff the sheet's spell-class
     /// byte (+4) is non-zero. Magic is permanently disabled once SP hits 0; failed
     /// attempts clear their bit for the rest of the turn.

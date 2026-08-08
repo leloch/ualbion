@@ -5,7 +5,7 @@ public interface IMovementCollider
     bool IsOccupied(int fromX, int fromY, int toX, int toY);
 
     /// <summary>
-    /// Faithful 3D tile passability (RE _RE_COLLISION3D.md, fcn.0001eeb8): does the tile's
+    /// Faithful 3D tile passability (RE docs/re/RE_COLLISION3D.md, fcn.0001eeb8): does the tile's
     /// wall/floor/ceiling record block a mover of the given collision class
     /// (raw collision byte &amp; (0x08 &lt;&lt; class); party = class 0)? Objects are NOT part of
     /// tile passability — they are overlap-tested separately. Colliders without 3D

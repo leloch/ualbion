@@ -6,7 +6,7 @@ using UAlbion.Formats.MapEvents;
 namespace UAlbion.Game.Combat.Spells;
 
 /// <summary>
-/// HP heal. RE'd formula (_RE_COMBAT.md "Punch-list RE" item 1): the heal is a percentage
+/// HP heal. RE'd formula (docs/re/RE_COMBAT.md "Punch-list RE" item 1): the heal is a percentage
 /// of the target's MAX life points — pct = max(1, M*K/100) where K is the percentage at
 /// 100 % mastery (LightHealing 25, HealingDC/HealingD 40) and M the caster's mastery
 /// multiplier.

@@ -15,7 +15,7 @@ namespace UAlbion.Game.Combat;
 /// <summary>
 /// The animated battle view: draws each monster's big combat graphic over the backdrop
 /// using the original's CONFIRMED mini-3D projection (RE'd from MAIN.EXE — see
-/// _RE_COMBAT.md "Battle view rendering"): camera height 83, focal length 148,
+/// docs/re/RE_COMBAT.md "Battle view rendering"): camera height 83, focal length 148,
 /// tile→world x = 64·col − 160, z = 128 − 64·row (row 3 ⇒ z = −21.33), screen
 /// = (180 + 148x/(z+148), 96 + 148·83/(z+148)), sprite scale 148/(z+148) on top of the
 /// monster's Width/HeightPercentage, bottom-centre anchored. Physical gfx frames are
@@ -159,7 +159,7 @@ public class BattleView : GameComponent
         On<CombatSpellCastEvent>(OnSpellCast);
     }
 
-    // Cast VISUAL (RE'd in _RE_SPELLANIM.md, table in CombatSpellFx): the Dji-Kas school
+    // Cast VISUAL (RE'd in docs/re/RE_SPELLANIM.md, table in CombatSpellFx): the Dji-Kas school
     // orb, the caster→target projectile, and the on-target impact. Fire-and-forget: the
     // sprites animate over the following frames (the original blocks the round; the remake
     // overlaps them with the hit playback — approximate timing, faithful visuals).

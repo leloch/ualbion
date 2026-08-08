@@ -227,7 +227,7 @@ public class Npc3D : GameComponent
 
     bool AtTarget => (new Vector2(_targetX, _targetY) - _position).Length() <= 0.01f;
 
-    // NPC collision class (RE _RE_COLLISION3D.md): NoClip NPCs (MapNpc flag 0x40 → NpcState+5)
+    // NPC collision class (RE docs/re/RE_COLLISION3D.md): NoClip NPCs (MapNpc flag 0x40 → NpcState+5)
     // are class 1 — they test collision bit 0x10 instead of the party's 0x08, letting them
     // pass normal walls while dedicated fence records stop them. Others are class 0.
     // Also e832 step 4: NPC movers are blocked by the PARTY's body — an NPC never steps

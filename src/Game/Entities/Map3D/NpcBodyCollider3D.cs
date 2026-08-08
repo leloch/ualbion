@@ -6,7 +6,7 @@ using UAlbion.Formats.Assets.Labyrinth;
 namespace UAlbion.Game.Entities.Map3D;
 
 /// <summary>
-/// NPC body collision (RE _RE_COLLISION3D.md, fcn.0001e832 step 5): every mover is
+/// NPC body collision (RE docs/re/RE_COLLISION3D.md, fcn.0001e832 step 5): every mover is
 /// overlap-tested against the bodies of all live NPCs — each body is the NPC's own
 /// object group's solid sub-object AABBs (half-extent MapWidth/2), centred on the NPC's
 /// position. The original pre-culls at one tile's distance; we do the same. This is what

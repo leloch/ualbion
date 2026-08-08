@@ -7,7 +7,7 @@ namespace UAlbion.Game.Combat.Spells;
 
 /// <summary>
 /// Direct-damage spell. RE'd formula (MAIN.EXE fcn.0005fdf7 → per-spell handlers; margin
-/// scaling corrected in _RE_COMBAT.md "RE batch 4"): the handler first runs the success
+/// scaling corrected in docs/re/RE_COMBAT.md "RE batch 4"): the handler first runs the success
 /// gate fcn.000601a6 — resisted outright when mastery% &lt;= target MagicResist — and the
 /// damage scales on the gate MARGIN: damage = max(1, (M − resist) * K/100). Verified for
 /// the frost line, SmallFireball and Fungification; applied uniformly to the per-spell-

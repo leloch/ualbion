@@ -52,7 +52,7 @@ public class DungeonMap : GameComponent, IMap
         // On<UnloadMapEvent>(_ => Unload());
     }
 
-    // Spinner tile (RE _RE_OPCODES_WORLD.md, handler 0x3a8a1): sets the party's FACING — 0..3 are
+    // Spinner tile (RE docs/re/RE_OPCODES_WORLD.md, handler 0x3a8a1): sets the party's FACING — 0..3 are
     // absolute quadrants (N/E/S/W); 4 = random direction (the classic disorientation tile). It only
     // acts in 3D and never moves the party. The random case always turns to a DIFFERENT facing
     // (the original re-rolls until different), so the disorientation is guaranteed.

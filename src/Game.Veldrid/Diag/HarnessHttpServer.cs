@@ -28,7 +28,7 @@ namespace UAlbion.Game.Veldrid.Diag;
 /// HTTP remote-control harness for autonomous test agents and CI smoke runs. Listens on
 /// <c>http://localhost:&lt;port&gt;/</c>; lets external tooling inject events, observe game
 /// state, enumerate UI elements, click by stable ID or screen coordinates, and capture
-/// screenshots. See <c>_RE_NOTES.md → harness</c> for the protocol.
+/// screenshots. See <c>docs/re/RE_NOTES.md → harness</c> for the protocol.
 /// </summary>
 /// <remarks>
 /// Threading model:
@@ -997,7 +997,7 @@ public sealed class HarnessHttpServer : Component, IDisposable
         {
             var (_, wall) = lm.GetWall(x, y);
             var (floorIdx, floor) = lm.GetFloor(x, y);
-            // Party-perspective classification (RE _RE_COLLISION3D.md): the party is collision
+            // Party-perspective classification (RE docs/re/RE_COLLISION3D.md): the party is collision
             // class 0 and tests exactly bit 0x08 — 0x10-only records are NPC fences the party
             // walks through, so they classify as open here.
             bool isWall  = wall != null && (wall.Collision & 0x08) != 0;

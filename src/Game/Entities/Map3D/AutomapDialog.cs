@@ -88,7 +88,7 @@ public class AutomapDialog : GameComponent
     }
 
     /// <summary>
-    /// Original discovery rule (MAIN.EXE fcn.0005c40e — see _RE_NOTES.md "automap.c"):
+    /// Original discovery rule (MAIN.EXE fcn.0005c40e — see docs/re/RE_NOTES.md "automap.c"):
     /// build a facing-oriented candidate region around an origin one tile behind the
     /// party (cardinal facing → widening 90° wedge, row i at depth i is 2i+1 wide;
     /// diagonal facing → the full 11×11 quadrant), then flood-fill from the party tile
@@ -411,7 +411,7 @@ public class AutomapDialog : GameComponent
     readonly Dictionary<byte, byte[]> _floorMinis = [];
 
     /// <summary>
-    /// The original glyph rules (tile pass fcn.0005e12c, see _RE_NOTES.md "automap.c"):
+    /// The original glyph rules (tile pass fcn.0005e12c, see docs/re/RE_NOTES.md "automap.c"):
     /// a wall's <c>AutoGfxType</c> selects the glyph — type 1 = connectable wall
     /// (AUTOGFX 560 + connection mask, bits N/E/S/W set when that neighbour is
     /// discovered AND sight-blocking), types 2..19 = that AUTOGFX marker glyph, 0 =

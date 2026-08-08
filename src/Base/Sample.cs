@@ -200,7 +200,7 @@ public enum Sample : ushort
     Unknown251 = 251,
 
     // SAMPLES2.XLD entries 60-68, used by the combat spell handlers (RE'd from MAIN.EXE
-    // — see _RE_NOTES.md "Combat SFX"). 268 is the single shared death scream; the party/
+    // — see docs/re/RE_NOTES.md "Combat SFX"). 268 is the single shared death scream; the party/
     // monster distinction is pitch (11000 vs 15000 Hz), not the sample.
     FireRainImpact = 260,
     FireHailImpact = 261,

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace UAlbion.Game.Tests;
 
-// The faithful one-step arbiter (fcn.0001e832 port, _RE_COLLISION3D.md): destination-tile
+// The faithful one-step arbiter (fcn.0001e832 port, docs/re/RE_COLLISION3D.md): destination-tile
 // passability, the 8-neighbour forbidden-zone margin, the already-hugging 9-case escape and
 // the object overlap. Margin 0.25 tiles (512-unit maps).
 public class Collision3DStepTests

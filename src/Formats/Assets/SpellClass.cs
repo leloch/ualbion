@@ -9,7 +9,7 @@ public enum SpellClass : byte
     Druid        = 2, // Mellthas
     OquloKamulos = 3, // Khunag
     Unk4         = 4, // Unused
-    ZombieMagic  = 5, // Monsters only — used as fallback by Combat AI (see _RE_COMBAT.md)
+    ZombieMagic  = 5, // Monsters only — used as fallback by Combat AI (see docs/re/RE_COMBAT.md)
     Unk6         = 6, // NOT actually unused — Combat AI's PRIMARY cast school. Tried before school 5.
                      // Decoded from MAIN.EXE fcn.0004c2cd. Exact spell list/purpose still unknown.
 }

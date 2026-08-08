@@ -19,7 +19,7 @@ Prerequisites:
 ## Current Status
 
 Implemented (most mechanics reverse-engineered from MAIN.EXE for 1:1 behaviour — see
-`_RE_COMBAT.md` / `_RE_NOTES.md` for the decoded formulas):
+docs/re/RE_COMBAT.md / docs/re/RE_NOTES.md for the decoded formulas):
 - Rendering of 2D and 3D environments (Veldrid: D3D11 / Vulkan / OpenGL)
 - Player movement and collision in 2D and 3D (sub-tile margins, wall sliding)
 - Environment interaction: examine / manipulate / take / talk, chests, doors, locks

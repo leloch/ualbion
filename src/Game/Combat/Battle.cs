@@ -58,7 +58,7 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     // XP pool: each kill adds the monster sheet's ExperienceReward (offset 0x20); on
     // victory every LIVING party member receives max(1, total/livingCount) — RE'd from
-    // MAIN.EXE (pool at 0x15f104), see _RE_COMBAT.md "Punch-list RE" item 3. No factor.
+    // MAIN.EXE (pool at 0x15f104), see docs/re/RE_COMBAT.md "Punch-list RE" item 3. No factor.
     int _xpPool;
 
     public IReadOnlyList<ICombatParticipant> Mobs { get; }
@@ -146,7 +146,7 @@ public class Battle : GameComponent, IReadOnlyBattle
                 if (kvp.Value.TargetTile == e.TargetTile)
                 {
                     Info($"[Combat] {e.Actor} move to {e.TargetTile} refused (already claimed by {kvp.Key})");
-                    // SYSTEXTS 442 "nowhere to move" — a message, not a sample (_RE_COMBATAUDIO.md:
+                    // SYSTEXTS 442 "nowhere to move" — a message, not a sample (docs/re/RE_COMBATAUDIO.md:
                     // the original's 0x56cb2 refusal is a direct ShowSystemMessage).
                     ShowCombatMessage(Base.SystemText.CombatMsg_NowhereToMove);
                     return;
@@ -329,7 +329,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         // wakes a sleeping target if no-one attacks them in a 1v1 stunlock). Permanent
         // conditions (Unconscious, Poisoned, Paralysed, etc.) are deliberately left
         // alone — clearing them speculatively would corrupt the original engine's
-        // pacing. See _RE_COMBAT.md Phase 2.6 for the full per-condition tick table.
+        // pacing. See docs/re/RE_COMBAT.md Phase 2.6 for the full per-condition tick table.
         DecaySleepOnAllCombatants();
         CombatBuffs.TickRound();
 
@@ -618,7 +618,7 @@ public class Battle : GameComponent, IReadOnlyBattle
     /// </summary>
     void TakeTurn(ICombatParticipant attacker, bool forParty)
     {
-        // Monster turns: weighted-random action pick, RE'd from MAIN.EXE (_RE_COMBAT.md
+        // Monster turns: weighted-random action pick, RE'd from MAIN.EXE (docs/re/RE_COMBAT.md
         // "Punch-list RE" item 4). Setup grants every monster Melee|Ranged and adds Magic
         // when the sheet has spells; Magic is disabled at 0 SP. The 16-entry weight table
         // favours Magic/Ranged 6/16 each over Melee 4/16; failed commits clear their bit.
@@ -776,7 +776,7 @@ public class Battle : GameComponent, IReadOnlyBattle
                 if (ammoReserve <= 0)
                 {
                     // Reserve exhausted: SYSTEXTS 454 + no further strikes (fcn.0004f4da @0x4f5a9 —
-                    // a message, not a sample; _RE_COMBATAUDIO.md).
+                    // a message, not a sample; docs/re/RE_COMBATAUDIO.md).
                     ShowCombatMessage(Base.SystemText.CombatMsg_XHasUsedUpHisAmmunition, attacker);
                     return;
                 }
@@ -1119,7 +1119,7 @@ public class Battle : GameComponent, IReadOnlyBattle
 
     /// <summary>
     /// Move a combatant to an empty tile. Rules RE'd from MAIN.EXE fcn.0004d85b
-    /// (_RE_COMBAT.md "Punch-list RE" item 2): range = clamp(Speed/30, 1, 3) tiles,
+    /// (docs/re/RE_COMBAT.md "Punch-list RE" item 2): range = clamp(Speed/30, 1, 3) tiles,
     /// Chebyshev distance (8-directional); only the DESTINATION tile must be empty
     /// (intermediate occupancy is ignored); party members may only stand in the bottom
     /// two rows, monsters in rows 0..CombatRowsForMobs.
@@ -1285,7 +1285,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         var spell = Assets.LoadSpell(spellId);
         int cost = spell?.Cost ?? 0;
         int sp = SpellPoints(caster);
-        // Over-cast (RE'd fcn.0006042c, _RE_FIDELITY1.md): a caster short on SP does NOT refuse — it
+        // Over-cast (RE'd fcn.0006042c, docs/re/RE_FIDELITY1.md): a caster short on SP does NOT refuse — it
         // pays the SP shortfall in Stamina-scaled LIFE POINTS (all SP is spent, then LP). Higher
         // Stamina is cheaper (Stamina 100 = ½ LP per missing SP; Stamina 0 = 2 LP). Refuse ONLY when
         // even the caster's LP can't cover it (the cast would kill them). The LP is charged alongside
@@ -1304,7 +1304,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         }
 
         // RE'd mastery multiplier M = max(1, (mastery+50)/100); mastery is the per-spell
-        // 0..10000 value grown by MagicTalent on each cast (_RE_COMBAT.md "Punch-list RE").
+        // 0..10000 value grown by MagicTalent on each cast (docs/re/RE_COMBAT.md "Punch-list RE").
         ushort mastery = 0;
         caster.Effective?.Magic?.SpellStrengths?.TryGetValue(spellId, out mastery);
         int m = Math.Max(1, (mastery + 50) / 100);
@@ -1349,7 +1349,7 @@ public class Battle : GameComponent, IReadOnlyBattle
             GetConditions = Conditions // includes the transient monster-condition shadow
         };
 
-        // Cast VISUAL (RE _RE_SPELLANIM.md): orb / projectile / impact over the recipient tiles.
+        // Cast VISUAL (RE docs/re/RE_SPELLANIM.md): orb / projectile / impact over the recipient tiles.
         RaiseSpellCastVisual(caster, spellId, recipients);
 
         var outcome = SpellCastOutcome.Failed;
@@ -1879,7 +1879,7 @@ public class Battle : GameComponent, IReadOnlyBattle
         TryBossSurrender(attacker);
     }
 
-    // Final-boss "asks for surrender" = combat outcome 4 = the canonical WIN (_RE_ASK_SURRENDER.md).
+    // Final-boss "asks for surrender" = combat outcome 4 = the canonical WIN (docs/re/RE_ASK_SURRENDER.md).
     // The final AI is unkillable by design; instead, after a behaviour-strategy-9 monster (MONCHAR
     // strategy byte, sheet UnkownC == 9 — the unique surrender behaviour, table row 8) lands a hit,
     // if the party has been downed to <= max(1, partySize-2) conscious members it surrenders. Only

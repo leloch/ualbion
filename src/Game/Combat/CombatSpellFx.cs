@@ -5,7 +5,7 @@ using UAlbion.Formats.Ids;
 namespace UAlbion.Game.Combat;
 
 /// <summary>
-/// The per-spell cast-VISUAL table, RE'd in _RE_SPELLANIM.md. The original has no data
+/// The per-spell cast-VISUAL table, RE'd in docs/re/RE_SPELLANIM.md. The original has no data
 /// table — each spell's visual is hard-coded in its effect fn — so this reconstructs the
 /// observed sequences as data: a school-intro orb (Dji-Kas), an optional caster→target
 /// projectile, and an on-target impact sprite (+ optional flash overlay), plus the per-spell
@@ -13,7 +13,7 @@ namespace UAlbion.Game.Combat;
 ///
 /// Fidelity note: this captures the dominant visual per spell (orb → fly → impact) that a
 /// player recognises; the finer particle bursts / driver clouds / clone-flash tints of the
-/// original are approximated by the impact sprite. See _RE_SPELLANIM.md for the full spec.
+/// original are approximated by the impact sprite. See docs/re/RE_SPELLANIM.md for the full spec.
 /// </summary>
 public sealed record CombatSpellFx(
     CombatGfx? Orb,        // Dji-Kas school-intro orb (#18), flies caster→target first

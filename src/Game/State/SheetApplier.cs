@@ -73,7 +73,7 @@ public class SheetApplier : Component
                 sheet.Magic.SpellPoints.ApplyToMax(generic.Operation, amount);
                 break;
 
-            // DATA-01 (RE _RE_DATA01.md): Experience/TrainingPoints/Gold/Food are "unbounded"
+            // DATA-01 (RE docs/re/RE_DATA01.md): Experience/TrainingPoints/Gold/Food are "unbounded"
             // quantities — percentage ops take a percentage of the CURRENT value (not of a max),
             // clamped at 0x7FFF (experience: 0x7FFFFFFF).
             case ChangeProperty.Experience:
@@ -375,7 +375,7 @@ public class SheetApplier : Component
     /// times in one shot — matches the original engine's behaviour at hand-in NPCs).
     /// </summary>
     /// <remarks>
-    /// RE'd XP curve (see _RE_COMBAT.md "Placeholder formulas"): XP required to reach
+    /// RE'd XP curve (see docs/re/RE_COMBAT.md "Placeholder formulas"): XP required to reach
     /// level N+1 = max(1, ⌊1.25·N²⌋ + N − 14) × classMultiplier, level cap 50. Class
     /// multipliers: Pilot 25, Scientist 35, IskaiWarrior 30, DjiKasMage 25, Druid 25,
     /// EnlightenedOne 20, Technician 40, (class 7 unused: 0), OquloKamulos 25, Warrior 35.
@@ -420,7 +420,7 @@ public class SheetApplier : Component
         // MaxSP per level = INT/30 + SpellPointsPerLevel (RE ApplyLevelUp: MaxSP =
         // level·(EffStat(INT)/30 + w[0xE6]); additive-per-level here is equivalent). The
         // INT/30 term was previously omitted. CASTERS ONLY — the original gates on
-        // `if (IsSpellcaster)` = spell-class byte (sheet+4) != 0 (_RE_COMBAT.md:1926, 1390).
+        // `if (IsSpellcaster)` = spell-class byte (sheet+4) != 0 (docs/re/RE_COMBAT.md:1926, 1390).
         // A non-null SpellPoints attribute is NOT that gate (every sheet allocates one):
         // without the SpellClasses check the INT/30 term gave Tom the Pilot (INT 50, no
         // magic) +1 SP per level-up.
@@ -443,7 +443,7 @@ public class SheetApplier : Component
                 (byte)UAlbion.Game.Combat.CombatFormulas.ActionPointsForLevel(sheet.Level, sheet.LevelsPerActionPoint);
 
         // Training-point grant per level (this IS 1:1, not an approximation — RE'd in
-        // _RE_FIDELITY2.md). The original has NO separate "spell-learning point" pool: the single
+        // docs/re/RE_FIDELITY2.md). The original has NO separate "spell-learning point" pool: the single
         // pool at sheet+0x16 (= Combat.TrainingPoints here) is fed by w[+0xEA] per level
         // (TrainingPointsPerLevel) and is spent ONLY on skill training; spell-learning costs GOLD
         // only. The +0xE8 SpellLearningPointsPerLevel field is dead data the engine never reads.

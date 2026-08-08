@@ -4,7 +4,7 @@ using Xunit;
 
 namespace UAlbion.Formats.Tests;
 
-// DATA-01 (see _RE_DATA01.md): the original has two numeric-op appliers —
+// DATA-01 (see docs/re/RE_DATA01.md): the original has two numeric-op appliers —
 // bounded stats take percentages OF THE MAX (fcn.0003e2f1), unbounded quantities
 // (XP/TP/gold/rations/max-stats) take percentages OF THE CURRENT value with a
 // 0x7FFF cap (fcn.0003e0d5), and gold/rations reject out-of-range changes outright

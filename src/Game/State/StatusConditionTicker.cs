@@ -9,7 +9,7 @@ using UAlbion.Game.Events;
 namespace UAlbion.Game.State;
 
 /// <summary>
-/// Hourly condition effects, per the RE'd original semantics (_RE_COMBAT.md
+/// Hourly condition effects, per the RE'd original semantics (docs/re/RE_COMBAT.md
 /// "Placeholder formulas" item 7): there is NO timed decay of conditions — they are
 /// cure-only (spells, healers, rest for Exhausted), and the combat-scoped ones
 /// (Irritated/Asleep/Panicking/Fleeing/Paralysed) batch-clear when combat ends.

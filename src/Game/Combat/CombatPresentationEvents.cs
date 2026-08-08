@@ -31,7 +31,7 @@ public record CombatCastEvent(UAlbion.Formats.Ids.SpellId SpellId) : EventRecord
 /// <summary>
 /// Round-playback presentation: play a spell's cast VISUAL — the school-intro orb, the
 /// caster→target projectile flight and the on-target impact burst/flash (see
-/// _RE_SPELLANIM.md / CombatSpellFx). CasterTile is the caster's grid tile; TargetTiles are
+/// docs/re/RE_SPELLANIM.md / CombatSpellFx). CasterTile is the caster's grid tile; TargetTiles are
 /// the recipient tiles (one for single-target, several for row/all). BattleView spawns the
 /// effect sprites; the original blocks the round while they play — the remake plays them
 /// fire-and-forget over the subsequent frames (timing is approximate, visuals are 1:1).
